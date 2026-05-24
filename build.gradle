@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.0.6'
 	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.diffplug.spotless' version '7.0.2'
 }
 
 group = 'dev.rymarovych'
@@ -41,4 +42,21 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+spotless {
+	java {
+		googleJavaFormat('1.25.2')
+		removeUnusedImports()
+		formatAnnotations()
+	}
+	groovyGradle {
+		target '*.gradle'
+		greclipse()
+	}
+	format 'misc', {
+		target '*.md', '*.yml', '*.yaml', 'src/**/*.yml', 'src/**/*.yaml'
+		trimTrailingWhitespace()
+		endWithNewline()
+	}
 }
