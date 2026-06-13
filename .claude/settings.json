@@ -3,5 +3,20 @@
   "statusLine": {
     "type": "command",
     "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/statusline.sh\""
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "statusMessage": "Formatting with Spotless",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.java|*.gradle) cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; ./gradlew spotlessApply -q ;; esac; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
   }
 }
