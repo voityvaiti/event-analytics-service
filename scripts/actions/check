@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Full quality gate: Spotless check, Error Prone + NullAway (via compile),
+# tests, and the JaCoCo report. Same command CI runs on every PR.
+
+cd "$(dirname "$0")/../.." || exit 1
+./gradlew check "$@"

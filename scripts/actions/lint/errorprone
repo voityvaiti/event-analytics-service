@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Fast Error Prone + NullAway feedback — compiles main and test sources
+# without running tests. --rerun-tasks forces a recompile so the checks
+# actually run even when nothing changed.
+
+cd "$(dirname "$0")/../../.." || exit 1
+./gradlew --rerun-tasks compileJava compileTestJava "$@"
