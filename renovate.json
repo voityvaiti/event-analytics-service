@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "groupName": "Spring Boot",
+      "description": "Land the whole Spring Boot family in one PR.",
+      "matchPackageNames": [
+        "/^org\\.springframework\\.boot/",
+        "/^io\\.spring\\.dependency-management/"
+      ]
+    },
+    {
+      "groupName": "Testcontainers",
+      "description": "Land all Testcontainers modules in one PR.",
+      "matchPackageNames": ["/^org\\.testcontainers/"]
+    }
+  ]
+}
