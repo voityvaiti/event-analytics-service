@@ -1,8 +1,10 @@
 plugins {
 	id 'java'
+	id 'jacoco'
 	id 'org.springframework.boot' version '4.0.6'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'com.diffplug.spotless' version '7.0.2'
+	id 'net.ltgt.errorprone' version '4.1.0'
 }
 
 group = 'dev.rymarovych'
@@ -38,10 +40,42 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	errorprone 'com.google.errorprone:error_prone_core:2.36.0'
+	errorprone 'com.uber.nullaway:nullaway:0.12.3'
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
+	finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.errorprone {
+		disableWarningsInGeneratedCode = true
+		error('NullAway')
+		option('NullAway:AnnotatedPackages', 'dev.rymarovych.event_analytics')
+	}
+}
+
+tasks.named('compileTestJava') {
+	options.errorprone.disable('NullAway')
+}
+
+jacoco {
+	toolVersion = '0.8.12'
+}
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	reports {
+		html.required = true
+		xml.required = true
+	}
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('jacocoTestReport')
 }
 
 spotless {
