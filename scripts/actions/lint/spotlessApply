@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Auto-format the codebase with Spotless (google-java-format + Gradle/misc rules).
+# Rewrites files in place. The format-on-edit hook runs this per-file already;
+# use this to format the whole tree at once.
+
+cd "$(dirname "$0")/../../.." || exit 1
+./gradlew spotlessApply "$@"

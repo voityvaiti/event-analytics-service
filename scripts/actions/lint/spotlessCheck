@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Verify formatting against Spotless (google-java-format + Gradle/misc rules).
+# Read-only — fails (exit 1) if any file is not formatted. Run spotlessApply to fix.
+
+cd "$(dirname "$0")/../../.." || exit 1
+./gradlew spotlessCheck "$@"
