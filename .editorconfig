@@ -1,0 +1,33 @@
+# Baseline editor settings for IDEs that don't run the Gradle build.
+# Spotless (google-java-format) remains the source of truth — these values
+# are chosen to match it so the IDE and the formatter never disagree.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# google-java-format: 2-space indent, 100-column wrap.
+[*.java]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# Gradle scripts are tab-indented (greclipse default, matches existing files).
+[*.gradle]
+indent_style = tab
+
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+[*.md]
+# Trailing whitespace is significant in Markdown (two spaces = hard break).
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab
