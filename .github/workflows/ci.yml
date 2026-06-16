@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast feedback: formatting + Error Prone + NullAway. No tests, so this
+  # finishes long before the coverage job and surfaces style/bug-pattern
+  # failures quickly. Error Prone runs during compile (NullAway too, on main).
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Spotless + Error Prone + NullAway
+        run: ./gradlew spotlessCheck compileJava compileTestJava --no-daemon
+
+  # Tests + JaCoCo, with the coverage summary posted as a PR comment.
+  # Docker is available on ubuntu-latest, so Testcontainers tests run here.
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Test + coverage report
+        run: ./gradlew test jacocoTestReport --no-daemon
+
+      # Report-only: posts/updates a coverage comment on the PR. No threshold
+      # gate yet (min-coverage stays 0), matching the Stage 0 decision.
+      - name: Post coverage comment
+        if: github.event_name == 'pull_request'
+        uses: madrapps/jacoco-report@v1.7.2
+        with:
+          paths: ${{ github.workspace }}/build/reports/jacoco/test/jacocoTestReport.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: Coverage report
+          min-coverage-overall: 0
+          min-coverage-changed-files: 0

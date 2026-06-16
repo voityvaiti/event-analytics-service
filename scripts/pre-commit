@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Pre-commit gate: formatting check + unit tests. Same checks CI runs, so a
+# broken commit can't be created locally in the first place.
+#
+# Installed (opt-in) via scripts/install-hooks.sh — symlinked into
+# .git/hooks/pre-commit, so edits to this file take effect immediately.
+# Bypass in an emergency with: git commit --no-verify
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+echo "[pre-commit] spotlessCheck + test"
+./gradlew --quiet spotlessCheck test
