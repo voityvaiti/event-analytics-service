@@ -1,5 +1,13 @@
 {
   "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew spotlessCheck:*)",
+      "Bash(./gradlew spotlessApply:*)",
+      "Bash(./scripts/actions/lint/spotlessCheck:*)",
+      "Bash(./scripts/actions/lint/spotlessApply:*)"
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/statusline.sh\""
