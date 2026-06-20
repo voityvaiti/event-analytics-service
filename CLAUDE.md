@@ -17,6 +17,10 @@
 - **DB tests use Testcontainers, never H2** — tests run against the same
   Postgres production uses.
 - **Logging via SLF4J only** — no `System.out`, no concrete logger imports.
+- **SQL keywords UPPERCASE** — keywords and type names in caps (`CREATE TABLE`,
+  `INSERT INTO`, `ON CONFLICT`, `TEXT`, `JSONB`); identifiers, columns, and named
+  params stay lowercase. Applies to Flyway migrations and query strings; not
+  linter-enforced.
 
 ## Layering
 
