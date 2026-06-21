@@ -21,6 +21,10 @@
   `INSERT INTO`, `ON CONFLICT`, `TEXT`, `JSONB`); identifiers, columns, and named
   params stay lowercase. Applies to Flyway migrations and query strings; not
   linter-enforced.
+- **No self-invented abbreviations in identifiers** — spell names out in full
+  (`EventIngestionIntegrationTest`, not `EventIngestionIT`). Only
+  widely-recognized abbreviations are allowed (`DB`, `URL`, `HTTP`, `JSON`,
+  `ID`).
 
 ## Layering
 
@@ -30,5 +34,12 @@ Layered architecture; dependencies point one way only:
 controller → service → repository
 ```
 
+- **Each layer is consumed through an interface** — `web → service` and
+  `service → repository` depend on the interface, never the concrete class; the
+  implementation is package-private and wired by Spring.
+- **Implementations are named `<Specific><Interface>`** — end the class with the
+  interface name; the prefix states what is specific to this implementation
+  (`JdbcEventRepository`, `SynchronousEventIngestionService`). No `Impl` suffix,
+  no vague `Default` prefix.
 - Repositories never import from `web`.
 - Controllers never expose JPA entities directly — map to DTOs.
