@@ -1,6 +1,11 @@
 spring:
   application:
     name: event-analytics
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    property-naming-strategy: SNAKE_CASE
   docker:
     compose:
       lifecycle-management: start-only
