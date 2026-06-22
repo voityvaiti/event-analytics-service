@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Bring up the app's backing services from the single source of truth,
+# compose.yaml — Postgres today, plus whatever is added later (Redis, etc.).
+# Dev (spring-boot-docker-compose), the perf workflow, and the loadTest task
+# all start dependencies through this one path, so a new service is a one-line
+# compose.yaml edit and nothing else needs updating. (Integration tests are the
+# deliberate exception: they own ephemeral, isolated containers via
+# Testcontainers, not these shared ones.)
+#
+# --wait blocks until every service reports healthy, so callers can assume the
+# dependencies are reachable the moment this returns.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+docker compose up -d --wait "$@"
