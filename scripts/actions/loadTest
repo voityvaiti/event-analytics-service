@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# Measure ingest write throughput and append one row to load/journal.jsonl.
+# This task is the ONLY writer of the journal — rows are never hand-edited.
+#
+# Each row self-stamps the measurement rig (host, CPU, cores) alongside the
+# config that makes a throughput number meaningful (pool, VUs, starting rows),
+# because absolute numbers are only comparable within a fixed rig — a row from a
+# different machine is a different series, not a regression.
+#
+# Contract: the app must already be running on the host. Backing services are
+# brought up here from compose.yaml. Tunables: BASE_URL, VUS, DURATION. The pool
+# size is not passed in — it is read live from the running app (see below), so
+# the journalled value is always the one the run actually used.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+
+BASE_URL=${BASE_URL:-http://localhost:8080}
+SUMMARY=load/last-summary.json
+JOURNAL=load/journal.jsonl
+
+scripts/actions/dependencies
+
+if ! curl -sf "$BASE_URL/actuator/health" | grep -q '"status":"UP"'; then
+  echo "App is not healthy at $BASE_URL — start it (e.g. ./gradlew bootRun) and retry." >&2
+  exit 1
+fi
+
+reset_db() {
+  docker compose exec -T postgres psql -U event_analytics -d event_analytics -c 'TRUNCATE events;'
+}
+
+# Warm up (JIT + connection pool) and throw the numbers away, so the measured
+# run reflects steady state rather than cold start.
+reset_db
+BASE_URL="$BASE_URL" RAMP=3s DURATION=10s SUMMARY_OUT=/dev/null \
+  k6 run load/ingest-events.js || true
+
+# Measured run, from a known-empty table. k6 writes $SUMMARY.
+reset_db
+BASE_URL="$BASE_URL" k6 run load/ingest-events.js
+
+# Read the pool the run ACTUALLY used straight from the app, rather than trust a
+# value passed in — a journalled config the run did not use would be a quiet lie.
+pool=$(curl -sf "$BASE_URL/actuator/metrics/hikaricp.connections.max" \
+  | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["measurements"][0]["value"]))') || {
+  echo "Could not read pool size from the app's actuator metrics — is the 'metrics' endpoint exposed?" >&2
+  exit 1
+}
+
+python3 - "$SUMMARY" "$JOURNAL" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
+  "$(hostname)" "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" <<'PY'
+import json, sys
+
+summary_path, journal_path, date, commit, host, cpu, cores, pool = sys.argv[1:9]
+with open(summary_path) as f:
+    s = json.load(f)
+
+row = {
+    "date": date,
+    "commit": commit,
+    "host": host,
+    "cpu": cpu,
+    "cores": int(cores),
+    "pool": int(pool),
+    "vus": s["vus"],
+    "start_rows": 0,
+    "requests": round(s["requests"]),
+    "throughput_rps": round(s["throughput_rps"], 1),
+    "p95_ms": round(s["latency_ms"]["p95"], 2),
+    "p99_ms": round(s["latency_ms"]["p99"], 2),
+    "failed_rate": s["failed_rate"],
+}
+
+with open(journal_path, "a") as f:
+    f.write(json.dumps(row) + "\n")
+
+print("\nAppended to " + journal_path + ":")
+print(json.dumps(row))
+PY
+
+echo
+echo "Eyeball the line above, then commit journal.jsonl yourself."

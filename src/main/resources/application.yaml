@@ -9,3 +9,9 @@ spring:
   docker:
     compose:
       lifecycle-management: start-only
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
