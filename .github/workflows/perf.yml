@@ -1,0 +1,168 @@
+name: Performance comparison
+
+# Opt-in, not every PR: doubles build + load time, so it runs only when asked.
+# Add the `perf` label to a PR, or trigger manually from a branch.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Measured rounds per branch (median is reported)
+        default: '3'
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    # Manual run, or the `perf` label was just added.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'perf')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    # Backing services come from compose.yaml (the single source of truth), not
+    # an inline service container — so adding a dependency is a one-line
+    # compose.yaml edit and this workflow needs no change. Postgres is started
+    # via scripts/actions/dependencies below.
+    env:
+      ROUNDS: ${{ github.event.inputs.rounds || '3' }}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/event_analytics
+      SPRING_DATASOURCE_USERNAME: event_analytics
+      SPRING_DATASOURCE_PASSWORD: event_analytics
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need main's history to build it alongside the PR branch.
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Pin Node like the JDK above, instead of running on whatever the runner
+      # image ships — compare-runs.mjs is the only thing that needs it.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install k6
+        run: |
+          curl -fsSL https://github.com/grafana/k6/releases/download/v0.50.0/k6-v0.50.0-linux-amd64.tar.gz \
+            | tar xz
+          sudo mv k6-v0.50.0-linux-amd64/k6 /usr/local/bin/
+
+      - name: Start backing services
+        run: scripts/actions/dependencies
+
+      # Build both jars up front so the measured rounds run back-to-back with no
+      # Gradle work in between. main is built in a worktree to leave the PR
+      # working tree (and its fixed k6 script) untouched.
+      - name: Build PR jar
+        run: |
+          ./gradlew bootJar --no-daemon
+          mkdir -p /tmp/perf
+          jar=$(find build/libs -name '*-SNAPSHOT.jar' ! -name '*-plain.jar' -print -quit)
+          [ -n "$jar" ] || { echo "::error::no PR boot jar found in build/libs"; exit 1; }
+          cp "$jar" /tmp/perf/pr-app.jar
+
+      - name: Build main jar
+        run: |
+          git fetch origin main
+          git worktree add /tmp/perf/main-src origin/main
+          ./gradlew -p /tmp/perf/main-src bootJar --no-daemon
+          jar=$(find /tmp/perf/main-src/build/libs -name '*-SNAPSHOT.jar' ! -name '*-plain.jar' -print -quit)
+          [ -n "$jar" ] || { echo "::error::no main boot jar found in build/libs"; exit 1; }
+          cp "$jar" /tmp/perf/main-app.jar
+
+      # Alternate main/PR each round so ordering and thermal drift hit both
+      # sides evenly. Per side: recreate the schema (so each app's Flyway
+      # migrates from scratch in isolation — main and PR may carry different
+      # migrations, and a shared history would fail Flyway validation), start
+      # app, throw away a warmup run (JIT + pool warm-up), reset the table, then
+      # the measured run. A failed measured run is tolerated here (|| true) so
+      # both sides still emit a summary; compare-runs.mjs reads the real failure
+      # rate from those summaries and fails the build if either side is broken.
+      - name: Run load comparison
+        run: |
+          set -euo pipefail
+          mkdir -p results/main results/pr
+
+          exec_sql() {
+            docker compose exec -T postgres psql -U event_analytics -d event_analytics -c "$1"
+          }
+
+          run_side() {
+            local side="$1" jar="$2" round="$3"
+            exec_sql 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+            java -jar "$jar" --server.port=8080 > "/tmp/perf/app-$side-$round.log" 2>&1 &
+            local pid=$!
+
+            for _ in $(seq 1 60); do
+              if curl -sf http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
+                break
+              fi
+              sleep 2
+            done
+
+            RUN_ID="warmup_${side}_${round}" SUMMARY_OUT=/dev/null \
+              RAMP=3s DURATION=10s k6 run load/ingest-events.js || true
+            exec_sql 'TRUNCATE events;'
+            RUN_ID="${side}_${round}" SUMMARY_OUT="results/${side}/${round}.json" \
+              RAMP=5s DURATION=20s k6 run load/ingest-events.js || true
+
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          }
+
+          for round in $(seq 1 "$ROUNDS"); do
+            if (( round % 2 == 1 )); then
+              run_side main /tmp/perf/main-app.jar "$round"
+              run_side pr /tmp/perf/pr-app.jar "$round"
+            else
+              run_side pr /tmp/perf/pr-app.jar "$round"
+              run_side main /tmp/perf/main-app.jar "$round"
+            fi
+          done
+
+      # compare-runs.mjs exits non-zero when a side failed too many requests, so
+      # an invalid run turns this step (and the workflow) red rather than posting
+      # a misleading "better". The comment still posts — see the step below.
+      - name: Render comparison
+        run: node load/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Runs even when "Render comparison" failed (invalid run) so the ❌ verdict
+      # still reaches the PR; skipped only on cancellation.
+      - name: Post comparison comment
+        if: (success() || failure()) && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('comparison.md', 'utf8');
+            const marker = '<!-- perf-compare -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number,
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
