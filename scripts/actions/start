@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Run the application locally for development.
+#
+# Backing services are NOT started here explicitly: bootRun picks up
+# spring-boot-docker-compose (a developmentOnly dependency), which brings up
+# everything in compose.yaml and waits for health before the app connects — the
+# same single source of truth scripts/actions/dependencies uses. The app then
+# stays in the foreground until you stop it (Ctrl-C), which is the state the
+# loadTest task expects to find on the host.
+#
+# Tunables pass straight through to Gradle, e.g.:
+#   scripts/actions/start --args='--server.port=9090'
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+./gradlew bootRun "$@"
