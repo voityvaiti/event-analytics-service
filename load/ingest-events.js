@@ -10,6 +10,12 @@ const RAMP = __ENV.RAMP || '10s';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
 const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'load/last-summary.json';
 
+// Identifies the workload shape this file measures, stamped into every summary
+// so a write number is never compared against a future read number as one
+// series. A new workload (stats reads, and so on) gets its own k6 file with its
+// own SCENARIO — it does not reuse this one.
+const SCENARIO = 'ingest-single';
+
 export const options = {
   scenarios: {
     ingest: {
@@ -67,6 +73,7 @@ function metric(data, name, value) {
 
 export function handleSummary(data) {
   const summary = {
+    scenario: SCENARIO,
     run_id: RUN_ID,
     base_url: BASE_URL,
     vus: VUS,

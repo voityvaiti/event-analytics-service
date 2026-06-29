@@ -14,8 +14,8 @@ endpoints yet, so nothing else is measured. Read scenarios get added when the
 - **Absolute journal** — [`journal.jsonl`](./journal.jsonl), one row per
   measurement, **written only by the `loadTest` task** (never by hand). Answers
   "where are we, and are we drifting over time?" Only comparable within a fixed
-  measurement rig, so every row self-stamps its host and CPU — a number from a
-  different machine is a different series, not a regression.
+  measurement rig, so every row self-stamps its CPU and core count — a number
+  from a different machine is a different series, not a regression.
 - **Per-PR comparison** — the `Performance comparison` GitHub workflow
   (`.github/workflows/perf.yml`) builds `main` and the PR branch and load-tests
   both back-to-back on the same runner. Answers "did this PR change throughput?"
@@ -44,12 +44,30 @@ they drift. Both are recorded with every journal row.
   records that, so the journalled pool is always the one the run used — it is
   never passed to `loadTest`.
 
+Three more columns keep distinct series from being read as one trend rather than
+guarding against drift:
+
+- **`scenario`** — the workload shape (`ingest-single` today). A future read or
+  batch test is a separate k6 file with its own `scenario`, so a write number is
+  never compared against a read number.
+- **`ingest_path`** — write-path semantics: `sync` while the `202` follows the
+  DB write, so throughput is genuine write throughput. When a buffer fronts the
+  write (Kafka, or in-process coalescing) the `202` returns before the row lands
+  and the same number measures intake, not persistence — set `INGEST_PATH` so
+  the two stay separate series. The one field not read from the app, because
+  nothing exposes it yet.
+- **`schema_version`** — the latest applied Flyway migration, read from the
+  migrated DB. Secondary indexes (a GIN on `properties` especially) make every
+  INSERT costlier, so throughput steps down when they land; this column marks
+  that step as a migration, not a regression.
+
 ## Running it
 
-Prerequisites: [k6](https://k6.io/) installed, and the app running on the host.
-Backing services come up from the single source of truth, `compose.yaml`, via
-the shared startup script — so this stays correct when new dependencies are
-added.
+Prerequisites: Docker, and the app running on the host. [k6](https://k6.io/)
+itself is **not** installed on the host — `loadTest` runs it from a pinned
+container image (`K6_IMAGE`, default `grafana/k6:0.50.0`). Backing services come
+up from the single source of truth, `compose.yaml`, via the shared startup
+script — so this stays correct when new dependencies are added.
 
 ```bash
 # Bring up backing services (Postgres today, whatever compose.yaml lists later).
@@ -58,7 +76,7 @@ scripts/actions/dependencies
 # Start the app however you normally do (IDE run config, or ./gradlew bootRun).
 
 # Measure and append one row to journal.jsonl. TRUNCATEs first, stamps the row
-# with host/CPU/commit. Eyeball the appended line, then commit it yourself.
+# with CPU/commit. Eyeball the appended line, then commit it yourself.
 scripts/actions/loadTest
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:
