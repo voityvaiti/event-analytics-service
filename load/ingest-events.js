@@ -4,8 +4,7 @@ import { check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const VUS = Number(__ENV.VUS || 10);
-const DURATION = __ENV.DURATION || '30s';
-const RAMP = __ENV.RAMP || '10s';
+const DURATION = __ENV.DURATION || '60s';
 
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
 const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'load/last-summary.json';
@@ -16,17 +15,15 @@ const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'load/last-summary.json';
 // own SCENARIO — it does not reuse this one.
 const SCENARIO = 'ingest-single';
 
+// Constant concurrency for the whole measured window — no ramp stages. The
+// callers run a throwaway warm-up pass first, so ramp samples here would only
+// dilute the summary; every metric below is steady-state.
 export const options = {
   scenarios: {
     ingest: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: RAMP, target: VUS },
-        { duration: DURATION, target: VUS },
-        { duration: '5s', target: 0 },
-      ],
-      gracefulRampDown: '5s',
+      executor: 'constant-vus',
+      vus: VUS,
+      duration: DURATION,
     },
   },
   thresholds: {
@@ -95,6 +92,7 @@ export function handleSummary(data) {
     '',
     `ingest write-throughput  (run ${RUN_ID})`,
     line('vus', VUS),
+    line('duration', DURATION),
     line('requests', summary.requests),
     line('throughput', `${summary.throughput_rps.toFixed(1)} req/s`),
     line('failed', `${(summary.failed_rate * 100).toFixed(2)} %`),

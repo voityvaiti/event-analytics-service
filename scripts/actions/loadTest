@@ -40,12 +40,12 @@ INGEST_PATH=${INGEST_PATH:-sync}
 #   --user $(id -u)…  so the summary file k6 writes into the mounted load/ dir
 #                     is owned by us, not the image's baked-in uid.
 # Env is forwarded explicitly as KEY=VALUE; callers append overrides via "$@",
-# and a later -e wins, so warm-up can override RAMP/DURATION/SUMMARY_OUT.
+# and a later -e wins, so warm-up can override DURATION/SUMMARY_OUT.
 k6_run() {
   docker run --rm --network host \
     --user "$(id -u):$(id -g)" \
     --volume "$PWD":/work --workdir /work \
-    --env BASE_URL --env VUS --env DURATION --env RAMP --env SUMMARY_OUT \
+    --env BASE_URL --env VUS --env DURATION --env SUMMARY_OUT \
     --env RUN_ID --env TOKEN \
     "$@" \
     "$K6_IMAGE" run load/ingest-events.js
@@ -70,9 +70,11 @@ reset_db() {
 }
 
 # Warm up (JIT + connection pool) and throw the numbers away, so the measured
-# run reflects steady state rather than cold start.
+# run reflects steady state rather than cold start. This pass also replaces a
+# ramp stage — the measured run starts at full VUs against a warmed app, so its
+# summary is not diluted by low-concurrency ramp samples.
 reset_db
-k6_run --env RAMP=3s --env DURATION=10s --env SUMMARY_OUT=/dev/null || true
+k6_run --env DURATION=30s --env SUMMARY_OUT=/dev/null || true
 
 # Measured run, from a known-empty table. k6 writes $SUMMARY.
 reset_db
@@ -118,6 +120,7 @@ row = {
     "cores": int(cores),
     "pool": int(pool),
     "vus": s["vus"],
+    "duration": s["duration"],
     "start_rows": 0,
     "requests": round(s["requests"]),
     "throughput_rps": round(s["throughput_rps"], 1),

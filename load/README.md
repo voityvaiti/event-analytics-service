@@ -44,9 +44,14 @@ they drift. Both are recorded with every journal row.
   records that, so the journalled pool is always the one the run used — it is
   never passed to `loadTest`.
 
-Three more columns keep distinct series from being read as one trend rather than
+Four more columns keep distinct series from being read as one trend rather than
 guarding against drift:
 
+- **`duration`** — the measured window (default `60s`). The measured run holds
+  a constant VU count for the whole window — no ramp stages, the throwaway
+  warm-up pass does the warming — so every metric is steady-state. Longer
+  windows give rare events (GC pauses) more chance to land in the tail, so a
+  `60s` number and a `30s` number are different series, not a drift.
 - **`scenario`** — the workload shape (`ingest-single` today). A future read or
   batch test is a separate k6 file with its own `scenario`, so a write number is
   never compared against a read number.
@@ -80,7 +85,7 @@ scripts/actions/dependencies
 scripts/actions/loadTest
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:
-VUS=20 DURATION=60s scripts/actions/loadTest
+VUS=20 DURATION=120s scripts/actions/loadTest
 ```
 
 The task also writes the raw k6 summary to `load/last-summary.json`

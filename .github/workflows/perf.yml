@@ -118,10 +118,10 @@ jobs:
             done
 
             RUN_ID="warmup_${side}_${round}" SUMMARY_OUT=/dev/null \
-              RAMP=3s DURATION=10s k6 run load/ingest-events.js || true
+              DURATION=10s k6 run load/ingest-events.js || true
             exec_sql 'TRUNCATE events;'
             RUN_ID="${side}_${round}" SUMMARY_OUT="results/${side}/${round}.json" \
-              RAMP=5s DURATION=20s k6 run load/ingest-events.js || true
+              DURATION=20s k6 run load/ingest-events.js || true
 
             kill "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
