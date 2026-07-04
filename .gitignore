@@ -1,6 +1,6 @@
 HELP.md
 notes/
-load/last-summary.json
+perf/**/last-summary.json
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar
