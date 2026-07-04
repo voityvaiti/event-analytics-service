@@ -25,6 +25,11 @@
   (`EventIngestionIntegrationTest`, not `EventIngestionIT`). Only
   widely-recognized abbreviations are allowed (`DB`, `URL`, `HTTP`, `JSON`,
   `ID`).
+- **Prefer self-documenting code over comments** — good code needs few
+  comments; say it in names and structure first. Avoid inline comments that
+  restate what the code does. Reserve comments for the *why* that the code
+  cannot carry: a non-obvious rationale, a constraint, or a deliberate
+  trade-off.
 
 ## Layering
 
