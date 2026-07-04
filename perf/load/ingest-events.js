@@ -1,23 +1,22 @@
-import http from 'k6/http';
 import exec from 'k6/execution';
 import { check } from 'k6';
+import { postEvent, eventType, metric } from '../lib/k6-ingest.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const VUS = Number(__ENV.VUS || 10);
 const DURATION = __ENV.DURATION || '60s';
 
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
-const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'load/last-summary.json';
+const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/load/last-summary.json';
 
-// Identifies the workload shape this file measures, stamped into every summary
-// so a write number is never compared against a future read number as one
-// series. A new workload (stats reads, and so on) gets its own k6 file with its
-// own SCENARIO — it does not reuse this one.
+// A new workload (stats reads, and so on) gets its own file with its own
+// SCENARIO — stamped into every summary so a write number is never compared
+// against a future read number as one series.
 const SCENARIO = 'ingest-single';
 
-// Constant concurrency for the whole measured window — no ramp stages. The
-// callers run a throwaway warm-up pass first, so ramp samples here would only
-// dilute the summary; every metric below is steady-state.
+// Constant concurrency for the whole window — no ramp stages. The caller runs a
+// throwaway warm-up first, so ramp samples here would only dilute the summary;
+// every metric below is steady-state.
 export const options = {
   scenarios: {
     ingest: {
@@ -32,40 +31,11 @@ export const options = {
   summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)', 'max'],
 };
 
-const EVENT_TYPES = ['page_view', 'click', 'purchase', 'signup'];
-
 export default function () {
-  const eventId = `evt_${RUN_ID}_${__VU}_${exec.scenario.iterationInTest}`;
-  const eventType = EVENT_TYPES[exec.scenario.iterationInTest % EVENT_TYPES.length];
-
-  const body = JSON.stringify({
-    source: 'load-test',
-    event_id: eventId,
-    user_id: `user_${__VU}`,
-    event_type: eventType,
-    timestamp: new Date().toISOString(),
-    properties: {
-      page_url: '/products/laptop-x1',
-      referrer: '/search?q=laptop',
-      device: 'mobile',
-      country: 'UA',
-    },
-  });
-
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      // Once JWT (HS256) auth lands, add: Authorization: `Bearer ${__ENV.TOKEN}`
-    },
-  };
-
-  const response = http.post(`${BASE_URL}/api/v1/events`, body, params);
+  const iteration = exec.scenario.iterationInTest;
+  const eventId = `evt_${RUN_ID}_${__VU}_${iteration}`;
+  const response = postEvent(BASE_URL, eventId, eventType(iteration));
   check(response, { 'status is 202': (r) => r.status === 202 });
-}
-
-function metric(data, name, value) {
-  const m = data.metrics[name];
-  return m && m.values[value] != null ? m.values[value] : NaN;
 }
 
 export function handleSummary(data) {
