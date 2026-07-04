@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# PERF: run the whole perf suite back-to-back against the running app and print
+# one combined digest at the end. Bootstraps dependencies once, then runs every
+# test; a failing test does not abort the others (run-all-then-report), and the
+# run exits non-zero if any test failed. Each test still appends to its own
+# journal — eyeball and commit those yourself.
+#
+# Add a test by sourcing its measure.sh below and adding one entry to TESTS.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/load/measure.sh
+source perf/spike/measure.sh
+
+TESTS=(
+  "load:perf_load"
+  "spike:perf_spike"
+)
+
+perf_bootstrap
+
+failures=0
+for entry in "${TESTS[@]}"; do
+  name=${entry%%:*}
+  fn=${entry#*:}
+  echo
+  echo ">>> perf: $name"
+  if ! "$fn"; then
+    echo "!!! perf: $name failed" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+perf_report
+
+echo "Eyeball the appended journal lines above, then commit them yourself."
+
+if [ "$failures" -gt 0 ]; then
+  echo "$failures perf test(s) failed." >&2
+  exit 1
+fi
