@@ -25,9 +25,9 @@ one-line compose edit and nothing here changes.
 The IDE run configs (`.run/`) wrap the actions below:
 
 ```bash
-scripts/actions/perf/load    # PERF - Load:  one steady-state throughput row
-scripts/actions/perf/spike   # PERF - Spike: one surge-and-recover row
-scripts/actions/perf/all     # PERF:         run every test, one combined digest
+scripts/actions/perf/load    # PERF - Load:   one steady-state throughput row
+scripts/actions/perf/spike   # PERF - Spike:  one surge-and-recover row
+scripts/actions/perf/all     # PERF - All:    run every test, one combined digest
 ```
 
 Each test appends to its own journal and prints the appended line. Eyeball it,
