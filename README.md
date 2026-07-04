@@ -23,8 +23,12 @@ event counts over time.
 ## Status
 
 Early development. **Stage 0 (project setup) is complete** — formatting, static
-analysis, coverage, CI, and dependency automation are wired. **Stage 1 (MVP)**
-is next: event ingestion, the analytics endpoints, and the database schema.
+analysis, coverage, CI, and dependency automation are wired. **Stage 1 (MVP) is
+in progress:** event ingestion is implemented — the synchronous write path
+(`POST /api/v1/events` → PostgreSQL, idempotent on a client-supplied `event_id`)
+on a Flyway-managed schema, with its write throughput tracked over time (see
+[Performance](#performance)). Still to come: the analytics/read endpoints
+(`/api/v1/stats/*`) and their aggregation.
 
 ## Build & checks
 
@@ -34,14 +38,34 @@ is next: event ingestion, the analytics endpoints, and the database schema.
 ```
 
 IntelliJ users get the same actions as run configs under `.run/` (_CHECK -
-Full_, _LINT - …_, _TEST - Coverage Report_); the underlying shell wrappers
-live in `scripts/actions/`.
+Full_, _LINT - …_, _TEST - Coverage Report_, _PERF - …_); the underlying shell
+wrappers live in `scripts/actions/`.
 
 Optionally install the git pre-commit hook once after cloning:
 
 ```bash
 ./scripts/install-hooks.sh
 ```
+
+## Performance
+
+The write path is load-tested and its throughput tracked over time, matching the
+high-frequency-ingest focus above. The suite lives in [`perf/`](./perf):
+
+- **Load** — steady-state ingest write throughput (`POST /api/v1/events`).
+- **Spike** — behaviour under a sudden surge far above capacity, and whether the
+  service recovers afterwards.
+
+Each test appends to its own journal — a self-stamped, rig-aware series — so a
+regression shows up as a number, not a surprise. The journal is meant to be kept
+on **one machine under roughly the same conditions** each run: there is some
+measurement noise, but it is acceptable at this stage of the project, so the
+journal is read for **significant shifts, not small deltas**. Run the tests with
+the actions (`scripts/actions/perf/{load,spike,all}`) or the _PERF - Load / Spike
+/ All_ run configs; k6 runs from a pinned container, so nothing beyond Docker and
+a running app is needed. A per-PR throughput comparison also runs in CI, opt-in
+via the `perf` label. See [`perf/README.md`](./perf/README.md) for the details
+and how to add a test.
 
 ## Quality tooling
 
