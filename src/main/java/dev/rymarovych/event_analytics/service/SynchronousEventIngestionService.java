@@ -2,6 +2,7 @@ package dev.rymarovych.event_analytics.service;
 
 import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.persistence.EventRepository;
+import java.time.Duration;
 import org.springframework.stereotype.Service;
 
 /**
@@ -14,6 +15,8 @@ import org.springframework.stereotype.Service;
 @Service
 class SynchronousEventIngestionService implements EventIngestionService {
 
+  private static final Duration ARTIFICIAL_INGEST_DELAY = Duration.ofMillis(5);
+
   private final EventRepository repository;
 
   SynchronousEventIngestionService(EventRepository repository) {
@@ -22,6 +25,20 @@ class SynchronousEventIngestionService implements EventIngestionService {
 
   @Override
   public void ingest(NewEvent event) {
+    pause();
     repository.save(event);
+  }
+
+  /**
+   * Deliberate per-request latency injected on the {@code test/ci-smoke} branch to exercise the
+   * performance-comparison workflow: it should surface this branch as slower than {@code main}.
+   * Remove before merging.
+   */
+  private void pause() {
+    try {
+      Thread.sleep(ARTIFICIAL_INGEST_DELAY);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 }
