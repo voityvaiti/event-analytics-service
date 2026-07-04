@@ -1,10 +1,11 @@
 name: Performance comparison
 
-# Opt-in, not every PR: doubles build + load time, so it runs only when asked.
-# Add the `perf` label to a PR, or trigger manually from a branch.
+# Opt-in per PR, not every PR: doubles build + load time, so it runs only for
+# PRs that carry the `perf` label. Add the label to opt a PR in — the run then
+# repeats on every push to that PR — or trigger manually from a branch.
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize, reopened]
   workflow_dispatch:
     inputs:
       rounds:
@@ -17,10 +18,12 @@ concurrency:
 
 jobs:
   compare:
-    # Manual run, or the `perf` label was just added.
+    # Manual run, or the PR carries the `perf` label. Because the check is
+    # "label present" (not "label just added"), it also fires on every push to
+    # an already-labelled PR (the synchronize event), which is what we want.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.action == 'labeled' && github.event.label.name == 'perf')
+      contains(github.event.pull_request.labels.*.name, 'perf')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -156,13 +159,13 @@ jobs:
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
 
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number,
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
             });
-            const existing = comments.find((c) => c.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            for (const comment of comments) {
+              if (comment.body.includes(marker)) {
+                await github.rest.issues.deleteComment({ owner, repo, comment_id: comment.id });
+              }
             }
+
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
