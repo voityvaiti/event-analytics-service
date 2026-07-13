@@ -3,6 +3,7 @@ package dev.rymarovych.event_analytics.persistence;
 import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.EventCountReport;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -46,27 +47,34 @@ class JdbcEventStatsRepository implements EventStatsRepository {
   }
 
   @Override
-  public List<EventCount> countEvents(
+  public EventCountReport countEvents(
       Instant from, Instant to, EventCountGrouping grouping, ZoneId zone) {
-    var fromValue = OffsetDateTime.ofInstant(from, ZoneOffset.UTC);
-    var toValue = OffsetDateTime.ofInstant(to, ZoneOffset.UTC);
+    var buckets =
+        switch (grouping) {
+          case TYPE -> countByType(from, to);
+          case HOUR, DAY -> countByTimeBucket(from, to, grouping, zone);
+        };
+    return new EventCountReport(zone, buckets);
+  }
 
-    if (grouping == EventCountGrouping.TYPE) {
-      return jdbcClient
-          .sql(COUNT_BY_TYPE)
-          .param("from", fromValue)
-          .param("to", toValue)
-          .query(
-              (rs, rowNum) ->
-                  new EventCount(
-                      new EventCountBucket.OfType(rs.getString("bucket")), rs.getLong("count")))
-          .list();
-    }
+  private List<EventCount> countByType(Instant from, Instant to) {
+    return jdbcClient
+        .sql(COUNT_BY_TYPE)
+        .param("from", getUtc(from))
+        .param("to", getUtc(to))
+        .query(
+            (rs, rowNum) ->
+                new EventCount(
+                    new EventCountBucket.OfType(rs.getString("bucket")), rs.getLong("count")))
+        .list();
+  }
 
+  private List<EventCount> countByTimeBucket(
+      Instant from, Instant to, EventCountGrouping grouping, ZoneId zone) {
     return jdbcClient
         .sql(COUNT_BY_TIME_BUCKET)
-        .param("from", fromValue)
-        .param("to", toValue)
+        .param("from", getUtc(from))
+        .param("to", getUtc(to))
         .param("unit", truncationUnit(grouping))
         .param("zone", zone.getId())
         .query(
@@ -84,5 +92,9 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       case DAY -> "day";
       case TYPE -> throw new IllegalArgumentException("TYPE is not a time-bucket grouping");
     };
+  }
+
+  private static OffsetDateTime getUtc(Instant instant) {
+    return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
   }
 }
