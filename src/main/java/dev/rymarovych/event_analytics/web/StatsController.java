@@ -3,6 +3,8 @@ package dev.rymarovych.event_analytics.web;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.service.AnalyticsService;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.time.Instant;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,5 +40,14 @@ public class StatsController {
       @RequestParam(defaultValue = "day") TimeGrouping groupBy) {
     var report = analyticsService.countActiveUsers(from, to, groupBy);
     return statsMapper.toActiveUsersResponse(groupBy, from, to, report);
+  }
+
+  @GetMapping("/top-pages")
+  public TopPagesResponse topPages(
+      @RequestParam Instant from,
+      @RequestParam Instant to,
+      @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit) {
+    var report = analyticsService.topPages(from, to, limit);
+    return statsMapper.toTopPagesResponse(from, to, limit, report);
   }
 }
