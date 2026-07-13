@@ -6,7 +6,9 @@ import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.PageCount;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -53,6 +55,17 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       ORDER BY bucket_start
       """;
 
+  private static final String TOP_PAGES =
+      """
+      SELECT properties->>'page_url' AS page_url, COUNT(*) AS count
+      FROM events
+      WHERE occurred_at >= :from AND occurred_at < :to
+        AND properties->>'page_url' IS NOT NULL
+      GROUP BY page_url
+      ORDER BY count DESC, page_url
+      LIMIT :probe
+      """;
+
   private final JdbcClient jdbcClient;
 
   JdbcEventStatsRepository(JdbcClient jdbcClient) {
@@ -88,6 +101,21 @@ class JdbcEventStatsRepository implements EventStatsRepository {
                         rs.getLong("active_users")))
             .list();
     return new ActiveUsersReport(zone, buckets);
+  }
+
+  /** Probes one row beyond the requested limit to learn whether the ranking was truncated. */
+  @Override
+  public TopPagesReport topPages(Instant from, Instant to, int limit) {
+    var pages =
+        jdbcClient
+            .sql(TOP_PAGES)
+            .param("from", getUtc(from))
+            .param("to", getUtc(to))
+            .param("probe", limit + 1)
+            .query((rs, rowNum) -> new PageCount(rs.getString("page_url"), rs.getLong("count")))
+            .list();
+    var hasMore = pages.size() > limit;
+    return new TopPagesReport(hasMore ? List.copyOf(pages.subList(0, limit)) : pages, hasMore);
   }
 
   private List<EventCount> countByType(Instant from, Instant to) {
