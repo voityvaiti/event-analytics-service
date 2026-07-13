@@ -1,7 +1,9 @@
 package dev.rymarovych.event_analytics.service;
 
+import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.persistence.EventStatsRepository;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -32,5 +34,10 @@ class OnDemandAnalyticsService implements AnalyticsService {
   @Override
   public EventCountReport countEvents(Instant from, Instant to, EventCountGrouping grouping) {
     return statsRepository.countEvents(from, to, grouping, DEFAULT_BUCKETING_ZONE);
+  }
+
+  @Override
+  public ActiveUsersReport countActiveUsers(Instant from, Instant to, TimeGrouping grouping) {
+    return statsRepository.countActiveUsers(from, to, grouping, DEFAULT_BUCKETING_ZONE);
   }
 }
