@@ -6,7 +6,9 @@ import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.PageCount;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -61,5 +63,14 @@ interface StatsMapper {
         to,
         report.zone().getId(),
         toActiveUsersBuckets(report.buckets()));
+  }
+
+  TopPagesResponse.Page toPage(PageCount page);
+
+  List<TopPagesResponse.Page> toPages(List<PageCount> pages);
+
+  default TopPagesResponse toTopPagesResponse(
+      Instant from, Instant to, int limit, TopPagesReport report) {
+    return new TopPagesResponse(from, to, limit, report.hasMore(), toPages(report.pages()));
   }
 }
