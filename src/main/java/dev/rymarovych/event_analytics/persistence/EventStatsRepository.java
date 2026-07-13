@@ -1,7 +1,9 @@
 package dev.rymarovych.event_analytics.persistence;
 
+import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import java.time.Instant;
 import java.time.ZoneId;
 
@@ -14,4 +16,11 @@ public interface EventStatsRepository {
    * not consulted for non-time groupings. Buckets with no events are absent from the result.
    */
   EventCountReport countEvents(Instant from, Instant to, EventCountGrouping grouping, ZoneId zone);
+
+  /**
+   * Counts distinct active users per time bucket over the half-open interval {@code [from, to)}.
+   * Buckets are truncated at {@code zone}'s calendar boundaries; buckets with no events are absent
+   * from the result.
+   */
+  ActiveUsersReport countActiveUsers(Instant from, Instant to, TimeGrouping grouping, ZoneId zone);
 }
