@@ -4,6 +4,7 @@ import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import java.time.Instant;
 import java.time.ZoneId;
 
@@ -23,4 +24,11 @@ public interface EventStatsRepository {
    * from the result.
    */
   ActiveUsersReport countActiveUsers(Instant from, Instant to, TimeGrouping grouping, ZoneId zone);
+
+  /**
+   * Ranks pages by how many events in the half-open interval {@code [from, to)} reference them via
+   * a {@code page_url} property, most-referenced first, ties broken by URL. Returns at most {@code
+   * limit} pages and whether more ranked pages existed beyond them.
+   */
+  TopPagesReport topPages(Instant from, Instant to, int limit);
 }
