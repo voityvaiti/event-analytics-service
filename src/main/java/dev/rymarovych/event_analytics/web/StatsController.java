@@ -1,6 +1,7 @@
 package dev.rymarovych.event_analytics.web;
 
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.service.AnalyticsService;
 import java.time.Instant;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,5 +29,14 @@ public class StatsController {
       @RequestParam(defaultValue = "type") EventCountGrouping groupBy) {
     var report = analyticsService.countEvents(from, to, groupBy);
     return statsMapper.toEventCountsResponse(groupBy, from, to, report);
+  }
+
+  @GetMapping("/active-users")
+  public ActiveUsersResponse activeUsers(
+      @RequestParam Instant from,
+      @RequestParam Instant to,
+      @RequestParam(defaultValue = "day") TimeGrouping groupBy) {
+    var report = analyticsService.countActiveUsers(from, to, groupBy);
+    return statsMapper.toActiveUsersResponse(groupBy, from, to, report);
   }
 }
