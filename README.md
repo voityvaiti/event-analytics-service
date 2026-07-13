@@ -27,10 +27,12 @@ analysis, coverage, CI, and dependency automation are wired. **Stage 1 (MVP) is
 in progress:** event ingestion is implemented — the synchronous write path
 (`POST /api/v1/events` → PostgreSQL, idempotent on a client-supplied `event_id`)
 on a Flyway-managed schema, with its write throughput tracked over time (see
-[Performance](#performance)). The read side has started: `GET
-/api/v1/stats/event-counts` returns event counts over a time window, grouped by
-type, hour, or day. Still to come: the remaining analytics endpoints
-(`active-users`, `top-pages`) and JWT authentication.
+[Performance](#performance)). The MVP read side is in place: `GET
+/api/v1/stats/event-counts` (event counts over a time window, grouped by type,
+hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day
+bucket), and `GET /api/v1/stats/top-pages` (top-N pages by event count, with a
+truncation flag). Still to come: batch ingestion (`POST /api/v1/events/batch`)
+and JWT authentication.
 
 ## Build & checks
 
