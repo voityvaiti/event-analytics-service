@@ -50,7 +50,6 @@ class EventCountStatsIntegrationTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.group_by").value("type"))
         .andExpect(jsonPath("$.timezone").value("UTC"))
-        .andExpect(jsonPath("$.total_events").value(4))
         .andExpect(jsonPath("$.buckets.length()").value(2))
         .andExpect(jsonPath("$.buckets[0].bucket").value("page_view"))
         .andExpect(jsonPath("$.buckets[0].count").value(3))
@@ -69,7 +68,6 @@ class EventCountStatsIntegrationTest {
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("groupBy", "hour"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.total_events").value(4))
         .andExpect(jsonPath("$.buckets.length()").value(2))
         .andExpect(jsonPath("$.buckets[0].bucket").value("2026-05-24T10:00:00Z"))
         .andExpect(jsonPath("$.buckets[0].count").value(3))
@@ -117,7 +115,6 @@ class EventCountStatsIntegrationTest {
                 .param("to", "2026-05-24T10:50:00Z")
                 .param("groupBy", "type"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.total_events").value(2))
         .andExpect(jsonPath("$.buckets.length()").value(1))
         .andExpect(jsonPath("$.buckets[0].bucket").value("page_view"))
         .andExpect(jsonPath("$.buckets[0].count").value(2));

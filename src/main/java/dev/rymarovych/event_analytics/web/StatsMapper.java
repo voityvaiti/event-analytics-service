@@ -35,14 +35,11 @@ interface StatsMapper {
 
   default EventCountsResponse toEventCountsResponse(
       EventCountGrouping grouping, Instant from, Instant to, EventCountReport report) {
-    var buckets = report.buckets();
-    var totalEvents = buckets.stream().mapToLong(EventCount::count).sum();
     return new EventCountsResponse(
         grouping.name().toLowerCase(Locale.ROOT),
         from,
         to,
         report.zone().getId(),
-        totalEvents,
-        toBuckets(buckets));
+        toBuckets(report.buckets()));
   }
 }
