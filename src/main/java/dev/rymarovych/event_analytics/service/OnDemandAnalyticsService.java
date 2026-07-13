@@ -15,8 +15,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>Owns the bucketing time-zone policy. Every aggregation currently runs in {@link
  * #DEFAULT_BUCKETING_ZONE} (UTC); once tenants exist this default is replaced by the tenant's
- * configured zone, resolved here via the tenant service. The resolved zone is returned with the
- * result so the caller can report which zone the buckets used.
+ * configured zone, resolved here via the tenant service. The resolved zone travels with the result
+ * so the caller can report which zone the buckets used.
  */
 @Service
 class OnDemandAnalyticsService implements AnalyticsService {
@@ -31,8 +31,6 @@ class OnDemandAnalyticsService implements AnalyticsService {
 
   @Override
   public EventCountReport countEvents(Instant from, Instant to, EventCountGrouping grouping) {
-    return new EventCountReport(
-        DEFAULT_BUCKETING_ZONE,
-        statsRepository.countEvents(from, to, grouping, DEFAULT_BUCKETING_ZONE));
+    return statsRepository.countEvents(from, to, grouping, DEFAULT_BUCKETING_ZONE);
   }
 }
