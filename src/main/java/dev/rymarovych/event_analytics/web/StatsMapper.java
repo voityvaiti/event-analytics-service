@@ -1,9 +1,12 @@
 package dev.rymarovych.event_analytics.web;
 
+import dev.rymarovych.event_analytics.domain.ActiveUsersBucket;
+import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -41,5 +44,22 @@ interface StatsMapper {
         to,
         report.zone().getId(),
         toBuckets(report.buckets()));
+  }
+
+  default ActiveUsersResponse.Bucket toActiveUsersBucket(ActiveUsersBucket bucket) {
+    return new ActiveUsersResponse.Bucket(
+        DateTimeFormatter.ISO_INSTANT.format(bucket.start()), bucket.activeUsers());
+  }
+
+  List<ActiveUsersResponse.Bucket> toActiveUsersBuckets(List<ActiveUsersBucket> buckets);
+
+  default ActiveUsersResponse toActiveUsersResponse(
+      TimeGrouping grouping, Instant from, Instant to, ActiveUsersReport report) {
+    return new ActiveUsersResponse(
+        grouping.name().toLowerCase(Locale.ROOT),
+        from,
+        to,
+        report.zone().getId(),
+        toActiveUsersBuckets(report.buckets()));
   }
 }
