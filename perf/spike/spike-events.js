@@ -1,6 +1,6 @@
 import exec from 'k6/execution';
 import { check } from 'k6';
-import { postEvent, eventType, metric } from '../lib/k6-ingest.js';
+import { postEvent, metric } from '../lib/k6-ingest.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
@@ -72,7 +72,7 @@ export const options = {
 export default function () {
   const iteration = exec.scenario.iterationInTest;
   const eventId = `evt_${RUN_ID}_${exec.scenario.name}_${__VU}_${iteration}`;
-  const response = postEvent(BASE_URL, eventId, eventType(iteration));
+  const response = postEvent(BASE_URL, eventId, iteration);
   check(response, { 'status is 202': (r) => r.status === 202 });
 }
 
