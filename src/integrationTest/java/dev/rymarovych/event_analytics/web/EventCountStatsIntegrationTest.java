@@ -138,6 +138,16 @@ class EventCountStatsIntegrationTest {
         .andExpect(status().isBadRequest());
   }
 
+  @Test
+  void rejectsInvertedWindow() throws Exception {
+    mockMvc
+        .perform(
+            get(EVENT_COUNTS)
+                .param("from", "2026-05-25T00:00:00Z")
+                .param("to", "2026-05-24T00:00:00Z"))
+        .andExpect(status().isBadRequest());
+  }
+
   private void seedFourEventsOnThe24th() {
     insert("evt_1", "page_view", Instant.parse("2026-05-24T10:15:00Z"));
     insert("evt_2", "page_view", Instant.parse("2026-05-24T10:40:00Z"));

@@ -107,6 +107,16 @@ class TopPagesStatsIntegrationTest {
         .andExpect(status().isBadRequest());
   }
 
+  @Test
+  void rejectsInvertedWindow() throws Exception {
+    mockMvc
+        .perform(
+            get(TOP_PAGES)
+                .param("from", "2026-05-25T00:00:00Z")
+                .param("to", "2026-05-24T00:00:00Z"))
+        .andExpect(status().isBadRequest());
+  }
+
   /**
    * Four ranked pages inside the window, plus two events that must not surface: one without a
    * {@code page_url} property and one for {@code /home} the day before the window.
