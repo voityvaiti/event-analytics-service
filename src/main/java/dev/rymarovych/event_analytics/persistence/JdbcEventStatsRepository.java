@@ -115,7 +115,8 @@ class JdbcEventStatsRepository implements EventStatsRepository {
             .query((rs, rowNum) -> new PageCount(rs.getString("page_url"), rs.getLong("count")))
             .list();
     var hasMore = pages.size() > limit;
-    return new TopPagesReport(hasMore ? List.copyOf(pages.subList(0, limit)) : pages, hasMore);
+    var ranked = hasMore ? pages.subList(0, limit) : pages;
+    return new TopPagesReport(List.copyOf(ranked), hasMore);
   }
 
   private List<EventCount> countByType(Instant from, Instant to) {
