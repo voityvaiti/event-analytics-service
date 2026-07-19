@@ -106,6 +106,16 @@ class ActiveUsersStatsIntegrationTest {
         .andExpect(status().isBadRequest());
   }
 
+  @Test
+  void rejectsInvertedWindow() throws Exception {
+    mockMvc
+        .perform(
+            get(ACTIVE_USERS)
+                .param("from", "2026-05-26T00:00:00Z")
+                .param("to", "2026-05-24T00:00:00Z"))
+        .andExpect(status().isBadRequest());
+  }
+
   private void seedThreeUsersOverTwoDays() {
     insert("evt_1", "user_1", Instant.parse("2026-05-24T10:15:00Z"));
     insert("evt_2", "user_1", Instant.parse("2026-05-24T11:05:00Z"));
