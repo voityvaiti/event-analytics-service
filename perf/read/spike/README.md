@@ -1,0 +1,43 @@
+# Read spike — surviving a burst of dashboard traffic
+
+Steps the request rate far above what the connection pool can serve, holds it,
+then drops back and checks the read path serves cleanly again. The k6 scenario
+lives in [`../stats-spike.js`](../stats-spike.js).
+
+## Why one cell rather than one per endpoint
+
+A spike measures what happens when requests outrun the pool — queueing,
+shedding, and whether the queue drains once the surge passes. That is a property
+of the pool and the queue, not of a query shape, and running it per endpoint
+would multiply the slowest test in the suite for the same answer. `ENDPOINT`
+points it at whichever query is worth surging; the default is `active-users`,
+the heaviest read, because that is where the ceiling is lowest.
+
+## Why the rates are two orders of magnitude below the write spike
+
+The write spike steps to 8000 req/s because an insert costs ~2ms. A read costs
+tens to hundreds of milliseconds, so the read ceiling is roughly pool size
+divided by query latency — on the reference rig, tens of requests per second,
+not thousands. `SPIKE_RATE` has to clear that ceiling to be a surge at all, and
+400 against a baseline of 20 does.
+
+## Why the window size is pinned here
+
+The latency cells deliberately mix window sizes, because that is what real
+traffic looks like. This one does not: mixing them would change how much work
+each request costs at the same time as the request rate, and a spike exists to
+change one of those. The position still moves, so the run is not answering from
+one cached stretch.
+
+## Reading a row
+
+`journal.jsonl` is this test's own series, written only by the
+`PERF - Read Spike` task, never by hand, and never merged with the latency
+journals — a different question, measured differently. The gate is recovery: the
+surge itself is allowed to shed, and `spike_dropped` records how much k6 could
+not even hand over. What must hold is `recovery_failed_rate` near zero with
+`recovery_p95_ms` back near `baseline_p95_ms`.
+
+`index_scans` and `seq_scans` are carried here too, for the same reason as in
+the latency cells: without the index a surge would be answered by sequential
+scans, and the row should say so rather than leave a collapse unexplained.
