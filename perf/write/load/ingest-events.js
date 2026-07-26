@@ -1,14 +1,15 @@
 import exec from 'k6/execution';
 import { check } from 'k6';
-import { postEvent, metric } from '../lib/k6-ingest.js';
-import { LOAD_SEQ_BASE } from '../lib/seq-space.js';
+import { postEvent } from '../../lib/k6-ingest.js';
+import { metric } from '../../lib/k6-summary.js';
+import { LOAD_SEQ_BASE } from '../../lib/seq-space.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const VUS = Number(__ENV.VUS || 10);
 const DURATION = __ENV.DURATION || '60s';
 
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
-const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/load/last-summary.json';
+const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/write/load/last-summary.json';
 
 // A new workload (stats reads, and so on) gets its own file with its own
 // SCENARIO — stamped into every summary so a write number is never compared

@@ -2,26 +2,28 @@
 
 # Load test: steady-state ingest write throughput. Defines perf_load, which the
 # harness (perf/lib/harness.sh) must already be sourced for. Appends one row to
-# perf/load/journal.jsonl — the absolute throughput series, comparable only
+# perf/write/load/journal.jsonl — the absolute throughput series, comparable only
 # within a fixed rig, so every row self-stamps CPU/cores/pool/schema.
 #
 # Tunables via env: VUS (default 10, keep near the pool), DURATION (default 60s).
 
 perf_load() {
-  local script=perf/load/ingest-events.js
-  local summary=perf/load/last-summary.json
-  local journal=perf/load/journal.jsonl
+  local script=perf/write/load/ingest-events.js
+  local summary=perf/write/load/last-summary.json
+  local journal=perf/write/load/journal.jsonl
 
-  export VUS=${VUS:-10}
-  export DURATION=${DURATION:-60s}
-  export SUMMARY_OUT=$summary
+  # Resolved into locals and handed to k6 explicitly rather than exported: an
+  # exported knob outlives the cell that set it, so the read cells that follow
+  # in a full-suite run would silently inherit this test's VUs and window
+  # instead of their own defaults.
+  local vus=${VUS:-10} duration=${DURATION:-60s}
 
   # Warm up (JIT + connection pool) and throw the numbers away, so the measured
   # run reflects steady state, not cold start. This pass also stands in for a
   # ramp stage — the measured run then starts at full VUs against a warmed app,
   # so its summary is not diluted by low-concurrency ramp samples. Its rows are
   # then dropped, putting the table back to the seeded corpus.
-  k6_run "$script" --env VUS --env DURATION -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
+  k6_run "$script" -e VUS="$vus" -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -30,7 +32,7 @@ perf_load() {
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
   rm -f "$summary"
-  k6_run "$script" --env VUS --env DURATION
+  k6_run "$script" -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary"
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Measured run produced no summary at $summary — did the app stay up?" >&2

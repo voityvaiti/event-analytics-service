@@ -13,7 +13,7 @@ endpoints yet, so nothing else is measured. Read scenarios get added when the
 
 - **Absolute journal** — [`journal.jsonl`](./journal.jsonl), one row per
   measurement, **written only by the `PERF - Load` task**
-  (`scripts/actions/perf/load`, never by hand). Answers
+  (`scripts/actions/perf/write/load`, never by hand). Answers
   "where are we, and are we drifting over time?" Only comparable within a fixed
   measurement rig, so every row self-stamps its CPU and core count — a number
   from a different machine is a different series, not a regression.
@@ -85,16 +85,16 @@ script — so this stays correct when new dependencies are added.
 
 # Measure and append one row to journal.jsonl. Seeds the corpus first, stamps
 # with CPU/commit. Eyeball the appended line, then commit it yourself.
-scripts/actions/perf/load
+scripts/actions/perf/write/load
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:
-VUS=20 DURATION=120s scripts/actions/perf/load
+VUS=20 DURATION=120s scripts/actions/perf/write/load
 
 # Corpus knobs. An intact corpus is reused between runs; SEED_FORCE=1 rebuilds
 # it, which is required after changing the event generator.
-SEED_ROWS=5000000 scripts/actions/perf/load
-SEED_FORCE=1 scripts/actions/perf/load
+SEED_ROWS=5000000 scripts/actions/perf/write/load
+SEED_FORCE=1 scripts/actions/perf/write/load
 ```
 
-The task also writes the raw k6 summary to `perf/load/last-summary.json`
+The task also writes the raw k6 summary to `perf/write/load/last-summary.json`
 (gitignored).
