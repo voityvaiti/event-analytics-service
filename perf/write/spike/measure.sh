@@ -3,7 +3,7 @@
 # Spike test: how the ingest path behaves when request rate suddenly steps far
 # above steady-state capacity, and whether it recovers afterwards. Defines
 # perf_spike, which the harness (perf/lib/harness.sh) must already be sourced
-# for. Appends one row to perf/spike/journal.jsonl — its own series, never
+# for. Appends one row to perf/write/spike/journal.jsonl — its own series, never
 # merged with the load journal (different scenario, different meaning).
 #
 # The measured run is tolerated failing (|| true): a spike is allowed to shed,
@@ -14,16 +14,14 @@
 # throughput), BASELINE_SECONDS, SPIKE_SECONDS, RECOVERY_SECONDS, MAX_VUS.
 
 perf_spike() {
-  local script=perf/spike/spike-events.js
-  local summary=perf/spike/last-summary.json
-  local journal=perf/spike/journal.jsonl
-
-  export SUMMARY_OUT=$summary
+  local script=perf/write/spike/spike-events.js
+  local summary=perf/write/spike/last-summary.json
+  local journal=perf/write/spike/journal.jsonl
 
   # Warm JIT and pool with the steady load scenario before the surge, so the
   # spike hits a warmed app and measures the surge, not cold start. Its rows are
   # then dropped, putting the table back to the seeded corpus.
-  k6_run perf/load/ingest-events.js -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
+  k6_run perf/write/load/ingest-events.js -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -32,7 +30,8 @@ perf_spike() {
   rm -f "$summary"
   k6_run "$script" \
     --env BASELINE_RATE --env SPIKE_RATE \
-    --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS || true
+    --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
+    -e SUMMARY_OUT="$summary" || true
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Spike run produced no summary at $summary — did the app stay up?" >&2

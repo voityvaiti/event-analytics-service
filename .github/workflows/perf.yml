@@ -121,10 +121,10 @@ jobs:
             done
 
             RUN_ID="warmup_${side}_${round}" SUMMARY_OUT=/dev/null \
-              DURATION=10s k6 run perf/load/ingest-events.js || true
+              DURATION=10s k6 run perf/write/load/ingest-events.js || true
             exec_sql 'TRUNCATE events;'
             RUN_ID="${side}_${round}" SUMMARY_OUT="results/${side}/${round}.json" \
-              DURATION=20s k6 run perf/load/ingest-events.js || true
+              DURATION=20s k6 run perf/write/load/ingest-events.js || true
 
             kill "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
@@ -144,7 +144,7 @@ jobs:
       # an invalid run turns this step (and the workflow) red rather than posting
       # a misleading "better". The comment still posts — see the step below.
       - name: Render comparison
-        run: node perf/load/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
+        run: node perf/write/load/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
 
       # Runs even when "Render comparison" failed (invalid run) so the ❌ verdict
       # still reaches the PR; skipped only on cancellation.

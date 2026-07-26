@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # PERF - Load: measure steady-state ingest write throughput and append one row
-# to perf/load/journal.jsonl. The app must already be running on the host;
+# to perf/write/load/journal.jsonl. The app must already be running on the host;
 # backing services are brought up by the harness. Tunables: VUS, DURATION.
 
 set -euo pipefail
-cd "$(dirname "$0")/../../.." || exit 1
+cd "$(dirname "$0")/../../../.." || exit 1
 
 source perf/lib/harness.sh
-source perf/load/measure.sh
+source perf/write/load/measure.sh
 
 perf_bootstrap
 
