@@ -21,15 +21,19 @@ perf_spike() {
   export SUMMARY_OUT=$summary
 
   # Warm JIT and pool with the steady load scenario before the surge, so the
-  # spike hits a warmed app and measures the surge, not cold start.
-  reset_db
+  # spike hits a warmed app and measures the surge, not cold start. Its rows are
+  # then dropped, putting the table back to the seeded corpus.
   k6_run perf/load/ingest-events.js -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
+  restore_seed_baseline || return 1
 
-  reset_db
+  local start_rows
+  start_rows=$(count_events) || return 1
+
   rm -f "$summary"
   k6_run "$script" \
     --env BASELINE_RATE --env SPIKE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS || true
+  restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Spike run produced no summary at $summary — did the app stay up?" >&2
     return 1
@@ -42,12 +46,13 @@ perf_spike() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "${INGEST_PATH:-sync}" "$schema_version" <<'PY'
+    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
 import json, sys
 
-summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path, schema_version = (
-    sys.argv[1:10]
-)
+(
+    summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path,
+    schema_version, start_rows,
+) = sys.argv[1:11]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -69,6 +74,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    "start_rows": int(start_rows),
     "baseline_rate": s["baseline_rate"],
     "spike_rate": s["spike_rate"],
     "max_vus": s["max_vus"],

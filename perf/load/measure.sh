@@ -19,15 +19,19 @@ perf_load() {
   # Warm up (JIT + connection pool) and throw the numbers away, so the measured
   # run reflects steady state, not cold start. This pass also stands in for a
   # ramp stage — the measured run then starts at full VUs against a warmed app,
-  # so its summary is not diluted by low-concurrency ramp samples.
-  reset_db
+  # so its summary is not diluted by low-concurrency ramp samples. Its rows are
+  # then dropped, putting the table back to the seeded corpus.
   k6_run "$script" --env VUS --env DURATION -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
+  restore_seed_baseline || return 1
 
-  # Measured run, from a known-empty table. Remove the previous summary first so
-  # a run that dies produces no file to journal, rather than a stale one.
-  reset_db
+  local start_rows
+  start_rows=$(count_events) || return 1
+
+  # Measured run, from the corpus. Remove the previous summary first so a run
+  # that dies produces no file to journal, rather than a stale one.
   rm -f "$summary"
   k6_run "$script" --env VUS --env DURATION
+  restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Measured run produced no summary at $summary — did the app stay up?" >&2
     return 1
@@ -42,12 +46,13 @@ perf_load() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "${INGEST_PATH:-sync}" "$schema_version" <<'PY'
+    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
 import json, sys
 
-summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path, schema_version = (
-    sys.argv[1:10]
-)
+(
+    summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path,
+    schema_version, start_rows,
+) = sys.argv[1:11]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -62,7 +67,7 @@ row = {
     "pool": int(pool),
     "vus": s["vus"],
     "duration": s["duration"],
-    "start_rows": 0,
+    "start_rows": int(start_rows),
     "requests": round(s["requests"]),
     "throughput_rps": round(s["throughput_rps"], 1),
     "p95_ms": round(s["latency_ms"]["p95"], 2),
