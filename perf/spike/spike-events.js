@@ -1,6 +1,7 @@
 import exec from 'k6/execution';
 import { check } from 'k6';
 import { postEvent, metric } from '../lib/k6-ingest.js';
+import { SPIKE_PHASE_SEQ_BASE } from '../lib/seq-space.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
@@ -72,7 +73,8 @@ export const options = {
 export default function () {
   const iteration = exec.scenario.iterationInTest;
   const eventId = `evt_${RUN_ID}_${exec.scenario.name}_${__VU}_${iteration}`;
-  const response = postEvent(BASE_URL, eventId, iteration);
+  const seq = (SPIKE_PHASE_SEQ_BASE[exec.scenario.name] || 0) + iteration;
+  const response = postEvent(BASE_URL, eventId, seq);
   check(response, { 'status is 202': (r) => r.status === 202 });
 }
 
