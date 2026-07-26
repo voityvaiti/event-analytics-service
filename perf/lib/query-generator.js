@@ -49,8 +49,18 @@ function pickCumulative(table, u) {
   return table[table.length - 1];
 }
 
-export function generateQuery(seq, corpus) {
-  const size = pickCumulative(WINDOW_SIZES, unit(seq, 21));
+// `forcedWindow` pins the span to one size while the position keeps moving.
+// The surge test wants that: mixing sizes there would vary how much work each
+// request costs at the same time as the request rate, and the point of a spike
+// is to change one of those.
+export function generateQuery(seq, corpus, forcedWindow) {
+  const size = forcedWindow
+    ? WINDOW_SIZES.find((entry) => entry.label === forcedWindow)
+    : pickCumulative(WINDOW_SIZES, unit(seq, 21));
+
+  if (!size) {
+    throw new Error(`unknown window size "${forcedWindow}"`);
+  }
   const span = Math.min(size.millis, corpus.endMillis - corpus.startMillis);
 
   // Inverse CDF of a 1/rank law over the corpus, in hours back from its end:
