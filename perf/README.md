@@ -8,6 +8,7 @@ number (or a failed recovery), not a surprise in production.
 |------|-----------|---------------------|
 | Load | [`load/`](./load) | Steady-state ingest write throughput — how many events/s can we persist, and is it drifting over time? |
 | Spike | [`spike/`](./spike) | Does the ingest path survive a sudden surge far above steady-state capacity, and recover afterwards? |
+| Read | [`read/`](./read) | How long do the `/api/v1/stats` queries take against a realistically populated table, and is the planner using the indexes we think it is? |
 
 Each test owns its own `journal.jsonl` (an absolute series, self-stamped with
 the rig and config so a number is only ever compared within a fixed rig) and its
@@ -26,9 +27,11 @@ one-line compose edit and nothing here changes.
 The IDE run configs (`.run/`) wrap the actions below:
 
 ```bash
-scripts/actions/perf/load    # PERF - Load:   one steady-state throughput row
-scripts/actions/perf/spike   # PERF - Spike:  one surge-and-recover row
-scripts/actions/perf/all     # PERF - All:    run every test, one combined digest
+scripts/actions/perf/load                    # PERF - Load:   one steady-state throughput row
+scripts/actions/perf/spike                   # PERF - Spike:  one surge-and-recover row
+scripts/actions/perf/read/all                # PERF - Read:   every read endpoint
+scripts/actions/perf/read/<endpoint>         # one read endpoint on its own
+scripts/actions/perf/all                     # PERF - All:    run every test, one combined digest
 ```
 
 Each test appends to its own journal and prints the appended line. Eyeball it,
@@ -58,9 +61,13 @@ perf/
     harness.sh          shared shell harness: bootstrap + seed/k6/db/actuator helpers
     k6-ingest.js        shared k6 request shape + summary reader
     event-generator.js  the event bodies every scenario and the seeder produce
+    query-generator.js  the questions the read scenarios ask
     seed-corpus.mjs     emits the fixed corpus as CSV for COPY
     seq-space.js        which sequence numbers each producer may draw from
-  load/  spike/  …      one directory per test: <scenario>.js, measure.sh, journal.jsonl, README.md
+    k6-stats.js         shared /api/v1/stats request shape
+    k6-summary.js       shared k6 summary reader
+  load/  spike/         write tests: <scenario>.js, measure.sh, journal.jsonl, README.md
+  read/                 read tests: one directory per endpoint, sharing one scenario
 ```
 
 - **`lib/harness.sh`** owns everything identical across tests — bringing up

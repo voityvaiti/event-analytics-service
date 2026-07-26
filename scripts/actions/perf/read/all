@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# PERF - Read All: run every read cell back-to-back against the seeded corpus
+# and print one combined digest at the end. Bootstraps dependencies and the
+# corpus once, then runs each endpoint; a failing cell does not abort the others
+# (run-all-then-report), and the run exits non-zero if any cell failed. Each
+# endpoint appends to its own journal — eyeball and commit those yourself.
+#
+# Add an endpoint by sourcing its measure.sh below and adding one TESTS entry.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/read/measure-read.sh
+source perf/read/event-counts/measure.sh
+source perf/read/active-users/measure.sh
+source perf/read/top-pages/measure.sh
+
+TESTS=(
+  "event-counts:perf_read_event_counts"
+  "active-users:perf_read_active_users"
+  "top-pages:perf_read_top_pages"
+)
+
+perf_bootstrap
+
+failures=0
+for entry in "${TESTS[@]}"; do
+  name=${entry%%:*}
+  fn=${entry#*:}
+  echo
+  echo ">>> perf read: $name"
+  if ! "$fn"; then
+    echo "!!! perf read: $name failed" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+perf_report
+
+echo "Eyeball the appended journal lines above, then commit them yourself."
+
+if [ "$failures" -gt 0 ]; then
+  echo "$failures read cell(s) failed." >&2
+  exit 1
+fi
