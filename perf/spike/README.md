@@ -57,8 +57,9 @@ client, which is a pass — not a bug. To actually drive `500`s you have to rais
 `PERF - Spike` task** (`scripts/actions/perf/spike`, never by hand). It is never
 merged with the load journal — a different `scenario`, measuring a different
 thing. Like the load journal, every row self-stamps the rig (CPU, cores) and the
-config that makes the numbers mean something (pool, schema, rates), because an
-absolute number is only comparable within a fixed rig. It answers "is the app's
+config that makes the numbers mean something (pool, schema, rates, and the
+`start_rows` the surge hit), because an absolute number is only comparable
+within a fixed rig. It answers "is the app's
 resilience to a surge drifting over time?" — e.g. a new index drops capacity, so
 the same surge now sheds more or recovers slower.
 

@@ -32,8 +32,12 @@ they drift. Both are recorded with every journal row.
 - **Starting row count.** Inserts hit the `event_id` primary-key B-tree. Each
   k6 run uses run-salted, unique `event_id`s (so every request is a *real*
   insert, not an `ON CONFLICT DO NOTHING` no-op), which means the table grows
-  every run and PK-insert cost rises with row count. The task `TRUNCATE`s before
-  measuring so every row starts from the same empty state.
+  every run and PK-insert cost rises with row count. Every test now starts from
+  the same seeded corpus instead of an empty table — the fixed point moved from
+  0 to `SEED_ROWS`, which is both comparable and closer to production. The run
+  tags its own rows and deletes exactly them afterwards, restoring the corpus;
+  `start_rows` records the size it actually measured against. Rows journalled
+  before seeding landed honestly say `start_rows: 0` and are the earlier series.
 - **Hikari connection pool size.** Blocking JDBC on virtual threads means each
   in-flight insert holds one pooled connection; the default max pool is **10**.
   DB-side write concurrency is capped there regardless of VU count — past ~pool
@@ -79,12 +83,17 @@ script — so this stays correct when new dependencies are added.
 # Start the app however you normally do (IDE run config, or ./gradlew bootRun).
 # The task brings backing services up itself.
 
-# Measure and append one row to journal.jsonl. TRUNCATEs first, stamps the row
+# Measure and append one row to journal.jsonl. Seeds the corpus first, stamps
 # with CPU/commit. Eyeball the appended line, then commit it yourself.
 scripts/actions/perf/load
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:
 VUS=20 DURATION=120s scripts/actions/perf/load
+
+# Corpus knobs. An intact corpus is reused between runs; SEED_FORCE=1 rebuilds
+# it, which is required after changing the event generator.
+SEED_ROWS=5000000 scripts/actions/perf/load
+SEED_FORCE=1 scripts/actions/perf/load
 ```
 
 The task also writes the raw k6 summary to `perf/load/last-summary.json`
