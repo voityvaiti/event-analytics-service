@@ -54,7 +54,7 @@ client, which is a pass — not a bug. To actually drive `500`s you have to rais
 ## The journal
 
 [`journal.jsonl`](./journal.jsonl) is spike's own series, **written only by the
-`PERF - Spike` task** (`scripts/actions/perf/spike`, never by hand). It is never
+`PERF - Spike` task** (`scripts/actions/perf/write/spike`, never by hand). It is never
 merged with the load journal — a different `scenario`, measuring a different
 thing. Like the load journal, every row self-stamps the rig (CPU, cores) and the
 config that makes the numbers mean something (pool, schema, rates, and the
@@ -67,15 +67,15 @@ the same surge now sheds more or recovers slower.
 
 ```bash
 # App must be running on the host; the task brings backing services up itself.
-scripts/actions/perf/spike
+scripts/actions/perf/write/spike
 
 # Tunables via env (defaults sized for the reference rig):
-SPIKE_RATE=12000 SPIKE_SECONDS=45 MAX_VUS=2000 scripts/actions/perf/spike
+SPIKE_RATE=12000 SPIKE_SECONDS=45 MAX_VUS=2000 scripts/actions/perf/write/spike
 ```
 
 Tunables: `BASELINE_RATE` (default 500), `SPIKE_RATE` (8000), `BASELINE_SECONDS`
 (20), `SPIKE_SECONDS` (30), `RECOVERY_SECONDS` (30), `MAX_VUS` (1000). The task
-also writes the raw k6 summary to `perf/spike/last-summary.json` (gitignored).
+also writes the raw k6 summary to `perf/write/spike/last-summary.json` (gitignored).
 
 Not run in CI: see the [suite README](../README.md#what-runs-in-ci) for why the
 spike is local / journalled only.

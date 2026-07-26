@@ -1,12 +1,10 @@
-// Shared building blocks for the k6 ingest scenarios, so the request shape and
-// the summary reader live in one place: a change to the /api/v1/events contract
-// touches this file, not every scenario that posts to it. The event body itself
-// is produced by event-generator.js from the caller's sequence number.
+// The /api/v1/events request shape for every write scenario, so a change to the
+// ingest contract touches this file and not every scenario that posts to it.
+// The event body itself is produced by event-generator.js from the caller's
+// sequence number.
 
 import http from 'k6/http';
 import { generateEvent } from './event-generator.js';
-
-export { metric } from './k6-summary.js';
 
 export function postEvent(baseUrl, eventId, seq, tags) {
   const event = generateEvent(seq);

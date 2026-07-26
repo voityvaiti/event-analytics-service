@@ -205,6 +205,33 @@ perf_result() {
   PERF_RESULTS+=("$1")
 }
 
+# Run a list of "label:function" cells back to back and report them together.
+# A failing cell does not abort the rest — stopping at the first problem would
+# hide every number behind it — so the caller gets a non-zero exit only once
+# everything has had its turn.
+perf_run_tests() {
+  local failures=0 entry name fn
+
+  for entry in "$@"; do
+    name=${entry%%:*}
+    fn=${entry#*:}
+    echo
+    echo ">>> perf: $name"
+    if ! "$fn"; then
+      echo "!!! perf: $name failed" >&2
+      failures=$((failures + 1))
+    fi
+  done
+
+  perf_report
+  echo "Eyeball the appended journal lines above, then commit them yourself."
+
+  if [ "$failures" -gt 0 ]; then
+    echo "$failures perf cell(s) failed." >&2
+    return 1
+  fi
+}
+
 # Print the collected headline results together. Called once at the end of a run.
 perf_report() {
   echo

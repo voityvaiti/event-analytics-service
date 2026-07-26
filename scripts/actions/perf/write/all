@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# PERF - Read All: run every read cell back to back against the seeded corpus
+# PERF - Write All: run every write cell back to back against the seeded corpus
 # and print one combined digest at the end. The cell list lives in
-# perf/read/tests.sh, shared with the whole-suite action. Each cell appends to
+# perf/write/tests.sh, shared with the whole-suite action. Each cell appends to
 # its own journal — eyeball and commit those yourself.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../.." || exit 1
 
 source perf/lib/harness.sh
-source perf/read/tests.sh
+source perf/write/tests.sh
 
 perf_bootstrap
-perf_run_tests "${READ_TESTS[@]}"
+perf_run_tests "${WRITE_TESTS[@]}"
