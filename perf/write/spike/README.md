@@ -33,11 +33,17 @@ short surge shows up as **latency climbing**, and only a surge sustained past th
 timeout starts shedding `500`s. So the spike's honest signal here is *latency
 and dropped work under load*, not necessarily errors.
 
-The one hard assertion is **recovery**: after the surge, once the rate drops back
-to baseline, the app must serve cleanly again (`http_req_failed` under 1% in the
-recovery phase). That is gated by a k6 threshold; `PERF - Spike` exits non-zero
-when recovery fails. The spike phase itself is only *observed* — a spike is
-allowed to shed, so gating it would either hide the signal or red every run.
+The one hard assertion is **recovery**, and it takes two things: after the surge
+the app must serve cleanly again (`http_req_failed` under 1%) *and* answer at
+roughly the speed it did before, within 5x the baseline p95. Serving every
+request while taking twenty times longer is not a recovery — it is the backlog
+still being worked off — so the row carries a `recovered` verdict rather than a
+failure rate alone, and `PERF - Write Spike` exits non-zero when it is false.
+The multiple is wide because run-to-run jitter already moves this figure by
+about a factor of two; what it has to catch is not close to the boundary.
+
+The spike phase itself is only *observed* — a spike is allowed to shed, so
+gating it would either hide the signal or red every run.
 
 `dropped_iterations` during the spike is a client-side signal too: if k6 ran out
 of VUs (`MAX_VUS`) it could not offer the full target rate, so raise `MAX_VUS` to

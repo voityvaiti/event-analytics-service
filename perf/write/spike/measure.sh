@@ -64,6 +64,20 @@ def r(value, digits=2):
     return round(value, digits) if isinstance(value, (int, float)) else value
 
 
+# Same definition of recovered the read spike uses: serving every request is not
+# enough if each one now takes far longer than it did before the surge. The
+# multiple is wide because run-to-run jitter already moves this figure by about
+# a factor of two, and a gate that trips on jitter teaches people to ignore it.
+RECOVERY_LATENCY_FACTOR = 5
+
+served = isinstance(recovery["failed_rate"], (int, float)) and recovery["failed_rate"] < 0.01
+drained = (
+    isinstance(recovery["p95_ms"], (int, float))
+    and isinstance(baseline["p95_ms"], (int, float))
+    and recovery["p95_ms"] <= baseline["p95_ms"] * RECOVERY_LATENCY_FACTOR
+)
+recovered = served and drained
+
 row = {
     "date": date,
     "commit": commit,
@@ -87,13 +101,18 @@ row = {
     "recovery_failed_rate": r(recovery["failed_rate"], 4),
     "recovery_p95_ms": r(recovery["p95_ms"]),
     "baseline_p95_ms": r(baseline["p95_ms"]),
+    "recovered": recovered,
 }
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-recovered = isinstance(recovery["failed_rate"], (int, float)) and recovery["failed_rate"] < 0.01
-verdict = "recovered" if recovered else "DID NOT RECOVER"
+if recovered:
+    verdict = "recovered"
+elif served:
+    verdict = "STILL DRAINING"
+else:
+    verdict = "DID NOT RECOVER"
 
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
