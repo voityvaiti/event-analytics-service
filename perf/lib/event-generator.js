@@ -68,9 +68,13 @@ function skewedIndex(u, size) {
   return Math.floor(size * u * u);
 }
 
+function zipfRank(u, size) {
+  return Math.floor(Math.pow(size, u));
+}
+
 function pageUrl(seq) {
-  const rank = skewedIndex(unit(seq, 3), PAGE_SPACE);
-  return rank < 8 ? `/products/featured/${rank}` : `/products/${rank}`;
+  const rank = zipfRank(unit(seq, 3), PAGE_SPACE);
+  return rank <= 8 ? `/products/featured/${rank}` : `/products/${rank}`;
 }
 
 function properties(seq, eventType) {
