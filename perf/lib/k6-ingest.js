@@ -1,10 +1,12 @@
-import http from 'k6/http';
-import { generateEvent } from './event-generator.js';
-
 // Shared building blocks for the k6 ingest scenarios, so the request shape and
 // the summary reader live in one place: a change to the /api/v1/events contract
 // touches this file, not every scenario that posts to it. The event body itself
 // is produced by event-generator.js from the caller's sequence number.
+
+import http from 'k6/http';
+import { generateEvent } from './event-generator.js';
+
+export { metric } from './k6-summary.js';
 
 export function postEvent(baseUrl, eventId, seq, tags) {
   const event = generateEvent(seq);
@@ -26,9 +28,4 @@ export function postEvent(baseUrl, eventId, seq, tags) {
   };
 
   return http.post(`${baseUrl}/api/v1/events`, body, params);
-}
-
-export function metric(data, name, value) {
-  const m = data.metrics[name];
-  return m && m.values[value] != null ? m.values[value] : NaN;
 }
