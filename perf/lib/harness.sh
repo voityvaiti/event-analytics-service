@@ -129,9 +129,52 @@ restore_seed_baseline() {
 }
 
 # The row count a measured run actually started from, journalled so a number is
-# never read against the wrong table size.
+# never read against the wrong table size. Counted once and remembered: it is
+# the same for every cell by construction — reads never touch it and writes put
+# back exactly what they added — and the count itself is a full scan of the
+# corpus, which would otherwise sweep gigabytes through the buffer cache
+# immediately before each measurement.
+# Also left in CORPUS_ROWS, so a caller can read it without the command
+# substitution that would discard the cache on every cell.
+CORPUS_ROWS=""
 count_events() {
-  psql_events -tAc 'SELECT count(*) FROM events' | tr -d '[:space:]'
+  [ -n "$CORPUS_ROWS" ] || CORPUS_ROWS=$(psql_events -tAc 'SELECT count(*) FROM events' \
+    | tr -d '[:space:]') || return 1
+  printf '%s' "$CORPUS_ROWS"
+}
+
+# Warm JIT and the connection pool for the read path, once per process rather
+# than once per cell. The pool fills on first use and never shrinks, and the
+# preceding cell's own measured run warms the shared HTTP and JDBC path better
+# than a short pass ever could — so repeating it per cell only spends time.
+# Deliberately not folded into perf_bootstrap: a write cell churns the table
+# between bootstrap and the first read, and a single-cell run still needs it.
+READS_WARMED=0
+warm_reads() {
+  [ "$READS_WARMED" = 1 ] && return 0
+
+  k6_run perf/read/stats-read.js \
+    --env SEED_ANCHOR --env SEED_SPREAD_DAYS \
+    -e ENDPOINT="$1" -e GROUP_BY="${2:-}" \
+    -e VUS=4 -e DURATION=10s -e SUMMARY_OUT=/dev/null >/dev/null 2>&1 || true
+  READS_WARMED=1
+}
+
+# "index scans, sequential scans" as of now. A read cell journals the delta over
+# its measured run, which is what keeps a flat read-latency result from being
+# ambiguous: it says outright whether the planner reached for the index or swept
+# the table instead. Taken from counters over the queries the app actually ran,
+# rather than from EXPLAIN on a copy of the SQL — the statements live in the
+# repository class, and a second copy here would be one more thing to keep in
+# step. Reports 0 index scans when the index does not exist, which is exactly
+# what the without-index arm of the experiment should record.
+read_scan_counters() {
+  psql_events -tAc "
+    SELECT coalesce((SELECT idx_scan FROM pg_stat_user_indexes
+                     WHERE indexrelname = 'idx_events_occurred_at'), 0)
+           || ' ' ||
+           coalesce((SELECT seq_scan FROM pg_stat_user_tables
+                     WHERE relname = 'events'), 0)"
 }
 
 # The pool the run ACTUALLY used, read straight from the app rather than trusted
