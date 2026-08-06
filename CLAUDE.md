@@ -30,6 +30,13 @@
   restate what the code does. Reserve comments for the *why* that the code
   cannot carry: a non-obvious rationale, a constraint, or a deliberate
   trade-off.
+- **Write documentation, but make every paragraph earn its place.** READMEs,
+  notes and commit messages are expected — they carry the reasoning the code
+  cannot. What is not wanted is a wall of text around it: no section repeating
+  what a neighbouring one said, no hedging, no background the reader already
+  has, no point made three times. State it once, clearly, and stop. Length is
+  not thoroughness, and a reader who skims because it is long has learned
+  nothing.
 
 ## Layering
 
