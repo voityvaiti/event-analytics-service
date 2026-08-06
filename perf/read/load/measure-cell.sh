@@ -1,19 +1,20 @@
 #!/bin/bash
 
-# One measured read cell, shared by every read leaf: warm up, run the scenario
-# against the seeded corpus, and append one row to the leaf's journal. Defines
-# perf_read_cell, which the harness (perf/lib/harness.sh) must already be
-# sourced for.
+# One measured read load cell, shared by every leaf under read/load: warm up,
+# run the scenario against the seeded corpus, and append one row to the leaf's
+# journal. Defines perf_read_load_cell, which the harness (perf/lib/harness.sh)
+# must already be sourced for. The spike cells do not share it — a surge is
+# measured in phases against a recovery verdict, not as one steady window.
 #
 # Reads do not mutate, so unlike a write cell there is nothing to clean up
 # afterwards — the corpus is still exactly as seeded when the run ends.
 #
-# Usage: perf_read_cell <journal> <endpoint> [group_by] [limit]
+# Usage: perf_read_load_cell <journal> <endpoint> [group_by] [limit]
 
-perf_read_cell() {
+perf_read_load_cell() {
   local journal=$1 endpoint=$2 group_by=${3:-} limit=${4:-}
-  local script=perf/read/stats-read.js
-  local summary=perf/read/last-summary.json
+  local script=perf/read/load/stats-read.js
+  local summary=perf/read/load/last-summary.json
 
   # Knobs are resolved into locals and handed to k6 explicitly. Exporting them
   # would make a cell's settings outlive it: the next cell's own `${VUS:-4}`
@@ -107,7 +108,7 @@ label = row["endpoint"] + (" groupBy=" + row["group_by"] if row["group_by"] else
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT read %s: med %sms | p95 %sms | p99 %sms | %d req/s | %.2f%% failed "
+    "PERF_RESULT read load %s: med %sms | p95 %sms | p99 %sms | %d req/s | %.2f%% failed "
     "| index scans %d, seq scans %d (vus %d, %s)"
     % (
         label,

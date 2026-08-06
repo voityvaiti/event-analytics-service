@@ -1,8 +1,9 @@
 #!/bin/bash
 
-# Read cell: GET /api/v1/stats/top-pages. Defines perf_read_top_pages; the
-# harness and perf/read/measure-read.sh must already be sourced. Appends one row
-# to perf/read/top-pages/journal.jsonl.
+# Read load cell: GET /api/v1/stats/top-pages. Defines
+# perf_read_load_top_pages; the harness and perf/read/load/measure-cell.sh must
+# already be sourced. Appends one row to
+# perf/read/load/top-pages/journal.jsonl.
 #
 # The one read whose grouping key lives inside JSONB: properties->>'page_url' is
 # extracted per row and ranked, so the index can narrow the window but nothing
@@ -11,8 +12,8 @@
 #
 # Tunables via env: VUS (default 4), DURATION (default 30s), LIMIT (default 10).
 
-perf_read_top_pages() {
-  local journal=perf/read/top-pages/journal.jsonl
+perf_read_load_top_pages() {
+  local journal=perf/read/load/top-pages/journal.jsonl
 
-  perf_read_cell "$journal" top-pages "" "${LIMIT:-10}"
+  perf_read_load_cell "$journal" top-pages "" "${LIMIT:-10}"
 }

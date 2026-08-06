@@ -1,23 +1,28 @@
 #!/bin/bash
 
-# Read spike: step the dashboard request rate far above what the pool can serve,
-# then back down, and check the read path recovers. Defines perf_read_spike,
-# which the harness (perf/lib/harness.sh) must already be sourced for. Appends
-# one row to perf/read/spike/journal.jsonl — its own series, never merged with
-# the read latency journals or the write spike.
+# Read spike cell: step the dashboard request rate for /api/v1/stats/active-users
+# far above what the pool can serve, then back down, and check the read path
+# recovers. Defines perf_read_spike_active_users, which the harness
+# (perf/lib/harness.sh) must already be sourced for. Appends one row to
+# perf/read/spike/active-users/journal.jsonl — its own series, never merged with
+# the read load journals or the write spike.
+#
+# active-users is the endpoint worth surging first because it is the heaviest
+# read: its COUNT(DISTINCT user_id) reaches the heap for every matching row, so
+# it exhausts the pool sooner than the other two would.
 #
 # The measured run is tolerated failing (|| true): a surge is allowed to shed,
 # so k6's recovery threshold tripping is data, not a reason to abort before it
-# is recorded. perf_read_spike returns non-zero only when the app did not
-# recover. Reads do not mutate, so the corpus needs no restoring afterwards.
+# is recorded. The function returns non-zero only when the app did not recover.
+# Reads do not mutate, so the corpus needs no restoring afterwards.
 #
 # Tunables via env: ENDPOINT, GROUP_BY, SPIKE_WINDOW, BASELINE_RATE, SPIKE_RATE,
 # *_SECONDS, MAX_VUS.
 
-perf_read_spike() {
-  local script=perf/read/stats-spike.js
-  local summary=perf/read/last-summary.json
-  local journal=perf/read/spike/journal.jsonl
+perf_read_spike_active_users() {
+  local script=perf/read/spike/stats-spike.js
+  local summary=perf/read/spike/last-summary.json
+  local journal=perf/read/spike/active-users/journal.jsonl
 
   # Resolved once into locals rather than read from the environment at each use:
   # a preceding read cell exports nothing now, but taking the default here keeps
