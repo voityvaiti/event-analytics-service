@@ -74,10 +74,42 @@ Rounds run back to back within a cell, so nothing but chance separates them, and
 each round journals its own row because each is a real measurement. The spread is
 derived and never stored — it only ever describes the rows it was computed from.
 
-Where the spread is *not* reported: both spike cells. Their overload metrics are
-too high-variance to reduce to a delta (see [CI](#what-runs-in-ci) below), so
-publishing a spread over them would invite exactly the comparison that is not
-supportable. They still repeat, because several rows are worth having.
+### The measured floor
+
+Established by the index experiment (see
+[`notes/perf-read-and-index-experiment.md`](../notes/perf-read-and-index-experiment.md)),
+which ran five separate three-round passes of the write cell and two of every
+read cell on this rig:
+
+| Cell | Peak-to-peak over 3 rounds |
+|------|----------------------------|
+| Write load, throughput | 0.7% – 2.4% |
+| Read load, `p95_ms`, index in use | 0.3% – 0.7% |
+| Read load, `p95_ms`, sequential scans | 0.6% – 5.1% |
+
+Read the write figure as **~2.5%**, and treat anything below it as no measured
+effect. Two consequences are worth stating outright.
+
+**Three rounds understates it.** Peak-to-peak can only grow as rounds are added —
+more samples, more chance of catching an extreme. Two three-round passes of the
+identical write cell showed 1.95% and 2.36%; pooling their six rounds gave 2.72%.
+So the table is a lower bound, not the real range.
+
+**The floor belongs to the workload, not just the rig.** Reads served by an index
+repeat to within 0.7% because a lookup does a predictable amount of work; the
+same queries answered by sequential scan spread up to 5.1%. A floor measured in
+one regime does not transfer to the other.
+
+Where the spread is *not* reported: both spike cells. Not because their numbers
+are noisy — `spike_achieved_rps` and `spike_dropped` repeat to within 0.2%, the
+tightest figures in the suite — but because a spike has no single headline
+scalar. Its result is a compound verdict (`recovered` = served *and* drained),
+and a spread over one of that verdict's inputs would be read as a spread over the
+verdict. The inputs that *are* volatile are `recovery_p95_ms` and
+`baseline_p95_ms`, which swing by nearly 50% between identical runs because they
+are single-digit-millisecond values where one scheduler hiccup dominates — which
+is exactly why the recovery gate allows a 5x margin. The spike cells still
+repeat, because several rows are worth having.
 
 The floor measured here describes *this* rig and is not the band
 `compare-runs.mjs` applies in CI (`NOISE_PERCENT`, default 10). That one is

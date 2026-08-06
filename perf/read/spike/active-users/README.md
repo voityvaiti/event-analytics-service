@@ -15,6 +15,13 @@ and the surge reaches it first. `ENDPOINT` repoints this cell at another query
 without a new directory, for a one-off comparison; a second endpoint earns a
 cell of its own beside this one only if its shape turns out to shed differently.
 
+That condition now looks met, and this section is the weaker for it. The index
+experiment measured per-query cost differing by 4x to 38x across the endpoints,
+and the ceiling here is roughly pool size over query latency — so they very
+likely shed differently, and `event-counts` may recover at a rate `active-users`
+cannot. Sibling cells are the fix; see
+[`notes/perf-read-and-index-experiment.md`](../../../../notes/perf-read-and-index-experiment.md).
+
 ## Why the rates are two orders of magnitude below the write spike
 
 The write spike steps to 8000 req/s because an insert costs ~2ms. A read costs
