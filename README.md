@@ -13,6 +13,36 @@ land in PostgreSQL as an append-only log (idempotent on a client-supplied
 `event_id`), and a read API answers questions like top pages, active users, and
 event counts over time.
 
+Time bucketing is treated as a correctness problem, not formatting. A daily
+count is a property of the data *and* a time zone: the same events produce
+different numbers depending on where the day boundary falls, DST makes a local
+day 23 or 25 hours long, and sub-hour offsets like `+05:30` break any rollup
+that assumes whole-hour buckets. Timestamps are therefore stored in UTC and the
+zone is applied only at read, via `date_trunc(unit, ts, zone)`, resolved per
+tenant rather than per request.
+
+📐 **[DESIGN.md](./DESIGN.md)** — design rationale, trade-offs, and the
+alternatives that were rejected.
+
+## Where to look first
+
+Ten-minute tour, in order:
+
+1. **[DESIGN.md → Key design decisions](./DESIGN.md#key-design-decisions)** —
+   every decision with the alternative it beat and why.
+2. **[DESIGN.md → Time bucketing across tenants](./DESIGN.md#time-bucketing-across-tenants)**
+   — the correctness problem the system is most opinionated about;
+   [`JdbcEventStatsRepository`](./src/main/java/dev/rymarovych/event_analytics/persistence/JdbcEventStatsRepository.java)
+   is the implementation.
+3. **[`perf/`](./perf)** — k6 suite with a per-test journal; each run appends a
+   rig-stamped line, so a regression is a number rather than a surprise.
+4. **Test tiering** — `src/test/java` (no Docker) versus
+   `src/integrationTest/java` (Testcontainers on its classpath only); the split
+   is structural, so a misplaced import is a compile error.
+5. **[`.github/workflows`](./.github/workflows)** and
+   [`build.gradle`](./build.gradle) — the same commands locally and in CI, plus
+   an opt-in per-PR throughput comparison behind the `perf` label.
+
 ## Tech stack
 
 - **Java 21**, **Spring Boot 4** (Spring MVC on virtual threads)
@@ -70,6 +100,16 @@ the actions (`scripts/actions/perf/{load,spike,all}`) or the _PERF - Load / Spik
 a running app is needed. A per-PR throughput comparison also runs in CI, opt-in
 via the `perf` label. See [`perf/README.md`](./perf/README.md) for the details
 and how to add a test.
+
+## Known limitations / what breaks at 10x
+
+The read path saturates before the write path does: steady-state ingest holds
+~4,100 req/s at p99 under 5 ms, while a 30-second read surge offering 400 req/s
+was served at 31.8 req/s, pushing p95 from 124 ms to 7.4 s — still 6.3 s in the
+recovery window afterwards. Nothing bounds the read queue yet — no statement
+timeout, no admission limit, and the connection pool is shared with ingest.
+Full numbers and the ordered fix list are in
+[DESIGN.md → Known limitations](./DESIGN.md#known-limitations-and-what-breaks-at-10x).
 
 ## Quality tooling
 
