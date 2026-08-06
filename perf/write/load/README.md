@@ -90,6 +90,11 @@ scripts/actions/perf/write/load
 # Tunables via env, e.g. push past the pool to see the saturation knee:
 VUS=20 DURATION=120s scripts/actions/perf/write/load
 
+# Rounds. Default 1 — a single measurement, as before. Ask for more when the
+# number is going to be compared against something: one row per round, plus the
+# spread across them. See the suite README for what the spread is for.
+ROUNDS=3 scripts/actions/perf/write/load
+
 # Corpus knobs. An intact corpus is reused between runs; SEED_FORCE=1 rebuilds
 # it, which is required after changing the event generator.
 SEED_ROWS=5000000 scripts/actions/perf/write/load
@@ -98,3 +103,11 @@ SEED_FORCE=1 scripts/actions/perf/write/load
 
 The task also writes the raw k6 summary to `perf/write/load/last-summary.json`
 (gitignored).
+
+## Which field the spread is taken over
+
+Throughput, not latency. The write cost of a secondary index is a few percent
+either way — close enough to run-to-run jitter that the two are easy to confuse —
+so throughput is the number a comparison here turns on, and the one whose floor
+has to be known before a delta is called real. The latency percentiles ride along
+in every row for context, but a write comparison is not decided on them.
