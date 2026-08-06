@@ -32,8 +32,8 @@ one-line compose edit and nothing here changes.
 The IDE run configs (`.run/`) wrap the actions below:
 
 ```bash
-scripts/actions/perf/write/load               # one steady-state throughput row
-scripts/actions/perf/write/spike              # one surge-and-recover row
+scripts/actions/perf/write/load               # steady-state throughput
+scripts/actions/perf/write/spike              # surge and recover
 scripts/actions/perf/write/all                # every write cell
 scripts/actions/perf/read/load/<endpoint>     # one read endpoint's latency
 scripts/actions/perf/read/load/all            # every read load cell
@@ -43,8 +43,46 @@ scripts/actions/perf/read/all                 # every read cell, both workloads
 scripts/actions/perf/all                      # everything, one combined digest
 ```
 
-Each test appends to its own journal and prints the appended line. Eyeball it,
-then commit the journal yourself — the tasks never commit for you.
+Each cell appends its rows and prints them. Eyeball them, then commit the
+journals yourself — the tasks never commit for you.
+
+## Rounds and the noise floor
+
+Every action repeats each cell `ROUNDS` times, **default 1**, and reports the
+spread across those rounds whenever there is more than one. An ordinary run is
+therefore the single cheap measurement it has always been; ask for rounds when the
+number is going to be compared against something.
+
+Repetition is not thoroughness for its own sake. These are absolute numbers on a
+machine that has other things to do, so two runs of *identical* code disagree.
+How much they disagree is the **noise floor**, and it is the yardstick every
+later comparison needs: a delta smaller than the floor is not a small effect, it
+is no measured effect. The journal shows why this is not hypothetical — two runs
+of the same commit `aadd201` on the same day recorded 4235.6 and 4061.8 events/s,
+4.19% apart with nothing changed between them, while another same-commit pair
+landed 0.40% apart. One pair cannot tell you which of those is typical.
+
+Two figures come out of a repeated cell, answering different questions:
+
+- **Coefficient of variation** — how tightly the rounds cluster. Describes the
+  quality of the rig.
+- **Peak-to-peak** — the full gap between the best and worst round. The wider
+  number, and the honest yardstick for a one-run-each-side comparison, because
+  either side can land at either extreme on luck alone.
+
+Rounds run back to back within a cell, so nothing but chance separates them, and
+each round journals its own row because each is a real measurement. The spread is
+derived and never stored — it only ever describes the rows it was computed from.
+
+Where the spread is *not* reported: both spike cells. Their overload metrics are
+too high-variance to reduce to a delta (see [CI](#what-runs-in-ci) below), so
+publishing a spread over them would invite exactly the comparison that is not
+supportable. They still repeat, because several rows are worth having.
+
+The floor measured here describes *this* rig and is not the band
+`compare-runs.mjs` applies in CI (`NOISE_PERCENT`, default 10). That one is
+deliberately wider because a shared GitHub runner jitters more than a fixed
+desktop. Two machines, two numbers; they must not be swapped for each other.
 
 ## The corpus
 
@@ -128,7 +166,14 @@ same route out — `perf_read_load_top_pages` sits in `read/load/top-pages/`.
    their workload's `all`.
 4. Wire it into the pipelines: source its `measure.sh` in its path's `tests.sh`
    and add one entry to that workload's array. The `all` actions read those
-   arrays, so nothing else needs touching.
+   arrays, so nothing else needs touching. A single-cell action names its own
+   entry inline, so that one string exists in two places — `tests.sh` stays the
+   list every pipeline reads, but it is not the only place a cell is named.
+5. Optionally define `perf_<cell>_spread`, which the runner calls with the round
+   count after a repeated cell. One line delegating to `perf_spread` with the
+   journal, the field whose spread matters, and a grouping field if a round
+   appends more than one row. Skip it when a spread over the cell's headline
+   metric would not support a comparison — that is why the spike cells have none.
 
 ## What runs in CI
 

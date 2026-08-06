@@ -17,3 +17,8 @@ perf_read_load_top_pages() {
 
   perf_read_load_cell "$journal" top-pages "" "${LIMIT:-10}"
 }
+
+perf_read_load_top_pages_spread() {
+  perf_spread "read load top-pages" perf/read/load/top-pages/journal.jsonl \
+    "$1" p95_ms
+}

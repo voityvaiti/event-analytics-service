@@ -99,3 +99,12 @@ PY
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
 }
+
+# Throughput is the field whose spread decides anything here: the write side of a
+# secondary index costs a few percent either way, close enough to jitter that the
+# two are easy to confuse, so the floor has to be known before a delta is called
+# real. Latency percentiles ride along in the rows for context but are not what a
+# write comparison turns on.
+perf_load_spread() {
+  perf_spread "write load" perf/write/load/journal.jsonl "$1" throughput_rps
+}

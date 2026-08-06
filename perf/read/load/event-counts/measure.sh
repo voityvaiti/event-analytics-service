@@ -22,3 +22,11 @@ perf_read_load_event_counts() {
 
   return "$status"
 }
+
+# Grouped by group_by, because a round appends one row per grouping and those are
+# three different query plans — pooling them would report the gap between plans
+# as if it were jitter within one.
+perf_read_load_event_counts_spread() {
+  perf_spread "read load event-counts" perf/read/load/event-counts/journal.jsonl \
+    "$1" p95_ms group_by
+}

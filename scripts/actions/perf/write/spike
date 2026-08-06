@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# PERF - Spike: step the ingest rate far above steady-state capacity, then back
-# down, and check the app recovers. Appends one row to perf/write/spike/journal.jsonl.
-# Exits non-zero if the app did not recover after the surge. The app must already
-# be running on the host. Tunables: BASELINE_RATE, SPIKE_RATE, *_SECONDS, MAX_VUS.
+# PERF - Write Spike: step the ingest rate far above steady-state capacity, then
+# back down, and check the app recovers. Appends one row per round to
+# perf/write/spike/journal.jsonl. Exits non-zero if the app did not recover after
+# the surge. The app must already be running on the host. Tunables:
+# BASELINE_RATE, SPIKE_RATE, *_SECONDS, MAX_VUS, ROUNDS (default 1).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../.." || exit 1
@@ -12,10 +13,4 @@ source perf/lib/harness.sh
 source perf/write/spike/measure.sh
 
 perf_bootstrap
-
-status=0
-perf_spike || status=$?
-perf_report
-
-echo "Eyeball the appended journal line above, then commit it yourself."
-exit "$status"
+perf_run_tests "write spike:perf_spike"
