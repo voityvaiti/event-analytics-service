@@ -25,7 +25,8 @@ perf_spike() {
   restore_seed_baseline || return 1
 
   local start_rows
-  start_rows=$(count_events) || return 1
+  count_events || return 1
+  start_rows=$CORPUS_ROWS
 
   rm -f "$summary"
   k6_run "$script" \
