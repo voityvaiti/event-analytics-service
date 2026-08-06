@@ -42,10 +42,29 @@ one cached stretch.
 
 `journal.jsonl` is this test's own series, written only by the
 `PERF - Read Spike` task, never by hand, and never merged with the load
-journals — a different question, measured differently. The gate is recovery: the
-surge itself is allowed to shed, and `spike_dropped` records how much k6 could
-not even hand over. What must hold is `recovery_failed_rate` near zero with
-`recovery_p95_ms` back near `baseline_p95_ms`.
+journals — a different question, measured differently. The run has three phases:
+`baseline` establishes what a calm rate costs, `spike` is the surge, and
+`recovery` returns to the calm rate to ask whether the surge is over.
+
+The question is recovery. The surge itself is allowed to shed, and
+`spike_dropped` records how much k6 could not even hand over. What must hold is
+`recovery_failed_rate` near zero with `recovery_p95_ms` back near
+`baseline_p95_ms` — **and** `baseline_p95_ms` under `BASELINE_MAX_P95_MS`
+(1000ms), because a baseline that is itself saturated is not a reference. Without
+that precondition the ratio compares broken against broken and passes: the index
+experiment measured 28s recovery against a 15196ms baseline being called
+recovered, while a healthy 123ms baseline was not.
+
+The verdict itself is **not** a column. It is derived from the three fields
+above, so storing it would put a second source of truth in the series — one that
+keeps asserting whichever rule was current when the row was written. Rows from
+before the baseline precondition existed carry exactly that stale `true`.
+
+This cell does not gate. Nothing in the app cuts off a long-running read yet, so
+a surge past the pool's ceiling always leaves a tail and the verdict would be red
+on every run — a permanently red test stops being read. It is journalled and
+printed instead, and becomes a gate once a statement timeout or queue limit lands.
+The write spike does gate: it genuinely recovers.
 
 `index_scans` and `seq_scans` are carried here too, for the same reason as in
 the load cells: without the index a surge would be answered by sequential

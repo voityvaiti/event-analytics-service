@@ -85,10 +85,18 @@ passes the gate, while the healthy arm fails it. The gate compares recovery
 against baseline, so a baseline that has itself collapsed makes the ratio look
 fine.
 
-Two follow-ups, neither done here:
+Two follow-ups. The first is now done:
 
-1. **The recovery verdict needs an absolute floor**, not only a ratio to baseline.
-   Without one it cannot tell recovery from uniform collapse.
+1. **The recovery verdict needed an absolute floor**, not only a ratio to
+   baseline — without one it cannot tell recovery from uniform collapse. Both
+   spike cells now require `baseline_p95_ms` under an absolute `BASELINE_MAX_P95_MS`
+   before the ratio is consulted, and report `NO VALID BASELINE` when it is not
+   met. Recomputed over every journalled row, that flips the three unindexed rows
+   above from `recovered` to `NO VALID BASELINE` and leaves every other row as it
+   was. The verdict also stopped being a journal column, since it is derived from
+   fields the row already carries and a stored copy silently keeps asserting the
+   rule that was current when it was written — which is why the rows above still
+   read `recovered: true`.
 2. **One spike endpoint is no longer defensible.** The cell's
    [README](./read/spike/active-users) justifies a single cell on the grounds that
    a spike measures the pool and the queue rather than a query shape, and allows a

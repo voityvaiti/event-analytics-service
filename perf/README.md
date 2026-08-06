@@ -102,7 +102,8 @@ one regime does not transfer to the other.
 Where the spread is *not* reported: both spike cells. Not because their numbers
 are noisy — `spike_achieved_rps` and `spike_dropped` repeat to within 0.2%, the
 tightest figures in the suite — but because a spike has no single headline
-scalar. Its result is a compound verdict (`recovered` = served *and* drained),
+scalar. Its result is a compound verdict (a healthy baseline, *and* served, *and*
+drained),
 and a spread over one of that verdict's inputs would be read as a spread over the
 verdict. The inputs that *are* volatile are `recovery_p95_ms` and
 `baseline_p95_ms`, which swing by nearly 50% between identical runs because they

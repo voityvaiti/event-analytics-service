@@ -33,14 +33,23 @@ short surge shows up as **latency climbing**, and only a surge sustained past th
 timeout starts shedding `500`s. So the spike's honest signal here is *latency
 and dropped work under load*, not necessarily errors.
 
-The one hard assertion is **recovery**, and it takes two things: after the surge
-the app must serve cleanly again (`http_req_failed` under 1%) *and* answer at
-roughly the speed it did before, within 5x the baseline p95. Serving every
+The one hard assertion is **recovery**, and it takes three things. The baseline
+phase must itself be healthy — p95 within `BASELINE_MAX_P95_MS` (50ms against a
+~2ms norm) — because every other clause is measured against it, and a ratio to a
+collapsed baseline is satisfied by a system that never recovered. Then, after the
+surge, the app must serve cleanly again (`http_req_failed` under 1%) *and* answer
+at roughly the speed it did before, within 5x the baseline p95. Serving every
 request while taking twenty times longer is not a recovery — it is the backlog
-still being worked off — so the row carries a `recovered` verdict rather than a
-failure rate alone, and `PERF - Write Spike` exits non-zero when it is false.
-The multiple is wide because run-to-run jitter already moves this figure by
-about a factor of two; what it has to catch is not close to the boundary.
+still being worked off. The multiple is wide because run-to-run jitter already
+moves this figure by about a factor of two; what it has to catch is not close to
+the boundary.
+
+The verdict is **not** journalled. It is derived from `baseline_p95_ms`,
+`recovery_p95_ms` and `recovery_failed_rate`, which the row does carry, so storing
+it would leave a second source of truth that keeps asserting whichever rule was
+current when the row was written — which is precisely what happened before the
+baseline clause existed. `PERF - Write Spike` computes it fresh and exits non-zero
+when it is false.
 
 The spike phase itself is only *observed* — a spike is allowed to shed, so
 gating it would either hide the signal or red every run.
