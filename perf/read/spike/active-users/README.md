@@ -55,10 +55,13 @@ that precondition the ratio compares broken against broken and passes: the index
 experiment measured 28s recovery against a 15196ms baseline being called
 recovered, while a healthy 123ms baseline was not.
 
-The verdict itself is **not** a column. It is derived from the three fields
-above, so storing it would put a second source of truth in the series — one that
-keeps asserting whichever rule was current when the row was written. Rows from
-before the baseline precondition existed carry exactly that stale `true`.
+`recovered` carries the verdict, so a row answers its own question instead of
+leaving a reader to apply the rule by hand. It is derived from the three fields
+above, and which version of the rule produced it is answered by the row's
+`commit` — the same stamp every other field is read against. Rows written before
+the baseline precondition existed therefore say `true` where today's rule says
+`NO VALID BASELINE`; their `commit` is what makes that difference legible rather
+than confusing.
 
 This cell does not gate. Nothing in the app cuts off a long-running read yet, so
 a surge past the pool's ceiling always leaves a tail and the verdict would be red

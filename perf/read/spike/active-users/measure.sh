@@ -144,15 +144,18 @@ row = {
     "baseline_p95_ms": r(baseline["p95_ms"]),
     "index_scans": index_after - index_before,
     "seq_scans": seq_after - seq_before,
+    "recovered": recovered,
 }
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-# The verdict is not journalled. It is derived from fields the row already
-# carries, so storing it would put a second source of truth in the series — and
-# when the rule improves, as it just did, every stored value silently keeps
-# asserting the old one. Recomputing from the row is always right.
+# The verdict is journalled even though it is derived, because the row is meant to
+# answer its own question: numbers without a conclusion mean going to read this
+# file's rule and applying it by hand. Which rule produced a given verdict is
+# already answered by the row's `commit` stamp — the same mechanism every other
+# field relies on — so a stored verdict from before the baseline clause existed is
+# attributable rather than merely stale.
 if not baseline_valid:
     verdict = "NO VALID BASELINE"
 elif recovered:
