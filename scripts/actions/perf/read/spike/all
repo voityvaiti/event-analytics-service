@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# PERF - Read Spike All: run every read spike cell back to back and print one
+# combined digest at the end. The cell list lives in perf/read/tests.sh, shared
+# with the whole-path and whole-suite actions. Each cell appends to its own
+# journal — eyeball and commit those yourself.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/read/tests.sh
+
+perf_bootstrap
+perf_run_tests "${READ_SPIKE_TESTS[@]}"

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# PERF - Read Load active-users: measure read latency for the
+# /api/v1/stats/active-users endpoint against the seeded corpus and append its
+# journal row. The app must already be running on the host; backing services and
+# the corpus are brought up by the harness. Tunables: VUS, DURATION, GROUP_BY.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/read/load/measure-cell.sh
+source perf/read/load/active-users/measure.sh
+
+perf_bootstrap
+
+status=0
+perf_read_load_active_users || status=$?
+perf_report
+
+echo "Eyeball the appended journal line above, then commit it yourself."
+exit "$status"
