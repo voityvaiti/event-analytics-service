@@ -27,7 +27,8 @@ perf_load() {
   restore_seed_baseline || return 1
 
   local start_rows
-  start_rows=$(count_events) || return 1
+  count_events || return 1
+  start_rows=$CORPUS_ROWS
 
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
