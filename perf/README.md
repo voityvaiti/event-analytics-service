@@ -76,10 +76,9 @@ derived and never stored — it only ever describes the rows it was computed fro
 
 ### The measured floor
 
-Established by the index experiment (see
-[`notes/perf-read-and-index-experiment.md`](../notes/perf-read-and-index-experiment.md)),
-which ran five separate three-round passes of the write cell and two of every
-read cell on this rig:
+Established by the [index experiment](./index-experiment.md), which ran five
+separate three-round passes of the write cell and two of every read cell on this
+rig:
 
 | Cell | Peak-to-peak over 3 rounds |
 |------|----------------------------|
