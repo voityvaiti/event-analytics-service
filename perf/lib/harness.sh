@@ -207,21 +207,128 @@ perf_result() {
   PERF_RESULTS+=("$1")
 }
 
+# The spread across the rows a repeated cell just appended — jitter alone, since
+# nothing changed between rounds. Shared by every cell that reports one, so the
+# statistics and their wording are defined once; a cell only says which journal,
+# which field, and how its rows are grouped.
+#
+# Read back off the journal rather than accumulated in shell state, so what this
+# reports is exactly what was recorded rather than a parallel tally that could
+# disagree with it.
+#
+# group_key names a field whose distinct values split the rows into separate
+# series: event-counts appends one row per grouping every round, and a spread
+# taken across groupings would compare different query plans instead of the same
+# plan twice. Omit it when a round appends a single row.
+#
+# Reports peak-to-peak as well as the coefficient of variation because they
+# answer different questions. The coefficient says how tightly the rounds
+# cluster; peak-to-peak is what a single before/after pair can differ by on luck
+# alone, and one run each side is what a comparison usually is.
+#
+# Usage: perf_spread <label> <journal> <rounds> <field> [group_key]
+perf_spread() {
+  local label=$1 journal=$2 rounds=$3 field=$4 group_key=${5:-}
+
+  local out
+  out=$(python3 - "$label" "$journal" "$rounds" "$field" "$group_key" <<'PY'
+import json, statistics, sys
+
+label, journal_path, rounds, field, group_key = sys.argv[1:6]
+rounds = int(rounds)
+
+with open(journal_path) as f:
+    rows = [json.loads(line) for line in f if line.strip()]
+
+series = {}
+for row in rows:
+    series.setdefault(row.get(group_key, "") if group_key else "", []).append(row)
+
+print("\nSpread over the last %d rounds in %s:" % (rounds, journal_path))
+for key, series_rows in series.items():
+    values = sorted(row[field] for row in series_rows[-rounds:])
+    low, high = values[0], values[-1]
+    median = statistics.median(values)
+    mean = statistics.fmean(values)
+    peak_to_peak = (high - low) / median * 100 if median else 0.0
+    variation = statistics.stdev(values) / mean * 100 if len(values) > 1 and mean else 0.0
+    named = "%s=%s " % (group_key, key) if group_key else ""
+
+    print("  %s%s: %s" % (named, field, ", ".join("%g" % value for value in values)))
+    print("    min %g | median %g | max %g" % (low, median, high))
+    print(
+        "PERF_RESULT %s %sspread over %d rounds: peak-to-peak %.2f%%, "
+        "coefficient of variation %.2f%% (median %g %s)"
+        % (label, named, len(values), peak_to_peak, variation, median, field)
+    )
+PY
+  ) || return 1
+  echo "$out"
+
+  local line
+  while IFS= read -r line; do
+    perf_result "$line"
+  done < <(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')
+}
+
 # Run a list of "label:function" cells back to back and report them together.
 # A failing cell does not abort the rest — stopping at the first problem would
 # hide every number behind it — so the caller gets a non-zero exit only once
 # everything has had its turn.
+#
+# ROUNDS repeats each cell that many times before moving to the next, and lives
+# here rather than in the cells so every entry point honours it and no new cell
+# can forget to. Repetition is the only way a spread gets measured at all: nothing
+# changes between rounds, so however much they disagree is what jitter alone
+# produces, and a later delta smaller than that is not a result. A cell that fails
+# stops repeating — its remaining rounds would only re-measure whatever broke.
+#
+# The default is 1, so an ordinary run stays the single cheap measurement it has
+# always been and repetition is a deliberate act. Ask for rounds when the number
+# is going to be compared against something — establishing the noise floor, or
+# measuring either side of a change — and the run costs that many times as long,
+# which is a price worth paying knowingly rather than by default.
+#
+# After a repeated cell, a <function>_spread hook is called with the round count
+# if the cell defines one. Both spike cells deliberately define none: their
+# overload metrics are too high-variance to reduce to a delta (see the suite
+# README), so publishing a spread over them would invite exactly the comparison
+# that is not supportable.
 perf_run_tests() {
-  local failures=0 entry name fn
+  local rounds=${ROUNDS:-1}
+  local failures=0 entry name fn round cell_failed
+
+  # Rejected up front rather than left to arithmetic: bash evaluates ROUNDS=7x as
+  # 0, which would run no rounds at all and still exit successfully — a silent
+  # nothing after an unattended wait.
+  if ! printf '%s' "$rounds" | grep -qE '^[1-9][0-9]*$'; then
+    echo "ROUNDS must be a whole number of at least 1, got '$rounds'." >&2
+    return 1
+  fi
 
   for entry in "$@"; do
     name=${entry%%:*}
     fn=${entry#*:}
-    echo
-    echo ">>> perf: $name"
-    if ! "$fn"; then
-      echo "!!! perf: $name failed" >&2
-      failures=$((failures + 1))
+    cell_failed=0
+
+    for ((round = 1; round <= rounds; round++)); do
+      echo
+      if [ "$rounds" -gt 1 ]; then
+        echo ">>> perf: $name (round $round of $rounds)"
+      else
+        echo ">>> perf: $name"
+      fi
+      if ! "$fn"; then
+        echo "!!! perf: $name failed" >&2
+        failures=$((failures + 1))
+        cell_failed=1
+        break
+      fi
+    done
+
+    if [ "$rounds" -gt 1 ] && [ "$cell_failed" -eq 0 ] \
+      && declare -F "${fn}_spread" >/dev/null; then
+      "${fn}_spread" "$rounds" || failures=$((failures + 1))
     fi
   done
 

@@ -49,6 +49,15 @@ Both are pure functions of the iteration number. Two runs ask the identical
 sequence of questions, which is what makes an A/B — with an index and without
 one, before a change and after it — a comparison of one variable.
 
+## Rounds
+
+Load cells repeat like every other cell (`ROUNDS`, default 1 — see the
+[suite README](../README.md)) and report the spread over `p95_ms`, the figure a
+read comparison turns on. `event-counts` groups its spread by `group_by`, because
+a round appends one row per grouping and those are three different query plans:
+pooling them would report the gap between plans as though it were jitter within
+one. The spike cell repeats but reports no spread, for the reason given there.
+
 ## Reading a load journal row
 
 Rows carry the usual rig and config stamps (CPU, cores, pool, schema,

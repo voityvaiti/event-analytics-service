@@ -18,3 +18,8 @@ perf_read_load_active_users() {
 
   perf_read_load_cell "$journal" active-users "${GROUP_BY:-day}"
 }
+
+perf_read_load_active_users_spread() {
+  perf_spread "read load active-users" perf/read/load/active-users/journal.jsonl \
+    "$1" p95_ms
+}
