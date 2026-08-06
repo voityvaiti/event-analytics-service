@@ -1,7 +1,7 @@
 # `active-users` — distinct users per bucket
 
-`GET /api/v1/stats/active-users`. See the [read README](../README.md) for how a
-row is read and how the questions are generated.
+`GET /api/v1/stats/active-users`. See the [read README](../../README.md) for
+how a row is read and how the questions are generated.
 
 The heaviest read, and the only one whose cost is dominated by something the
 index cannot serve: `user_id` is not in `(occurred_at, event_type)`, so every

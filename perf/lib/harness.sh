@@ -1,17 +1,19 @@
 #!/bin/bash
 
 # Shared harness for the perf suite. Every test runner sources this, then a
-# test's measure function (perf/<name>/measure.sh) and calls it. It owns the
-# parts that are identical across tests — bringing up backing services, checking
-# the app and the k6 image, resetting the table, and reading the rig/config
-# stamps (pool, schema, CPU) that make a number mean something — so a new test
-# file is only the k6 scenario plus how to summarise it, never this plumbing.
+# cell's measure function (perf/<path>/<workload>/[<endpoint>/]measure.sh) and
+# calls it. It owns the parts that are identical across tests — bringing up
+# backing services, checking the app and the k6 image, resetting the table, and
+# reading the rig/config stamps (pool, schema, CPU) that make a number mean
+# something — so a new test file is only the k6 scenario plus how to summarise
+# it, never this plumbing.
 #
 # Contract for a sourcing script:
 #   - it has already cd'd to the repo root;
 #   - it calls perf_bootstrap once, before any measure;
-#   - k6 scenario files live at perf/<name>/<file>.js and are passed to k6_run
-#     as repo-root-relative paths (k6 runs with the repo mounted at /work).
+#   - k6 scenario files live beside the cells that run them and are passed to
+#     k6_run as repo-root-relative paths (k6 runs with the repo mounted at
+#     /work).
 
 export BASE_URL=${BASE_URL:-http://localhost:8080}
 K6_IMAGE=${K6_IMAGE:-grafana/k6:0.50.0}
@@ -153,7 +155,7 @@ READS_WARMED=0
 warm_reads() {
   [ "$READS_WARMED" = 1 ] && return 0
 
-  k6_run perf/read/stats-read.js \
+  k6_run perf/read/load/stats-read.js \
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS \
     -e ENDPOINT="$1" -e GROUP_BY="${2:-}" \
     -e VUS=4 -e DURATION=10s -e SUMMARY_OUT=/dev/null >/dev/null 2>&1 || true

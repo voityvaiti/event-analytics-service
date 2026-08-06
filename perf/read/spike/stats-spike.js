@@ -15,13 +15,13 @@
 
 import exec from 'k6/execution';
 import { check } from 'k6';
-import { getStats } from '../lib/k6-stats.js';
-import { generateQuery } from '../lib/query-generator.js';
-import { metric } from '../lib/k6-summary.js';
+import { getStats } from '../../lib/k6-stats.js';
+import { generateQuery } from '../../lib/query-generator.js';
+import { metric } from '../../lib/k6-summary.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
-const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/read/last-summary.json';
+const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/read/spike/last-summary.json';
 
 const SCENARIO = 'stats-spike';
 

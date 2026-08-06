@@ -1,7 +1,7 @@
 # `event-counts` — counting events in a window
 
 `GET /api/v1/stats/event-counts`. One journal row per grouping; see the
-[read README](../README.md) for how a row is read and how the questions are
+[read README](../../README.md) for how a row is read and how the questions are
 generated.
 
 The groupings are separate rows because they are separate query plans, not

@@ -1,7 +1,7 @@
 # `top-pages` — ranking pages in a window
 
-`GET /api/v1/stats/top-pages`. See the [read README](../README.md) for how a row
-is read and how the questions are generated.
+`GET /api/v1/stats/top-pages`. See the [read README](../../README.md) for how a
+row is read and how the questions are generated.
 
 The one read whose grouping key lives inside JSONB: `properties->>'page_url'` is
 extracted per row and ranked. The index narrows the window and nothing more —
