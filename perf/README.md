@@ -74,10 +74,47 @@ Rounds run back to back within a cell, so nothing but chance separates them, and
 each round journals its own row because each is a real measurement. The spread is
 derived and never stored — it only ever describes the rows it was computed from.
 
-Where the spread is *not* reported: both spike cells. Their overload metrics are
-too high-variance to reduce to a delta (see [CI](#what-runs-in-ci) below), so
-publishing a spread over them would invite exactly the comparison that is not
-supportable. They still repeat, because several rows are worth having.
+### The measured floor
+
+Established by the [index experiment](./index-experiment.md), which ran ten
+three-round passes of every cell on this rig — two arms across five corpus
+densities:
+
+| Regime | Peak-to-peak over 3 rounds |
+|---|---|
+| Write load, `throughput_rps` | 1.4% – 4.8% |
+| Read load, `p95_ms`, served from the index | 0% – 1.4% |
+| Read load, `p95_ms`, sequential scan over gigabytes | 1.6% – 10.0% |
+| Read load, `p95_ms`, sequential scan over megabytes | 0% – 1.0% |
+| Read load, `p95_ms`, empty table | 0% – 4.6% |
+
+Read the write figure as **~6%**, and treat anything below it as no measured
+effect. Three things about this table are worth stating outright.
+
+**Three rounds understates it.** Peak-to-peak can only grow as rounds are added —
+more samples, more chance of catching an extreme. The write cell's ten passes
+ranged from 1.35% to 4.76% individually; pooling their 30 rounds gave 5.84%. The
+table is a lower bound, not the real range.
+
+**The floor belongs to the amount of work, not to the machine.** The same queries
+repeat to within 1.4% when an index bounds what they read, and spread to 10% when
+a multi-gigabyte scan answers them — but back to 1% when the scan is only
+megabytes. A floor measured in one regime transfers to no other, and the write
+floor is not the read floor.
+
+**The empty-table row is not jitter.** Those reads answer in 0.37–0.46ms, where
+one hundredth of a millisecond of rounding is 2%. It is quantization of a number
+too small to measure this way, which is a different thing from a noisy regime.
+
+Where the spread is *not* reported: both spike cells. Not because nothing in them
+repeats — the read spike's `spike_achieved_rps` and `spike_dropped` hold to within
+1.2% — but because a spike has no single headline scalar. Its result is a compound
+verdict (`recovered` = served *and* drained), and a spread over one of that
+verdict's inputs would be read as a spread over the verdict. Those inputs run from
+steady to wild: the write spike's `spike_achieved_rps` moves up to 9.2% between
+identical rounds, and its `baseline_p95_ms` up to 92% — a figure small enough for
+one scheduler hiccup to dominate, which is why the recovery gate allows a 5x
+margin. The spike cells still repeat, because several rows are worth having.
 
 The floor measured here describes *this* rig and is not the band
 `compare-runs.mjs` applies in CI (`NOISE_PERCENT`, default 10). That one is
@@ -88,10 +125,15 @@ desktop. Two machines, two numbers; they must not be swapped for each other.
 
 Every test measures against the same seeded corpus — `SEED_ROWS` (default 20M)
 rows spread over `SEED_SPREAD_DAYS` from `SEED_ANCHOR` — rather than against an
-empty table. Reads need it to mean anything at all: on an empty table the
-planner ignores the very indexes a read test exists to exercise. Writes keep the
-same fixed starting point they always had; it simply moved from 0 to `SEED_ROWS`
-and became production-shaped.
+empty table. Reads need it to mean anything at all: on an empty table the planner
+ignores the very indexes a read test exists to exercise — measured, not assumed,
+by the [index experiment](./index-experiment.md), where both arms answered every
+read in under half a millisecond by sweeping a table with nothing in it. Writes
+keep the same fixed starting point they always had; it simply moved from 0 to
+`SEED_ROWS` and became production-shaped.
+
+`SEED_ROWS=0` asks for that empty table deliberately, which is how the density of
+the corpus becomes a variable a comparison can hold constant or sweep.
 
 The corpus is seeded once per suite run and each test then restores it: reads
 leave it untouched, and a write test deletes exactly the batch it posted, which
