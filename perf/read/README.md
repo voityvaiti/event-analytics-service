@@ -82,6 +82,9 @@ different set of fields around a recovery verdict; its own
 Reads are the reason the suite seeds a corpus at all (see the
 [suite README](../README.md)): on an empty table the planner ignores the very
 indexes these tests exist to exercise, so any number measured there would be
-fiction. The window a request asks for is a small slice of that corpus by
-design — a window covering most of it would be cheaper to sweep than to look up,
-and the index would never be chosen.
+fiction. Measured rather than assumed — the
+[index experiment](../index-experiment.md) ran every cell here against no corpus
+and got the same sub-millisecond answer with the index and without it. The window
+a request asks for is a small slice of that corpus by design — a window covering
+most of it would be cheaper to sweep than to look up, and the index would never be
+chosen.
