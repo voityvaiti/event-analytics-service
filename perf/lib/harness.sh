@@ -97,6 +97,19 @@ psql_events() {
 # Autovacuum does both eventually — on its own schedule, possibly in the middle
 # of a measured run.
 seed_corpus() {
+  # SEED_ROWS=0 runs the same suite against an empty table, which is how much of
+  # a read number belongs to the corpus rather than to the code. Answered here
+  # and not through the paths below: the generator rejects a zero-row corpus, and
+  # the reuse check would skip the ANALYZE — TRUNCATE leaves the planner's row
+  # estimate untouched, so it would go on choosing plans for a corpus that is no
+  # longer there.
+  if [ "$SEED_ROWS" = 0 ]; then
+    echo "Emptying the table — SEED_ROWS=0 measures against no corpus at all."
+    psql_events -qc 'TRUNCATE events;' || return 1
+    psql_events -qc 'VACUUM ANALYZE events;' || return 1
+    return 0
+  fi
+
   local existing
   existing=$(psql_events -tAc "SELECT count(*) FROM events WHERE source = '$SEED_SOURCE'" \
     | tr -d '[:space:]') || return 1
