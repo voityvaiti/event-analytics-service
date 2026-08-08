@@ -198,12 +198,12 @@ several secondary indexes would each move it.
    `/stats`. The 20M spike shows the indexed arm cannot absorb the surge either,
    so this is the next thing that changes the outcome — and it is what would let
    the read spike cell become a gate.
-2. **Sibling read spike cells.** The cell's
-   [README](./read/spike/active-users) allows one only if another endpoint's shape
-   sheds differently. Per-query cost differs 4x to 45x across the endpoints and
-   the ceiling is roughly pool size over query latency, so they do. The pinned 1d
-   window deserves the same treatment: the tables above swing from 476x to 0.73x
-   across window sizes.
+2. **Sibling read spike cells.** The cell admitted one only if another endpoint's
+   shape sheds differently, and its [README](./read/spike/active-users) now records
+   that condition as met: per-query cost differs 4x to 45x across the endpoints
+   against a ceiling of pool size over query latency. The pinned 1d window deserves
+   the same treatment — the tables above swing from 476x to 0.73x across window
+   sizes — and neither cell exists yet.
 3. **Journal the per-phase arrival rate** for both spike cells, so `achieved`
    stops being a figure a reader has to rescale from the whole run, and
    `baseline_achieved_rps` stops being `null`.
