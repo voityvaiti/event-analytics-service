@@ -15,6 +15,14 @@ and the surge reaches it first. `ENDPOINT` repoints this cell at another query
 without a new directory, for a one-off comparison; a second endpoint earns a
 cell of its own beside this one only if its shape turns out to shed differently.
 
+That condition now looks met. The [index experiment](../../../index-experiment.md)
+measured per-query cost spreading 7x across the read cells at 2M and 11x at 20M,
+and the ceiling here is pool size over query latency — so they cannot shed at
+the same rate, and `event-counts` may drain where `active-users` cannot. The pinned
+window is the same argument in another direction: for this cell's own query the
+index is worth 62x at 1h and 0.73x at 30d, so one surge at 1d is a single point on
+a curve. Sibling cells are the fix.
+
 ## Why the rates are two orders of magnitude below the write spike
 
 The write spike steps to 8000 req/s because an insert costs ~2ms. A read costs
@@ -44,9 +52,11 @@ The question is recovery. The surge itself is allowed to shed, and
 `recovery_failed_rate` near zero with `recovery_p95_ms` back near
 `baseline_p95_ms` — **and** `baseline_p95_ms` under `BASELINE_MAX_P95_MS`
 (1000ms), because a baseline that is itself saturated is not a reference. Without
-that precondition the ratio compares broken against broken and passes: the index
-experiment measured 28s recovery against a 15196ms baseline being called
-recovered, while a healthy 123ms baseline was not.
+that precondition the ratio compares broken against broken and passes: in the
+index experiment's no-index arm at the default corpus, a 29.6s recovery sat only
+1.8x above a baseline that had itself collapsed to 16.7s, which clears a 5x margin
+comfortably — while the indexed arm's 6.3s recovery against a healthy 124ms
+baseline does not.
 
 `recovered` carries the verdict, so a row answers its own question instead of
 leaving a reader to apply the rule by hand. It is derived from the three fields
@@ -60,6 +70,12 @@ a surge past the pool's ceiling always leaves a tail and the verdict would be re
 on every run — a permanently red test stops being read. It is journalled and
 printed instead, and becomes a gate once a statement timeout or queue limit lands.
 The write spike does gate: it genuinely recovers.
+
+The tail is a function of what a query costs, not a property of the surge. At a
+tenth of the corpus the index experiment's indexed arm absorbed the whole 400
+req/s step with recovery back at its 13ms baseline — a clean `recovered` from this
+very cell. At the default corpus it does not, with or without the index, which is
+what makes the protection above the thing that would change this verdict.
 
 `index_scans` and `seq_scans` are carried here too, for the same reason as in
 the load cells: without the index a surge would be answered by sequential
