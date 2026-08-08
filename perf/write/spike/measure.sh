@@ -71,13 +71,27 @@ def r(value, digits=2):
 # a factor of two, and a gate that trips on jitter teaches people to ignore it.
 RECOVERY_LATENCY_FACTOR = 5
 
+# The read spike's precondition, for the same reason: everything else here is
+# relative to the baseline phase, so a baseline that has itself collapsed is not a
+# reference. Kept on this side too even though the write path has never come close
+# to failing it — an insert answers in about 2ms and the baseline measures 2ms — a
+# gate that only holds while the numbers stay healthy is not a gate.
+#
+# 50ms is more than an order of magnitude above the healthy figure, so it marks
+# genuine saturation of the write path rather than jitter around it.
+BASELINE_MAX_P95_MS = 50
+
+baseline_valid = (
+    isinstance(baseline["p95_ms"], (int, float))
+    and baseline["p95_ms"] <= BASELINE_MAX_P95_MS
+)
 served = isinstance(recovery["failed_rate"], (int, float)) and recovery["failed_rate"] < 0.01
 drained = (
     isinstance(recovery["p95_ms"], (int, float))
     and isinstance(baseline["p95_ms"], (int, float))
     and recovery["p95_ms"] <= baseline["p95_ms"] * RECOVERY_LATENCY_FACTOR
 )
-recovered = served and drained
+recovered = baseline_valid and served and drained
 
 row = {
     "date": date,
@@ -101,14 +115,20 @@ row = {
     "spike_max_ms": r(spike["max_ms"]),
     "recovery_failed_rate": r(recovery["failed_rate"], 4),
     "recovery_p95_ms": r(recovery["p95_ms"]),
+    "baseline_achieved_rps": r(baseline["achieved_rps"], 1),
     "baseline_p95_ms": r(baseline["p95_ms"]),
-    "recovered": recovered,
 }
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-if recovered:
+# Not journalled: the verdict is derived from fields the row already carries, so
+# storing it would leave a second source of truth that keeps asserting whichever
+# rule was current when it was written. The gate below still uses it — computed
+# fresh, every run.
+if not baseline_valid:
+    verdict = "NO VALID BASELINE"
+elif recovered:
     verdict = "recovered"
 elif served:
     verdict = "STILL DRAINING"
@@ -118,10 +138,13 @@ else:
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT spike: %s | spike %s→%d rps achieved %s, dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, p95 %sms (baseline %sms)"
+    "PERF_RESULT spike: %s | baseline %s of %s rps, p95 %sms | spike →%d rps achieved %s, "
+    "dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, p95 %sms"
     % (
         verdict,
+        row["baseline_achieved_rps"],
         row["baseline_rate"],
+        row["baseline_p95_ms"],
         row["spike_rate"],
         row["spike_achieved_rps"],
         row["spike_dropped"],
@@ -129,7 +152,6 @@ print(
         row["spike_p99_ms"],
         r(recovery["failed_rate"] * 100, 2) if isinstance(recovery["failed_rate"], (int, float)) else "n/a",
         row["recovery_p95_ms"],
-        row["baseline_p95_ms"],
     )
 )
 print("PERF_STATUS " + ("ok" if recovered else "unrecovered"))
