@@ -44,12 +44,12 @@ still being worked off. The multiple is wide because run-to-run jitter already
 moves this figure by about a factor of two; what it has to catch is not close to
 the boundary.
 
-The verdict is **not** journalled. It is derived from `baseline_p95_ms`,
-`recovery_p95_ms` and `recovery_failed_rate`, which the row does carry, so storing
-it would leave a second source of truth that keeps asserting whichever rule was
-current when the row was written — which is precisely what happened before the
-baseline clause existed. `PERF - Write Spike` computes it fresh and exits non-zero
-when it is false.
+The row carries the verdict in `recovered`, so it answers its own question rather
+than leaving a reader to apply the rule by hand. It is derived from
+`baseline_p95_ms`, `recovery_p95_ms` and `recovery_failed_rate`, all of which are
+in the row too, and the `commit` stamp says which version of the rule produced it —
+rows from before the baseline clause existed are attributable, not merely stale.
+`PERF - Write Spike` exits non-zero when it is false.
 
 The spike phase itself is only *observed* — a spike is allowed to shed, so
 gating it would either hide the signal or red every run.
