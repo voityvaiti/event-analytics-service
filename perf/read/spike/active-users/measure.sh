@@ -90,13 +90,31 @@ def r(value, digits=2):
 # a surge past the pool's ceiling leaves recovery an order of magnitude slow.
 RECOVERY_LATENCY_FACTOR = 5
 
+# Recovery is judged against the baseline phase, so the baseline has to be a
+# healthy state or none of the rest means anything. Absolute, not relative: a
+# ratio to a collapsed baseline is satisfied by a system that never recovered,
+# and the index experiment measured exactly that — 28s recovery against a 15196ms
+# baseline was called recovered, while the same test on a healthy 123ms baseline
+# was not.
+#
+# 1000ms sits an order of magnitude above the healthy figure and an order of
+# magnitude below the collapsed one, so it separates the two cases without
+# tripping on jitter. It is a property of this workload at BASELINE_RATE, not a
+# universal number: raise it deliberately if the baseline rate or the pool
+# changes, rather than to make a red run go green.
+BASELINE_MAX_P95_MS = 1000
+
+baseline_valid = (
+    isinstance(baseline["p95_ms"], (int, float))
+    and baseline["p95_ms"] <= BASELINE_MAX_P95_MS
+)
 served = isinstance(recovery["failed_rate"], (int, float)) and recovery["failed_rate"] < 0.01
 drained = (
     isinstance(recovery["p95_ms"], (int, float))
     and isinstance(baseline["p95_ms"], (int, float))
     and recovery["p95_ms"] <= baseline["p95_ms"] * RECOVERY_LATENCY_FACTOR
 )
-recovered = served and drained
+recovered = baseline_valid and served and drained
 
 row = {
     "date": date,
@@ -122,16 +140,22 @@ row = {
     "spike_max_ms": r(spike["max_ms"]),
     "recovery_failed_rate": r(recovery["failed_rate"], 4),
     "recovery_p95_ms": r(recovery["p95_ms"]),
+    "baseline_achieved_rps": r(baseline["achieved_rps"], 1),
     "baseline_p95_ms": r(baseline["p95_ms"]),
     "index_scans": index_after - index_before,
     "seq_scans": seq_after - seq_before,
-    "recovered": recovered,
 }
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-if recovered:
+# The verdict is not journalled. It is derived from fields the row already
+# carries, so storing it would put a second source of truth in the series — and
+# when the rule improves, as it just did, every stored value silently keeps
+# asserting the old one. Recomputing from the row is always right.
+if not baseline_valid:
+    verdict = "NO VALID BASELINE"
+elif recovered:
     verdict = "recovered"
 elif served:
     verdict = "STILL DRAINING"
@@ -141,13 +165,16 @@ else:
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT read spike (%s %s): %s | spike %s→%d rps achieved %s, dropped %d, %s%% failed, "
-    "p99 %sms | recovery %s%% failed, p95 %sms (baseline %sms)"
+    "PERF_RESULT read spike (%s %s): %s | baseline %s of %s rps, p95 %sms | "
+    "spike →%d rps achieved %s, dropped %d, %s%% failed, p99 %sms | "
+    "recovery %s%% failed, p95 %sms"
     % (
         row["endpoint"],
         row["window"],
         verdict,
+        row["baseline_achieved_rps"],
         row["baseline_rate"],
+        row["baseline_p95_ms"],
         row["spike_rate"],
         row["spike_achieved_rps"],
         row["spike_dropped"],
@@ -157,7 +184,6 @@ print(
         if isinstance(recovery["failed_rate"], (int, float))
         else "n/a",
         row["recovery_p95_ms"],
-        row["baseline_p95_ms"],
     )
 )
 PY
