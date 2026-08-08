@@ -117,15 +117,15 @@ row = {
     "recovery_p95_ms": r(recovery["p95_ms"]),
     "baseline_achieved_rps": r(baseline["achieved_rps"], 1),
     "baseline_p95_ms": r(baseline["p95_ms"]),
+    "recovered": recovered,
 }
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-# Not journalled: the verdict is derived from fields the row already carries, so
-# storing it would leave a second source of truth that keeps asserting whichever
-# rule was current when it was written. The gate below still uses it — computed
-# fresh, every run.
+# Journalled, so the row answers its own question rather than leaving a reader to
+# apply this file's rule by hand. Which rule produced it is already answered by the
+# row's `commit` stamp, as it is for every other field.
 if not baseline_valid:
     verdict = "NO VALID BASELINE"
 elif recovered:
