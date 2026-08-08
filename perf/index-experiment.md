@@ -185,11 +185,12 @@ several secondary indexes would each move it.
   (`spike_achieved_rps` and `spike_dropped` to within 0.2%) but the result is a
   compound verdict, and a spread over one of its inputs would be read as a spread
   over the verdict.
-- Two pre-existing warts this experiment ran into. `perf_read_spike_active_users`
-  returns 0 whether or not the app recovered, while its header comment claims
-  otherwise — which is why all 18 read-spike rows exist despite 12 failed
-  verdicts. And `baseline_achieved_rps` journals as `null` in both spike cells,
-  because only the spike phase's `http_reqs` is materialised by a threshold.
+- `perf_read_spike_active_users` returns 0 whether or not the app recovered, which
+  is why all 18 read-spike rows exist despite 12 red verdicts: a failing cell stops
+  its remaining rounds. Its header comment claimed the opposite and was corrected.
+  A second wart is left standing: `baseline_achieved_rps` journals as `null` in
+  both spike cells, because only the spike phase's `http_reqs` is materialised by
+  a threshold.
 
 ## Follow-ups
 

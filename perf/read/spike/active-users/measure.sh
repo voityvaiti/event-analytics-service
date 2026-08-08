@@ -13,7 +13,10 @@
 #
 # The measured run is tolerated failing (|| true): a surge is allowed to shed,
 # so k6's recovery threshold tripping is data, not a reason to abort before it
-# is recorded. The function returns non-zero only when the app did not recover.
+# is recorded. This cell reports rather than gates (see its README), so the
+# function succeeds even on a red verdict — which is the expected outcome at the
+# default corpus, and a cell that failed would stop its remaining rounds and take
+# the rest of the measurements with it.
 # Reads do not mutate, so the corpus needs no restoring afterwards.
 #
 # Tunables via env: ENDPOINT, GROUP_BY, SPIKE_WINDOW, BASELINE_RATE, SPIKE_RATE,
