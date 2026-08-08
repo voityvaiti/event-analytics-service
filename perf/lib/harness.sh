@@ -138,9 +138,16 @@ seed_corpus() {
 # Reads leave the table alone, so only writers need this; vacuuming afterwards
 # keeps their dead rows from accumulating across tests and keeps the visibility
 # map current for the reads that follow.
+#
+# ANALYZE as well, because the write cells run before the read cells: a measured
+# write run adds and then deletes a few hundred thousand rows, and if autoanalyze
+# catches it mid-flight the read cells plan against a row estimate that includes a
+# batch no longer in the table. Against 20M rows that is a rounding error; against
+# 2M it is over a tenth of the table, and against an empty one it is the whole
+# difference between an index and a sequential scan.
 restore_seed_baseline() {
   psql_events -qc "DELETE FROM events WHERE source = '$WRITE_BATCH_SOURCE';" || return 1
-  psql_events -qc 'VACUUM events;' || return 1
+  psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
 
 # The row count a measured run actually started from, journalled so a number is
