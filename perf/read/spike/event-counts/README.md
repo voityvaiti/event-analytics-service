@@ -15,8 +15,13 @@ trailing `event_type`, and counting needs nothing else — `EXPLAIN` reports
 That is the whole reason it exists. It is the far end of the range from
 `active-users`, and it asks whether a shape that costs a tenth as much per query
 also drains a burst — or whether what a surge leaves behind depends on the depth
-of the queue rather than on the price of the query. The other two cells are the
-comparison, so read this row beside theirs at the same corpus.
+of the queue rather than on the price of the query.
+
+The first three rounds answered it: the price of the query. All three recovered,
+with ~98 000 requests shed during the surge and recovery `p95` back within
+0.2ms of a 14.4ms baseline. Same queue depth as its siblings, same 5x overload,
+and the only cell that comes back — so read this row beside theirs at the same
+corpus.
 
 ## The other groupings are not this cell
 
@@ -29,8 +34,11 @@ between two surges rather than between two query shapes.
 
 ## Watch the recovery margin here
 
-The verdict allows recovery to sit 5x above baseline. Against this cell's ~12ms
-that is a band of some 60ms in absolute terms, narrow enough for one scheduler
-hiccup to cross — where the same rule around `active-users`' 124ms baseline is
-half a second wide. Nothing gates on it, so a single red row here is a prompt to
-look at `recovery_failed_rate` and `spike_dropped` before concluding anything.
+The verdict allows recovery to sit 5x above baseline. Against this cell's 14ms
+that is a band of some 70ms in absolute terms, where the same rule around
+`active-users`' 124ms baseline is half a second wide. The measured rounds land
+nowhere near it — recovery returns to within 1.5% of baseline, not to 500% — so
+the margin is not as fragile as its width suggests. It stays worth knowing:
+this is the one cell where a red verdict could plausibly be jitter rather than a
+tail, so read `recovery_failed_rate` and `spike_dropped` before concluding
+anything from a lone row.

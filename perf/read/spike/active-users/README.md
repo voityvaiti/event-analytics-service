@@ -17,7 +17,9 @@ siblings existed is this query, including the thirty the
 [index experiment](../../../index-experiment.md) produced across five corpus
 densities and both index arms. At the default corpus it does not recover, with or
 without the index — 6.3s recovery against a healthy 124ms baseline — and at a
-tenth of it the indexed arm absorbed the same surge whole.
+tenth of it the indexed arm absorbed the same surge whole. The first rounds run
+beside the siblings reproduced that exactly: 6.56s against 124ms, and 84 req/s
+sustained where the experiment's hand-corrected figure was 84.5.
 
 ## One point on a curve
 
