@@ -12,12 +12,15 @@ production.
 | Read | [`read/load/event-counts/`](./read/load/event-counts) | How long does counting events in a window take, per grouping? |
 | Read | [`read/load/active-users/`](./read/load/active-users) | How long does `COUNT(DISTINCT user_id)` over a window take — the read the index can help least? |
 | Read | [`read/load/top-pages/`](./read/load/top-pages) | How long does ranking pages out of JSONB take? |
-| Read | [`read/spike/active-users/`](./read/spike/active-users) | Does the read path survive a burst of dashboard traffic, and does its queue drain afterwards? |
+| Read | [`read/spike/event-counts/`](./read/spike/event-counts) | Does the cheapest read shape absorb a burst of dashboard traffic, or does queue depth beat query cost? |
+| Read | [`read/spike/active-users/`](./read/spike/active-users) | Does the heaviest read shape survive a burst, and does its queue drain afterwards? |
+| Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Does a JSONB ranking survive a burst, with the index able to narrow the window and no more? |
 
 Each cell owns its own `journal.jsonl` (an absolute series, self-stamped with
 the rig and config so a number is only ever compared within a fixed rig). Read
 each cell's README for what its numbers mean and why; the read cells share
-[one README](./read) for the parts common to all of them.
+[one README](./read) for the parts common to all of them, and the read spike
+cells [another](./read/spike) for the parts common to a surge.
 
 ## Running
 
@@ -106,7 +109,7 @@ floor is not the read floor.
 one hundredth of a millisecond of rounding is 2%. It is quantization of a number
 too small to measure this way, which is a different thing from a noisy regime.
 
-Where the spread is *not* reported: both spike cells. Not because nothing in them
+Where the spread is *not* reported: any spike cell. Not because nothing in them
 repeats — the read spike's `spike_achieved_rps` and `spike_dropped` hold to within
 1.2% — but because a spike has no single headline scalar. Its result is a compound
 verdict (`recovered` = served *and* drained), and a spread over one of that
@@ -165,8 +168,9 @@ perf/
       measure-cell.sh   the measuring routine the load cells share
       event-counts/  active-users/  top-pages/
     spike/
-      stats-spike.js    the surge scenario
-      active-users/
+      stats-spike.js    the surge scenario, endpoint and rate via env
+      measure-cell.sh   the measuring routine the spike cells share
+      event-counts/  active-users/  top-pages/
 ```
 
 Both paths split by workload first, because `load` and `spike` are measured
@@ -174,8 +178,9 @@ differently and judged differently. Only `read/` then splits again by endpoint:
 the write path has one ingest endpoint, while each read endpoint is a different
 query shape worth its own series.
 
-The write cells each own their k6 scenario; the read load cells share one,
-because they differ only in the URL they call and not in how they are measured.
+The write cells each own their k6 scenario; each read workload shares one across
+its three cells, because within a workload they differ only in the request they
+make and not in how they are measured.
 
 - **`lib/harness.sh`** owns everything identical across tests — bringing up
   dependencies, checking the app and the k6 image, seeding the corpus and
