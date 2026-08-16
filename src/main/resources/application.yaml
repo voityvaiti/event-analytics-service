@@ -10,6 +10,10 @@ spring:
     compose:
       lifecycle-management: start-only
 
+analytics:
+  query:
+    timeout: 5s
+
 management:
   endpoints:
     web:
