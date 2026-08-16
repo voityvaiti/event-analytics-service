@@ -168,6 +168,17 @@ Each decision states what was chosen, why, and what was rejected.
   only when the current one hurts and the hurt is in a journal.
   *Rejected:* pre-computing rollups from the start — it fixes the set of
   answerable questions before anyone knows which questions get asked.
+- **Asymmetric token signatures, not a shared secret.** Bearer tokens will be
+  verified with an RSA public key, keeping the ability to check a token separate
+  from the ability to mint one. That separation only pays off once issuing moves
+  outside this service, but the choice is made up front because it costs a key
+  pair and a config line now and an algorithm migration under live traffic
+  later.
+  *Rejected:* HS256 — one secret both signs and verifies, so every party that
+  can validate a token can also forge one, and the secret has to reach each of
+  them over a channel that is already secure. *Also rejected:* ES256 — ECDSA
+  signs faster and verifies slower, the wrong side of that trade for a service
+  that verifies on every request and signs rarely.
 - **No foreign key from `events.source` to the tenant table.** Tenant validity
   is proven at the auth layer, before the write; the tenant table is read on
   the analytics path only.
