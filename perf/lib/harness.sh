@@ -310,7 +310,7 @@ PY
 # which is a price worth paying knowingly rather than by default.
 #
 # After a repeated cell, a <function>_spread hook is called with the round count
-# if the cell defines one. Both spike cells deliberately define none: their
+# if the cell defines one. The spike cells deliberately define none: their
 # overload metrics are too high-variance to reduce to a delta (see the suite
 # README), so publishing a spread over them would invite exactly the comparison
 # that is not supportable.

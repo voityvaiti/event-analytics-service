@@ -272,7 +272,12 @@ Peak-to-peak over three rounds. These are the numbers the
   its remaining rounds. Its header comment claimed the opposite and was corrected.
   A second wart is left standing: `baseline_achieved_rps` journals as `null` in both
   spike cells, because only the spike phase's `http_reqs` is materialised by a
-  threshold.
+  threshold. (A third went unnoticed here: `spike_achieved_rps` is diluted across
+  the whole 80s run rather than the 30s surge, which is why the 84.5 req/s quoted
+  above is the row's 31.7 corrected by hand. The read scenario has since been fixed
+  on both counts — all three phases materialised, each rate counted over its own
+  phase — and the write spike still carries them. Every row this experiment produced
+  is uncorrected.)
 
 ## The passes
 
@@ -294,17 +299,19 @@ Peak-to-peak over three rounds. These are the numbers the
 2. **Heavy-query protection**: a statement timeout or a bounded queue for `/stats`.
    At 20M the indexed arm cannot absorb the surge either, so this is the next thing
    that changes an outcome — and it is what would let the read spike cell gate.
-3. **Express both spikes as a multiple of the measured ceiling**, not as an
-   absolute rate. Then a spike means the same thing across densities and across the
-   read and write paths, which today it does not: the write spike's nominal 8000
-   req/s is 2x its ceiling on paper but only ever applies 1x, because k6 sheds the
-   rest client-side once the app slows.
-4. **Sibling read spike cells.** The cell admitted one only if another endpoint's
-   shape sheds differently, and its [README](./read/spike/active-users) now records
-   that condition as met: per-query cost spreads 11x across the endpoints at 20M
-   against a ceiling of pool size over query latency. The pinned 1d window deserves
+3. **Express every spike as a multiple of the measured ceiling**, not as an
+   absolute rate. Done on the read path — each cell now derives its `SPIKE_RATE` as
+   ~5x pool size over its own 1d `p95`, which is what makes three endpoints an
+   order of magnitude apart comparable at all. Still open for the write path and
+   across densities: the write spike's nominal 8000 req/s is 2x its ceiling on
+   paper but only ever applies 1x, because k6 sheds the rest client-side once the
+   app slows, and every read rate above is frozen to this rig's 20M-row corpus.
+4. **Sibling read spike cells.** Done — `event-counts` and `top-pages` now have
+   cells beside `active-users`, on the condition the old README set: per-query cost
+   spreads 11x across the endpoints at 20M against a ceiling of pool size over
+   query latency, so they cannot shed alike. The pinned 1d window still deserves
    the same treatment — for `active-users` the index swings from 62x at 1h to 0.73x
-   at 30d — and neither cell exists yet.
+   at 30d — and that cell does not exist.
 5. **Vary the pool.** It is the numerator of every ceiling in this document and the
    one input never swept. Whether 400 req/s at 20M is reachable with a pool of 40,
    or whether forty concurrent scans just make each query proportionally slower, is

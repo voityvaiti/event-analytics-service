@@ -17,8 +17,9 @@ read/
     measure-cell.sh         the measuring routine all three share
     event-counts/  active-users/  top-pages/
   spike/                    surge and recovery
-    stats-spike.js
-    active-users/
+    stats-spike.js          the scenario all three spike cells run
+    measure-cell.sh         the measuring routine all three share
+    event-counts/  active-users/  top-pages/
 ```
 
 The top level is the workload, matching [`write/`](../write) — `load` and
@@ -27,10 +28,10 @@ share a directory level with each other. The endpoint level exists only
 underneath, and only on this side of the suite: the write path has a single
 ingest endpoint, while a read has one per query shape.
 
-Load cells share a scenario and a measuring routine because they differ only in
-the URL they call. The spike cell has its own scenario and its own routine
-because a surge is measured in phases against a recovery verdict, not as one
-steady window — so there is nothing to share.
+Within a workload the cells share a scenario and a measuring routine, because
+they differ only in the request they make. Across the two they share nothing but
+the harness: a surge is measured in phases against a recovery verdict, not as one
+steady window.
 
 ## What a load run does
 
@@ -56,14 +57,14 @@ Load cells repeat like every other cell (`ROUNDS`, default 1 — see the
 read comparison turns on. `event-counts` groups its spread by `group_by`, because
 a round appends one row per grouping and those are three different query plans:
 pooling them would report the gap between plans as though it were jitter within
-one. The spike cell repeats but reports no spread, for the reason given there.
+one. The spike cells repeat but report no spread, for the reason given there.
 
 ## Reading a load journal row
 
 Rows carry the usual rig and config stamps (CPU, cores, pool, schema,
-`start_rows`), plus two things specific to reads. The spike cell journals a
-different set of fields around a recovery verdict; its own
-[README](./spike/active-users) covers those.
+`start_rows`), plus two things specific to reads. The spike cells journal a
+different set of fields around a recovery verdict; their shared
+[README](./spike) covers those.
 
 - **`windows`** — latency split by window size. The split is the point: those
   sizes differ by more than an order of magnitude in the rows they touch, so a
