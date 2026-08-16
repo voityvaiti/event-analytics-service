@@ -66,8 +66,10 @@ overload is absorbed whole at 14ms, leaves a half-second tail at 31ms, and a
 six-second one at 124ms.
 
 `top-pages` is the cell to watch. It is the one sitting closest to its own
-baseline, so it is the first that would turn green when heavy-query protection
-lands — a better early gate candidate than `active-users`, which is 53x away.
+baseline, so it is the first that would turn green when the tail is addressed — a
+better early gate candidate than `active-users`, which is 53x away. The statement
+timeout was not what it needed: with the bound in place `top-pages` recovers at
+441.8ms against a 30.6ms baseline, still 14x out.
 
 ## What is deliberately equal across the cells
 
@@ -128,14 +130,24 @@ row should say so rather than leave a collapse unexplained.
 
 ## Why none of them gate
 
-Nothing in the app cuts off a long-running read yet, so a surge past the pool's
-ceiling always leaves a tail and the verdict would be red on every run — and a
-permanently red test stops being read. These cells journal and print instead, and
-become gates once a statement timeout or a queue limit lands. The write spike does
-gate: it genuinely recovers.
+A surge past the pool's ceiling leaves a tail, so the verdict would be red on
+every run — and a permanently red test stops being read. These cells journal and
+print instead. The write spike does gate: it genuinely recovers.
+
+This section used to name the condition for gating: once a statement timeout or a
+queue limit lands. Half of that has landed, and it turned out to be the wrong
+half. Every pooled connection now carries a 10s `statement_timeout`, and three
+rounds of each cell with it in place changed nothing — no phase returned a 503,
+and all nine verdicts held. The tail is time spent waiting for a connection, not
+time spent running a query, and a bound on the second does not touch the first.
+
+When a bound on the queue does land, this rule needs revisiting rather than
+switching on. A cell that sheds correctly answers 503 during recovery, which
+trips `recovery_failed_rate` on a clause that has nothing to do with draining —
+so gating would first have to say that shedding fast is success and queueing
+quietly is failure.
 
 The tail is a function of what a query costs, not a property of the surge. At a
 tenth of the corpus the index experiment's indexed arm absorbed the whole 400
 req/s step with recovery back at its 13ms baseline — a clean `recovered` from the
-`active-users` cell. At the default corpus it does not, with or without the index,
-which is what makes that protection the thing that would change the verdict.
+`active-users` cell. At the default corpus it does not, with or without the index.
