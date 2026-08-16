@@ -27,6 +27,7 @@ const SCENARIO = 'stats-spike';
 
 const ENDPOINT = __ENV.ENDPOINT || 'active-users';
 const GROUP_BY = __ENV.GROUP_BY || 'day';
+const LIMIT = __ENV.LIMIT || '';
 const WINDOW = __ENV.SPIKE_WINDOW || '1d';
 
 const CORPUS_ANCHOR = Date.parse(__ENV.SEED_ANCHOR || '2026-01-01T00:00:00Z');
@@ -101,6 +102,9 @@ export default function () {
   if (GROUP_BY) {
     params.groupBy = GROUP_BY;
   }
+  if (LIMIT) {
+    params.limit = LIMIT;
+  }
 
   const response = getStats(BASE_URL, ENDPOINT, params);
   check(response, { 'status is 200': (r) => r.status === 200 });
@@ -131,6 +135,7 @@ export function handleSummary(data) {
     base_url: BASE_URL,
     endpoint: ENDPOINT,
     group_by: GROUP_BY,
+    limit: LIMIT,
     window: WINDOW,
     baseline_rate: BASELINE_RATE,
     spike_rate: SPIKE_RATE,
@@ -139,11 +144,13 @@ export function handleSummary(data) {
     phases: { baseline, spike, recovery },
   };
 
+  const query =
+    ENDPOINT + (GROUP_BY ? ` groupBy=${GROUP_BY}` : '') + (LIMIT ? ` limit=${LIMIT}` : '');
   const num = (v, decimals) => (Number.isFinite(v) ? v.toFixed(decimals) : 'n/a');
   const line = (label, value) => `  ${label.padEnd(22)} ${value}`;
   const text = [
     '',
-    `stats read spike  ${ENDPOINT} ${WINDOW}  (run ${RUN_ID})`,
+    `stats read spike  ${query} ${WINDOW}  (run ${RUN_ID})`,
     line('baseline → spike rps', `${BASELINE_RATE} → ${SPIKE_RATE}`),
     line('spike achieved rps', num(spike.achieved_rps, 0)),
     line('spike dropped', num(spike.dropped, 0)),
