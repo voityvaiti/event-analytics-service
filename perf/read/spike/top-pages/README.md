@@ -17,6 +17,18 @@ at the endpoint default of 10 and left alone — `LIMIT=100` is a tenth of a
 percent more response, not a different amount of work, and it is not the knob
 that moves this cell's ceiling.
 
+## The cell sitting closest to the line
+
+Its first three rounds shed like `active-users` and drain like neither: 284 req/s
+sustained, ~36 500 requests shed, and a recovery `p95` of 447ms against a 31ms
+baseline. That is 14.5x — over the 5x the verdict allows, so `STILL DRAINING`,
+but two orders of magnitude nearer to passing than `active-users`' 53x.
+
+Which makes this the cell to watch once heavy-query protection lands. It is the
+one whose verdict a statement timeout or a bounded queue would flip first, so it
+is the natural place for the first gate — ahead of `active-users`, which needs
+the query to get cheaper and not merely bounded.
+
 ## What this cell would show
 
 If an expression or GIN index on `page_url` is ever considered, the load cell

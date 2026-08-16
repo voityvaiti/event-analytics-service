@@ -48,6 +48,27 @@ of reading the run as a pass. Rows written before `stats-spike.js` counted rates
 per phase carry a `spike_achieved_rps` diluted across the whole run and cannot be
 read against that rule; their `commit` stamp is what separates them.
 
+## What the first rows measured
+
+Medians of three rounds each, at 20M rows with the index:
+
+| Cell | Baseline `p95` | Sustained | Predicted ceiling | Recovery `p95` | Verdict |
+|---|---|---|---|---|---|
+| `event-counts` | 14.4 ms | 717 req/s | ~840 | 14.4 ms (1.0x) | recovered |
+| `top-pages` | 30.9 ms | 284 req/s | ~310 | 447 ms (14.5x) | STILL DRAINING |
+| `active-users` | 124 ms | 84 req/s | ~79 | 6.56 s (53x) | STILL DRAINING |
+
+The ceilings were derived, not fitted, and every cell sustained within 15% of
+its own — so the rate rule above rests on a measurement rather than on the
+arithmetic alone. What the three rows say together is that surviving a burst is
+decided by what a query costs, not by how much traffic arrives: the same 5x
+overload is absorbed whole at 14ms, leaves a half-second tail at 31ms, and a
+six-second one at 124ms.
+
+`top-pages` is the cell to watch. It is the one sitting closest to its own
+baseline, so it is the first that would turn green when heavy-query protection
+lands — a better early gate candidate than `active-users`, which is 53x away.
+
 ## What is deliberately equal across the cells
 
 Only the query and the rate differ. Three things that could have been tuned per
