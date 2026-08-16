@@ -270,22 +270,38 @@ of the intended requests at all — and p95 on what did get through reached
 7.4 s. In the recovery window after the surge ended, p95 was still 6.3 s.
 Nothing that was served returned an error; it queued, and stayed queued.
 
-Those numbers predate the read path's statement timeout. A query the database
-cannot finish within it — 5 s by default — is now cancelled and answered 503,
-so no single query holds a pooled connection indefinitely. The queue is still
-unbounded: there is no query admission limit, and the pool is shared with
-ingest, so a burst of expensive reads remains capable of starving the write
-path that is otherwise the system's healthy half. The timeout bounds how long
-one query runs, not how long a request waits for a connection, and the recovery
-tail above is mostly the latter — whether the timeout moves it is a
-measurement, not yet an answer.
+Those numbers predate the statement timeout. Every pooled connection now
+carries a 10 s bound, and a query cancelled for exceeding it is answered 503,
+so a connection can no longer be held for minutes. Nine rounds across the three
+spike cells then established what that is worth here: it never fires under this
+surge, and every verdict is unchanged. The tail is time spent waiting for a
+connection, not time spent running a query, and a bound on the second does not
+touch the first.
 
-**What would have to change.** The first item has landed: a `statement_timeout`
-on the read path, so a pathological query fails fast instead of occupying a
-connection. Next is a separate pool or a concurrency limit for reads, so the
-write path cannot be starved; then rollup tables to remove the linear scan for
-wide windows. Only after that does caching pay — a TTL cache in front of an
-unbounded query shortens the good case and does nothing for the bad one.
+**What would have to change.** The first item has landed: a bound on how long
+any single statement may run, so nothing occupies a connection indefinitely.
+
+**The next one is separating reads from writes at the connection pool, and it
+matters more than the timeout did.** Both paths draw from one pool of ten
+connections, first-come-first-served, and virtual threads mean that pool is the
+only place a request ever waits. Throughout the surge above, all ten were held
+by reads continuously — so an insert worth 2 ms of work queues behind them and
+its latency becomes seconds, or fails outright once the wait passes Hikari's
+connection timeout. The healthy half of the system degrades because of the half
+that is not, and no query plan or timeout prevents it: the timeout bounds how
+long one connection is held, never how many of them reads may hold at once.
+
+Two shapes answer it. A second pool reserves connections for writes outright,
+at the cost of leaving Boot's datasource auto-configuration and of sizing two
+pools where one was measured. A concurrency limit on reads reserves the same
+capacity from a single pool and bounds the queue as well, which the split does
+not. Neither is measured yet — no cell runs ingest and a read surge together,
+so this is a mechanism the design admits rather than a number the suite
+reports, and that cell comes first.
+
+Then rollup tables to remove the linear scan for wide windows. Only after that
+does caching pay — a TTL cache in front of an unbounded query shortens the good
+case and does nothing for the bad one.
 
 **Other known gaps.**
 
