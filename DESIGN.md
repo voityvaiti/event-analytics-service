@@ -269,17 +269,23 @@ demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering
 of the intended requests at all — and p95 on what did get through reached
 7.4 s. In the recovery window after the surge ended, p95 was still 6.3 s.
 Nothing that was served returned an error; it queued, and stayed queued.
-Nothing bounds that queue either: there is no statement timeout on the read
-path, no query admission limit, and the connection pool is shared with ingest,
-so a burst of expensive reads is capable of starving the write path that is
-otherwise the system's healthy half.
 
-**What would have to change.** In order: a `statement_timeout` on the read
-path, so a pathological query fails fast instead of occupying a connection; a
-separate pool or a concurrency limit for reads, so the write path cannot be
-starved; then rollup tables to remove the linear scan for wide windows. Only
-after that does caching pay — a TTL cache in front of an unbounded query
-shortens the good case and does nothing for the bad one.
+Those numbers predate the read path's statement timeout. A query the database
+cannot finish within it — 5 s by default — is now cancelled and answered 503,
+so no single query holds a pooled connection indefinitely. The queue is still
+unbounded: there is no query admission limit, and the pool is shared with
+ingest, so a burst of expensive reads remains capable of starving the write
+path that is otherwise the system's healthy half. The timeout bounds how long
+one query runs, not how long a request waits for a connection, and the recovery
+tail above is mostly the latter — whether the timeout moves it is a
+measurement, not yet an answer.
+
+**What would have to change.** The first item has landed: a `statement_timeout`
+on the read path, so a pathological query fails fast instead of occupying a
+connection. Next is a separate pool or a concurrency limit for reads, so the
+write path cannot be starved; then rollup tables to remove the linear scan for
+wide windows. Only after that does caching pay — a TTL cache in front of an
+unbounded query shortens the good case and does nothing for the bad one.
 
 **Other known gaps.**
 
