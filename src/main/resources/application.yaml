@@ -9,10 +9,15 @@ spring:
   docker:
     compose:
       lifecycle-management: start-only
-
-analytics:
-  query:
-    timeout: 5s
+  datasource:
+    hikari:
+      # Runs once per physical connection, so no request pays for its own bound.
+      # Postgres defaults to 0 — no bound at all — which is what this replaces.
+      # 10s clears the widest read the corpus can even produce: active-users
+      # over its whole 180-day span costs 5.9s, and 30 days costs 3.6s under
+      # the load profile's concurrency. So it fires on work no window explains
+      # — a stuck statement, a lock, a plan gone wrong — on either path.
+      connection-init-sql: SET statement_timeout = '10s'
 
 management:
   endpoints:
