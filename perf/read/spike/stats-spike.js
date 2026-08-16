@@ -3,11 +3,11 @@
 // spike-events.js counterpart, and it borrows that file's reasoning about why
 // the executor is arrival-rate rather than VU-based.
 //
-// One surge test covers the read path rather than one per endpoint: what a
-// spike measures is the service's behaviour when requests outrun the pool, and
-// that is a property of the pool and the queue rather than of a query shape.
-// ENDPOINT points it at whichever query is worth surging; the default is the
-// heaviest one, because that is where the ceiling is lowest.
+// Shared by every cell under spike/, the way stats-read.js is shared by the load
+// cells: they differ in the query they surge and in the rate it takes to outrun
+// that query's ceiling, never in how the surge is applied or judged. ENDPOINT,
+// GROUP_BY, LIMIT and SPIKE_RATE come from the cell, which is where the choice
+// of each is argued.
 //
 // The window size is pinned while the position keeps moving. A spike changes
 // one variable — the arrival rate — and mixing window sizes into it would vary
@@ -26,7 +26,7 @@ const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/read/spike/last-summary.json';
 const SCENARIO = 'stats-spike';
 
 const ENDPOINT = __ENV.ENDPOINT || 'active-users';
-const GROUP_BY = __ENV.GROUP_BY || 'day';
+const GROUP_BY = __ENV.GROUP_BY || '';
 const LIMIT = __ENV.LIMIT || '';
 const WINDOW = __ENV.SPIKE_WINDOW || '1d';
 
@@ -40,7 +40,9 @@ const CORPUS = {
 // Reads are answered in tens to hundreds of milliseconds, not the ~2ms an
 // insert takes, so the pool saturates at request rates two orders of magnitude
 // below the write spike's. SPIKE_RATE must clear the read ceiling — roughly
-// pool size divided by query latency — or there is no surge to observe.
+// pool size divided by query latency — or there is no surge to observe, which
+// is why each cell derives its own default rate instead of sharing one: the
+// ceiling moves by an order of magnitude between the endpoints.
 const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 20);
 const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 400);
 

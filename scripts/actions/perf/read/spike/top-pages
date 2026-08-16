@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# PERF - Read Spike top-pages: step the request rate for
+# /api/v1/stats/top-pages far above what the pool can serve, then back down, and
+# check the read path recovers. Appends one row per round to
+# perf/read/spike/top-pages/journal.jsonl. The recovery verdict is printed and
+# journal-only, never a gate — see the cell's README for why — so this exits
+# non-zero only when a run could not be measured at all. The app must already be
+# running on the host. Tunables: SPIKE_RATE, LIMIT, SPIKE_WINDOW, BASELINE_RATE,
+# *_SECONDS, MAX_VUS, ROUNDS (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/read/spike/measure-cell.sh
+source perf/read/spike/top-pages/measure.sh
+
+perf_bootstrap
+perf_run_tests "read spike top-pages:perf_read_spike_top_pages"
