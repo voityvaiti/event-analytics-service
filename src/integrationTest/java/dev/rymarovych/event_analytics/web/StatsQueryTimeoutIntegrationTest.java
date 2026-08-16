@@ -18,8 +18,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Verifies that the read path's {@code statement_timeout} cancels a query it cannot finish, and
- * that it stays confined to the queries it was set for.
+ * Verifies that a query cancelled by the pool's {@code statement_timeout} reaches the client as a
+ * 503 problem detail, and that the bound really is on every pooled connection.
  *
  * <p>The slow query is produced by taking an {@code ACCESS EXCLUSIVE} lock on {@code events} from a
  * second connection: {@code statement_timeout} covers time spent waiting for a lock, so the read is
@@ -27,10 +27,13 @@ import org.springframework.test.web.servlet.MockMvc;
  * normally milliseconds fast.
  *
  * <p>The pool is capped at two connections so both halves stay exact — one connection holds the
- * lock while the other serves the request, and the leak test can then inspect the entire pool.
+ * lock while the other serves the request, and the second test can then inspect the whole pool.
  */
 @SpringBootTest(
-    properties = {"analytics.query.timeout=200ms", "spring.datasource.hikari.maximum-pool-size=2"})
+    properties = {
+      "spring.datasource.hikari.connection-init-sql=SET statement_timeout = '200ms'",
+      "spring.datasource.hikari.maximum-pool-size=2"
+    })
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 class StatsQueryTimeoutIntegrationTest {
@@ -64,19 +67,17 @@ class StatsQueryTimeoutIntegrationTest {
     }
   }
 
+  /**
+   * The bound is deliberately on the pool rather than on the read path, so it applies to whichever
+   * connection any request happens to draw — including the ingest path's. This asserts the blast
+   * radius is that wide on purpose, so narrowing it later is a decision rather than an accident.
+   */
   @Test
-  void timeoutDoesNotSurviveOnPooledConnections() throws Exception {
-    mockMvc
-        .perform(
-            get(EVENT_COUNTS)
-                .param("from", "2026-05-24T00:00:00Z")
-                .param("to", "2026-05-25T00:00:00Z"))
-        .andExpect(status().isOk());
-
+  void everyPooledConnectionCarriesTheTimeout() throws Exception {
     try (var first = dataSource.getConnection();
         var second = dataSource.getConnection()) {
-      assertThat(statementTimeoutOn(first)).isEqualTo("0");
-      assertThat(statementTimeoutOn(second)).isEqualTo("0");
+      assertThat(statementTimeoutOn(first)).isEqualTo("200ms");
+      assertThat(statementTimeoutOn(second)).isEqualTo("200ms");
     }
   }
 
