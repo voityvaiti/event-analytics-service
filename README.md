@@ -106,10 +106,11 @@ and how to add a test.
 The read path saturates before the write path does: steady-state ingest holds
 ~4,100 req/s at p99 under 5 ms, while a 30-second read surge offering 400 req/s
 was served at 31.8 req/s, pushing p95 from 124 ms to 7.4 s — still 6.3 s in the
-recovery window afterwards. That surge predates the read path's statement
-timeout, which now cancels a query the database cannot finish and answers 503.
-The queue behind it is still unbounded — no admission limit, and the connection
-pool is shared with ingest.
+recovery window afterwards. That surge predates the 10 s statement timeout every
+pooled connection now carries, which was then measured against it and does not
+move the tail: the wait is for a connection, not for a query. The queue is still
+unbounded, and the pool is shared with ingest, so a read burst can hold every
+connection the write path needs.
 Full numbers and the ordered fix list are in
 [DESIGN.md → Known limitations](./DESIGN.md#known-limitations-and-what-breaks-at-10x).
 
