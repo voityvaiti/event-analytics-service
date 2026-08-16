@@ -2,13 +2,16 @@ package dev.rymarovych.event_analytics.web;
 
 import static java.util.Objects.requireNonNullElse;
 
+import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
@@ -31,6 +34,22 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  */
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+  /**
+   * A query cancelled by the read path's statement timeout is a 503, not a 500: the request was
+   * well formed and the same request may well succeed over a narrower window or against a less
+   * loaded database, so the client is told to back off rather than that it made a mistake.
+   */
+  @ExceptionHandler(AnalyticsQueryTimeoutException.class)
+  @Nullable ResponseEntity<Object> handleAnalyticsQueryTimeout(
+      AnalyticsQueryTimeoutException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "The query took too long to run and was cancelled. Retry over a narrower time window.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
 
   @Override
   protected @Nullable ResponseEntity<Object> handleMethodArgumentNotValid(
