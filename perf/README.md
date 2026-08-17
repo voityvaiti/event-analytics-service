@@ -42,7 +42,9 @@ one-line compose edit and nothing here changes.
 
 Every request carries a bearer token — see [Tenants and tokens](#tenants-and-tokens).
 
-The IDE run configs (`.run/`) wrap the actions below:
+The IDE run configs (`.run/`) wrap the actions below, plus _PERF - App_ for the
+launcher above — note that _APP - Start_ is the development one and the harness
+will refuse it:
 
 ```bash
 scripts/actions/perf/write/load/<shape>       # one request shape's throughput
