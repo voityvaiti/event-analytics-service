@@ -5,9 +5,13 @@
 //
 // occurred_at is spread linearly over the window rather than hashed: that is
 // how an event table actually accumulates, and it keeps physical row order
-// aligned with the index the read tests exercise. `source` overrides the
-// generator's sentinel so a write test can delete exactly its own batch
-// afterwards and leave the corpus standing.
+// aligned with the index the read tests exercise.
+//
+// `source` is set here rather than by the generator, which no longer emits one:
+// a write scenario's rows now take their source from the tenant its token
+// asserts, and only this COPY still writes the column directly. The two must
+// stay different so a write test's teardown deletes its own batch and leaves the
+// corpus standing.
 
 import { generateEvent } from './event-generator.js';
 import { CORPUS_SEQ_LIMIT } from './seq-space.js';

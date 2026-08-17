@@ -10,15 +10,16 @@ import tools.jackson.databind.node.JsonNodeFactory;
 /**
  * Inbound payload for a single event ingestion request.
  *
- * <p>{@code source} identifies the originating tenant/application. It is client-supplied for now;
- * once JWT authentication lands it will be derived from the authenticated principal instead.
+ * <p>The tenant is deliberately absent: a row's {@code source} comes from the authenticated token's
+ * tenant claim, so a client cannot write events attributed to anyone else. A {@code source} field
+ * in the body is ignored rather than rejected — it carries no authority, so failing the request
+ * over it would only break clients for no gain in safety.
  *
  * <p>{@code properties} is arbitrary semi-structured context stored verbatim as {@code jsonb}; an
  * absent value, or an explicit JSON {@code null} (which Jackson binds to a {@code NullNode}), is
  * normalized to an empty object.
  */
 public record EventRequest(
-    @NotBlank String source,
     @NotBlank String eventId,
     @NotBlank String userId,
     @NotBlank String eventType,

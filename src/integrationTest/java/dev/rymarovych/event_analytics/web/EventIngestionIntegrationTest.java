@@ -31,7 +31,6 @@ class EventIngestionIntegrationTest {
   private static final String EVENT_JSON =
       """
       {
-        "source": "web",
         "event_id": "evt_abc123",
         "user_id": "user_42",
         "event_type": "page_view",
@@ -83,12 +82,54 @@ class EventIngestionIntegrationTest {
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
   }
 
+  /** The row's tenant is the token's, which is the whole point of taking it off the request. */
+  @Test
+  void writesTheEventUnderTheAuthenticatedTenant() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor("acme"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(EVENT_JSON))
+        .andExpect(status().isAccepted());
+
+    assertThat(sourceOf("evt_abc123")).isEqualTo("acme");
+  }
+
+  /**
+   * A leftover {@code source} in the body is ignored rather than honoured or rejected: honouring it
+   * would let any client write as any tenant, and rejecting it would break callers over a field
+   * that no longer carries any authority.
+   */
+  @Test
+  void sourceInTheBodyIsIgnored() throws Exception {
+    var claimingAnotherTenant =
+        """
+        {
+          "source": "somebody-else",
+          "event_id": "evt_abc123",
+          "user_id": "user_42",
+          "event_type": "page_view",
+          "timestamp": "2026-05-24T10:15:30Z"
+        }
+        """;
+
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor("acme"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(claimingAnotherTenant))
+        .andExpect(status().isAccepted());
+
+    assertThat(sourceOf("evt_abc123")).isEqualTo("acme");
+  }
+
   @Test
   void rejectsRequestMissingRequiredField() throws Exception {
     var missingEventId =
         """
         {
-          "source": "web",
           "user_id": "user_42",
           "event_type": "page_view",
           "timestamp": "2026-05-24T10:15:30Z"
@@ -102,6 +143,14 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(missingEventId))
         .andExpect(status().isBadRequest());
+  }
+
+  private String sourceOf(String eventId) {
+    return jdbcClient
+        .sql("SELECT source FROM events WHERE event_id = :id")
+        .param("id", eventId)
+        .query(String.class)
+        .single();
   }
 
   private long countByEventId(String eventId) {

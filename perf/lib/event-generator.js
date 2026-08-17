@@ -7,16 +7,10 @@
 // no wall-clock in the distribution — so the generated stream's shape is
 // identical from run to run and never injects noise into the throughput series
 // the write tests are compared against.
-//
-// `source` is deliberately NOT part of the entropy: a fixed sentinel is what
-// lets a write test identify and delete exactly its own batch afterwards, so
-// realism there is traded for a reliable teardown.
 
 const USER_SPACE = 100000;
 const PAGE_SPACE = 300;
 const SESSION_SPACE = 500000;
-
-const SOURCE = 'perf-test';
 
 const EVENT_TYPES = [
   { type: 'page_view', cumulative: 0.6 },
@@ -115,7 +109,6 @@ function properties(seq, eventType) {
 export function generateEvent(seq) {
   const eventType = pickCumulative(EVENT_TYPES, unit(seq, 2)).type;
   return {
-    source: SOURCE,
     user_id: `user_${stream(seq, 1) % USER_SPACE}`,
     event_type: eventType,
     properties: properties(seq, eventType),
