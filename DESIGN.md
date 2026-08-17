@@ -92,8 +92,9 @@ from outside it even by accident.
   RFC 9457 `application/problem+json`.
 - **Service** — ingestion and aggregation logic; owns the bucketing-zone
   policy.
-- **Persistence** — JDBC data access. No JPA on the write path; the ingest
-  statement is a single parameterised `INSERT`.
+- **Persistence** — JDBC data access. No JPA on the write path; one
+  parameterised `INSERT` serves both ingest endpoints, batched when a request
+  carries more than one event.
 
 The web layer runs on virtual threads, so request handling is plain blocking
 code.
@@ -139,6 +140,23 @@ Each decision states what was chosen, why, and what was rejected.
   causes retries. *Also rejected:* broker-level deduplication once Kafka lands
   — it deduplicates a producer session, not a client retrying an HTTP request
   hours later, which is the actual failure mode.
+- **A batch is all or nothing.** `POST /api/v1/events/batch` takes up to 1000
+  events, and one invalid event rejects the whole request — a `400` whose
+  `errors[]` names the offender by position (`events[3].eventId`). So the batch
+  is the client's retry unit, which costs nothing to retry because every event
+  in it is idempotent. The events go down as one batched statement inside one
+  transaction, so a database failure part-way through leaves no rows behind.
+  *Rejected:* accepting the valid events and reporting the rest. It reads as the
+  friendlier contract, but it buys a client nothing here — a retry of the whole
+  batch cannot double-write — and it costs a second response shape, a second
+  write path, and a client that must diff two lists to learn what happened.
+  *Also rejected:* a multi-row `INSERT ... VALUES (...),(...)` built per request.
+  It is atomic without a transaction, but its SQL text varies with the batch
+  size, which scatters a driver's statement cache and `pg_stat_statements` across
+  one entry per size a client happens to send.
+- **A cap on batch size, not on request body size.** 1000 events is what bounds
+  the work one request can ask for. Nothing bounds the bytes yet — that is the
+  same missing guardrail the read path has, and it belongs with that one.
 - **At-least-once delivery, not exactly-once.** The pipeline will accept that
   a consumer may see the same event twice, and relies on the unique constraint
   to make reprocessing harmless.
