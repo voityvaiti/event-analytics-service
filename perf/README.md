@@ -27,13 +27,20 @@ one level up for the parts common to every cell measured that way —
 
 ## Running
 
-Prerequisites: Docker, and the app running on the host — start it however you
-normally do (`scripts/actions/start`, an IDE run config, or `./gradlew bootRun`).
+Prerequisites: Docker, and the app started with **`scripts/actions/perf/app`** — not
+`scripts/actions/start`. The harness refuses the latter: it is `./gradlew bootRun`,
+which passes `-XX:TieredStopAtLevel=1` so C2 never compiles the request path. Same
+commit here: **126.0k events/s packaged, 107k under bootRun**, with the read cells
+unmoved because a Postgres query dominates them. Half the suite therefore reads as a
+regression, and no journal field records how the app was launched.
+
 k6 itself is **not** installed on the host; every test runs it from a pinned
 container image (`K6_IMAGE`, default `grafana/k6:0.50.0`), and the corpus seeder
 likewise runs from a pinned node image (`NODE_IMAGE`). Backing services come up
 from `compose.yaml` via the shared startup script, so a new dependency is a
 one-line compose edit and nothing here changes.
+
+Every request carries a bearer token — see [Tenants and tokens](#tenants-and-tokens).
 
 The IDE run configs (`.run/`) wrap the actions below:
 
@@ -157,12 +164,37 @@ intact corpus is reused between runs; `SEED_FORCE=1` rebuilds it, which is
 required after changing `lib/event-generator.js` — the reuse check counts rows
 and cannot notice that their shape changed.
 
+## Tenants and tokens
+
+A row's `source` now comes from the token's tenant claim rather than the request
+body, so the corpus/write-batch split is carried by **two tokens**:
+
+| token | tenant | used by |
+|-------|--------|---------|
+| `SEED_TOKEN` | `perf-seed` | every read cell, and the read warm-up |
+| `WRITE_TOKEN` | `perf-test` | every write cell, load and spike |
+
+Both are minted once in `perf_bootstrap` by `lib/mint-token.mjs` (RS256, the key in
+[`dev-keys/`](../dev-keys), node's built-in crypto, same pinned image as the seeder).
+Each cell passes the right one as `-e TOKEN=…`; `k6_run` does not forward `TOKEN`
+from the environment, so a cell states its tenant rather than inheriting one.
+
+Mixing them fails quietly, which is the reason for the table: one shared token either
+writes the batch as `perf-seed`, stranding rows `restore_seed_baseline` deletes by
+`source`, or scopes the read cells to `perf-test` and reports fine latency over
+nothing. The seeder is the exception — it writes the column through `COPY` and
+presents no token.
+
+No `exp` on either token: Spring checks expiry only when present, and one expiring
+mid-run would surface as a nonzero `failed_rate` and read as load failure.
+
 ## Layout
 
 ```
 perf/
   lib/
     harness.sh          shared shell harness: bootstrap + seed/k6/db/actuator helpers
+    mint-token.mjs      signs the RS256 token a cell authenticates with
     k6-ingest.js        shared /api/v1/events request shape
     event-generator.js  the event bodies every scenario and the seeder produce
     query-generator.js  the questions the read scenarios ask

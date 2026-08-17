@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# PERF: run the app packaged, so the JVM is free to optimise. Not
+# scripts/actions/start — bootRun passes -XX:TieredStopAtLevel=1 and costs ~15% on
+# the write cells, so the harness refuses it.
+#
+# Compose is started here and the datasource wired by hand, because a jar has no
+# spring-boot-docker-compose to do it. Foreground until Ctrl-C, like `start`.
+#
+# Tunables pass through, e.g. scripts/actions/perf/app --server.port=9090
+
+set -euo pipefail
+cd "$(dirname "$0")/../../.." || exit 1
+
+scripts/actions/dependencies
+
+./gradlew bootJar
+
+jar=$(find build/libs -name '*-SNAPSHOT.jar' ! -name '*-plain.jar' -print -quit)
+if [ -z "$jar" ]; then
+  echo "No boot jar in build/libs — did bootJar run?" >&2
+  exit 1
+fi
+
+exec java -jar "$jar" \
+  --spring.datasource.url=jdbc:postgresql://localhost:5432/event_analytics \
+  --spring.datasource.username=event_analytics \
+  --spring.datasource.password=event_analytics \
+  "$@"

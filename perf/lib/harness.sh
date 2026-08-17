@@ -62,6 +62,8 @@ perf_bootstrap() {
     return 1
   fi
 
+  require_optimized_jvm || return 1
+
   # One token per row source, minted once for the whole run and passed to k6 by
   # each cell as `-e TOKEN=...`, the same way a cell passes any other knob. A cell
   # that forgets it is answered 401 on every request, which the summary reports
@@ -70,6 +72,42 @@ perf_bootstrap() {
   WRITE_TOKEN=$(mint_token "$WRITE_BATCH_SOURCE") || return 1
 
   seed_corpus
+}
+
+# Refuse to measure an app whose JIT is capped at C1. bootRun passes
+# -XX:TieredStopAtLevel=1 (Spring Boot's optimizedLaunch), which cost 126.0k vs 107k
+# events/s on the batch cell here and nothing on the read cells — so it reads as a
+# regression on half the suite rather than as a broken run. A hard failure and not a
+# warning because no journal field records how the app was launched.
+require_optimized_jvm() {
+  case "$BASE_URL" in
+    *localhost*|*127.0.0.1*) ;;
+    *)
+      echo "Note: cannot check the app's JIT settings at $BASE_URL — make sure it is not bootRun." >&2
+      return 0
+      ;;
+  esac
+
+  local port pid
+  port=${BASE_URL##*:}
+  port=${port%%/*}
+  pid=$(ss -ltnp 2>/dev/null | grep -F ":$port " | grep -oP 'pid=\K[0-9]+' | head -1)
+
+  if [ -z "$pid" ] || [ ! -r "/proc/$pid/cmdline" ]; then
+    echo "Note: could not read the app's JVM arguments — make sure it is not bootRun." >&2
+    return 0
+  fi
+
+  if tr '\0' '\n' < "/proc/$pid/cmdline" | grep -q 'TieredStopAtLevel'; then
+    cat >&2 <<'MESSAGE'
+The app is running with -XX:TieredStopAtLevel=1, so C2 never compiles the request
+path. Write-cell numbers come out ~15% low, read cells are unaffected, and no
+journal row would show it — this is what bootRun and scripts/actions/start give you.
+
+Start the app with: scripts/actions/perf/app
+MESSAGE
+    return 1
+  fi
 }
 
 # Sign a bearer token asserting one tenant, which is what the app now reads a row's
