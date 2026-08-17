@@ -77,9 +77,11 @@ dashboard happens to be; this is what GA4, Amplitude, and Mixpanel all do.
 **Current state:** the repository layer is fully zone-parametric — the zone is
 a query parameter and travels back with the result, so every response states
 the zone its buckets were computed in. The service layer pins that zone to UTC
-because there is no tenant table to read a zone from yet. When per-tenant
-settings arrive, the change is one resolution step in the service; no query,
-no schema, and no stored data changes.
+because there is nowhere to read a per-tenant zone from yet — the tenant table
+does not exist. What it no longer lacks is the tenant: since reads are scoped,
+the service already receives the identity it will resolve a zone for, so the
+remaining change is a table and one resolution step. No query, no schema for
+`events`, and no stored data changes.
 
 ## Architecture
 
@@ -118,13 +120,23 @@ CREATE INDEX idx_events_occurred_at ON events (occurred_at, event_type);
 ```
 
 `event_id` is client-supplied and the primary key — the idempotency mechanism,
-not a surrogate. `source` is the tenant key. Rows are never updated or
-deleted; every aggregate is derived data that can be rebuilt from this table.
+not a surrogate. `source` is the tenant key, and it is written from the
+authenticated token's tenant claim rather than from the request, so a client
+cannot attribute events to anyone else. Rows are never updated or deleted; every
+aggregate is derived data that can be rebuilt from this table.
 
 The index is led by `occurred_at` because every analytics query filters on a
 time range and only some of them constrain `event_type`; a composite led by
 `event_type` cannot serve a range scan when no type is given. The trailing
-`event_type` keeps `groupBy=type` covered by the same index.
+`event_type` keeps `groupBy=type` grouped from the same index.
+
+`source` is deliberately *not* in it yet. Every read is now scoped to one tenant,
+so the argument for leading with `source` is real — it would prune by tenant
+before scanning a range, which is the right shape for pooled multitenancy. But
+the corpus the suite measures against holds a single tenant, so leading with
+`source` would prune nothing there, and a 20M-row index rebuild cannot be
+justified by numbers that cannot show its benefit. It is the next index
+experiment, not a change to make on reasoning alone.
 
 ## Key design decisions
 
@@ -186,17 +198,30 @@ Each decision states what was chosen, why, and what was rejected.
   only when the current one hurts and the hurt is in a journal.
   *Rejected:* pre-computing rollups from the start — it fixes the set of
   answerable questions before anyone knows which questions get asked.
-- **Asymmetric token signatures, not a shared secret.** Bearer tokens will be
+- **Asymmetric token signatures, not a shared secret.** Bearer tokens are
   verified with an RSA public key, keeping the ability to check a token separate
-  from the ability to mint one. That separation only pays off once issuing moves
-  outside this service, but the choice is made up front because it costs a key
-  pair and a config line now and an algorithm migration under live traffic
-  later.
+  from the ability to mint one. Issuing is already outside the service: it holds
+  the public half and nothing else, and tokens are signed by a separate script.
+  Verification therefore costs no key exchange, no lookup and no shared state —
+  which is what lets the ingest path treat a valid signature as proof of a valid
+  tenant on its hottest code path.
   *Rejected:* HS256 — one secret both signs and verifies, so every party that
   can validate a token can also forge one, and the secret has to reach each of
   them over a channel that is already secure. *Also rejected:* ES256 — ECDSA
   signs faster and verifies slower, the wrong side of that trade for a service
   that verifies on every request and signs rarely.
+- **The tenant is never a request parameter.** Both paths take it from the
+  verified token: ingest writes `source` from the tenant claim, and every
+  `/stats` query is scoped to it, with no parameter through which a caller could
+  name a different one. A `source` left in a request body is ignored rather than
+  rejected, since it carries no authority and failing over it would only break
+  clients.
+  *Rejected:* a tenant query parameter or header validated against the token —
+  it is the same guarantee expressed twice, and the two can disagree, at which
+  point isolation depends on a check being remembered at every call site.
+  *Also rejected:* leaving reads unscoped until the tenant table lands. It would
+  have made ingest attribution trustworthy while `/stats` still answered every
+  caller about everyone, which is not a smaller contract but an incoherent one.
 - **No foreign key from `events.source` to the tenant table.** Tenant validity
   is proven at the auth layer, before the write; the tenant table is read on
   the analytics path only.
@@ -327,11 +352,20 @@ case and does nothing for the bad one.
 
 - Time bucketing is UTC-only in practice until the tenant table exists, though
   the query layer is already zone-parametric.
+- `source` is not in any index, though every read now filters on it. The range
+  predicate still selects the rows, but each has to be visited to check its
+  tenant, so a count grouped by type is no longer answerable from the index
+  alone.
 - `properties` has no GIN index, so any future filter on a JSON field is a
   sequential scan.
 - There is no index on `user_id`; `active-users` shows sequential scans in the
   perf journal for that reason.
 - One `events` table, unpartitioned. At 10x the corpus, time-range partitioning
   becomes the difference between pruning and scanning.
+- `/actuator` is unauthenticated. The perf harness reads the live pool size from
+  it to stamp every journal row and gates its runs on health, and CI does the
+  same, so requiring a token there would break every measurement the project
+  compares against. Exposure is limited to `health,metrics`; a deployment would
+  restrict it at the network edge, which is where that belongs anyway.
 - Single node, single database. There is no horizontal read scaling and no
   replica.
