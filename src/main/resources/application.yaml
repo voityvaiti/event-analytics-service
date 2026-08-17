@@ -6,6 +6,17 @@ spring:
       enabled: true
   jackson:
     property-naming-strategy: SNAKE_CASE
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The public half only, so the service can verify a token but never mint
+          # one — that separation is the whole point of signing asymmetrically.
+          # The committed key is a throwaway dev pair (see dev-keys/README.md), so
+          # a deployment MUST override this location or it would trust tokens
+          # anyone with the repository can sign.
+          public-key-location: classpath:keys/dev-public-key.pem
+          jws-algorithm: RS256
   docker:
     compose:
       lifecycle-management: start-only

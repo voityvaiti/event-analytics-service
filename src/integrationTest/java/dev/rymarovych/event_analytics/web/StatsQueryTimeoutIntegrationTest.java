@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -40,6 +41,8 @@ class StatsQueryTimeoutIntegrationTest {
 
   private static final String EVENT_COUNTS = "/api/v1/stats/event-counts";
 
+  private static final String TENANT = "web";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private DataSource dataSource;
 
@@ -55,6 +58,7 @@ class StatsQueryTimeoutIntegrationTest {
         mockMvc
             .perform(
                 get(EVENT_COUNTS)
+                    .with(bearerTokenFor(TENANT))
                     .param("from", "2026-05-24T00:00:00Z")
                     .param("to", "2026-05-25T00:00:00Z"))
             .andExpect(status().isServiceUnavailable())

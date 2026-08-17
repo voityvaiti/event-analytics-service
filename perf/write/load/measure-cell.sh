@@ -35,7 +35,8 @@ perf_write_load_cell() {
   # ramp stage — the measured run then starts at full VUs against a warmed app,
   # so its summary is not diluted by low-concurrency ramp samples. Its rows are
   # then dropped, putting the table back to the seeded corpus.
-  k6_run "$script" "${batch[@]}" -e VUS="$vus" -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
+  k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
+    -e VUS="$vus" -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -45,7 +46,8 @@ perf_write_load_cell() {
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
   rm -f "$summary"
-  k6_run "$script" "${batch[@]}" -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary"
+  k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
+    -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary"
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Measured run produced no summary at $summary — did the app stay up?" >&2

@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Mint a bearer token for calling the API by hand.
+#
+#   TOKEN=$(scripts/actions/mint-token acme)
+#   curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/v1/stats/event-counts?...
+#
+# The tenant passed here becomes the events' `source` on ingest and the scope of
+# every /stats query, so two tenants is two invocations. Runs the signer from the
+# same pinned node image the perf suite uses, so nothing beyond Docker is needed.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+
+if [ $# -ne 1 ]; then
+  echo "Usage: scripts/actions/mint-token <tenant>" >&2
+  exit 1
+fi
+
+NODE_IMAGE=${NODE_IMAGE:-node:22-alpine}
+
+docker run --rm \
+  --volume "$PWD":/work --workdir /work \
+  "$NODE_IMAGE" node perf/lib/mint-token.mjs "$1"

@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +17,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * End-to-end tests for the event-count read endpoint, driving the real controller → service →
@@ -28,6 +30,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class EventCountStatsIntegrationTest {
 
   private static final String EVENT_COUNTS = "/api/v1/stats/event-counts";
+
+  private static final String TENANT = "web";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
@@ -43,7 +47,7 @@ class EventCountStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
+            eventCounts()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("groupBy", "type"))
@@ -63,7 +67,7 @@ class EventCountStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
+            eventCounts()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("groupBy", "hour"))
@@ -81,7 +85,7 @@ class EventCountStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
+            eventCounts()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("groupBy", "day"))
@@ -97,9 +101,7 @@ class EventCountStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
-                .param("from", "2026-05-24T00:00:00Z")
-                .param("to", "2026-05-25T00:00:00Z"))
+            eventCounts().param("from", "2026-05-24T00:00:00Z").param("to", "2026-05-25T00:00:00Z"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.group_by").value("type"));
   }
@@ -110,7 +112,7 @@ class EventCountStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
+            eventCounts()
                 .param("from", "2026-05-24T10:15:00Z")
                 .param("to", "2026-05-24T10:50:00Z")
                 .param("groupBy", "type"))
@@ -124,7 +126,7 @@ class EventCountStatsIntegrationTest {
   void rejectsUnknownGrouping() throws Exception {
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
+            eventCounts()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("groupBy", "weekly"))
@@ -134,7 +136,7 @@ class EventCountStatsIntegrationTest {
   @Test
   void rejectsMissingWindowBound() throws Exception {
     mockMvc
-        .perform(get(EVENT_COUNTS).param("to", "2026-05-25T00:00:00Z"))
+        .perform(eventCounts().param("to", "2026-05-25T00:00:00Z"))
         .andExpect(status().isBadRequest());
   }
 
@@ -142,10 +144,12 @@ class EventCountStatsIntegrationTest {
   void rejectsInvertedWindow() throws Exception {
     mockMvc
         .perform(
-            get(EVENT_COUNTS)
-                .param("from", "2026-05-25T00:00:00Z")
-                .param("to", "2026-05-24T00:00:00Z"))
+            eventCounts().param("from", "2026-05-25T00:00:00Z").param("to", "2026-05-24T00:00:00Z"))
         .andExpect(status().isBadRequest());
+  }
+
+  private static MockHttpServletRequestBuilder eventCounts() {
+    return get(EVENT_COUNTS).with(bearerTokenFor(TENANT));
   }
 
   private void seedFourEventsOnThe24th() {

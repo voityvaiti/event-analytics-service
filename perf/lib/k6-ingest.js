@@ -25,7 +25,7 @@ function requestParams(tags) {
   return {
     headers: {
       'Content-Type': 'application/json',
-      // Once JWT (HS256) auth lands, add: Authorization: `Bearer ${__ENV.TOKEN}`
+      Authorization: `Bearer ${__ENV.TOKEN}`,
     },
     tags,
   };

@@ -15,7 +15,7 @@ export function getStats(baseUrl, endpoint, params, tags) {
 
   return http.get(`${baseUrl}/api/v1/stats/${endpoint}?${query}`, {
     headers: {
-      // Once JWT (HS256) auth lands, add: Authorization: `Bearer ${__ENV.TOKEN}`
+      Authorization: `Bearer ${__ENV.TOKEN}`,
     },
     tags,
   });

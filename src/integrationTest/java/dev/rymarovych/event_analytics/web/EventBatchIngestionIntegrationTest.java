@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.hamcrest.Matchers.hasItem;
@@ -36,6 +37,8 @@ import org.springframework.test.web.servlet.ResultActions;
 class EventBatchIngestionIntegrationTest {
 
   private static final String BATCH_PATH = "/api/v1/events/batch";
+
+  private static final String TENANT = "web";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
@@ -142,7 +145,11 @@ class EventBatchIngestionIntegrationTest {
   }
 
   private ResultActions postBatch(String body) throws Exception {
-    return mockMvc.perform(post(BATCH_PATH).contentType(MediaType.APPLICATION_JSON).content(body));
+    return mockMvc.perform(
+        post(BATCH_PATH)
+            .with(bearerTokenFor(TENANT))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(body));
   }
 
   private static String batchOf(String... events) {

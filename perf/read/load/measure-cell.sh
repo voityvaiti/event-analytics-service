@@ -23,7 +23,7 @@ perf_read_load_cell() {
   local vus=${VUS:-4} duration=${DURATION:-30s}
   local common=(
     -e ENDPOINT="$endpoint" -e GROUP_BY="$group_by" -e LIMIT="$limit"
-    -e VUS="$vus"
+    -e VUS="$vus" -e TOKEN="$SEED_TOKEN"
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS
   )
 

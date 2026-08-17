@@ -29,8 +29,14 @@ export SEED_SPREAD_DAYS=${SEED_SPREAD_DAYS:-180}
 export SEED_ANCHOR=${SEED_ANCHOR:-2026-01-01T00:00:00Z}
 
 # Row sources, split so a write test's batch can be told apart from the corpus
-# and deleted on its own. Both mirror constants in the JavaScript that writes
-# them — SOURCE in perf/lib/event-generator.js and perf/lib/seed-corpus.mjs.
+# and deleted on its own (see restore_seed_baseline).
+#
+# Each half is now asserted by a token rather than sent in a request body, so the
+# split lives in what each cell authenticates as: SEED_SOURCE mirrors the constant
+# in perf/lib/seed-corpus.mjs, which COPYs the column directly, while
+# WRITE_BATCH_SOURCE mirrors the tenant claim in WRITE_TOKEN. Mixing the two would
+# not fail loudly — it would either have the write cells append rows the teardown
+# no longer matches, or scope the read cells to a source holding almost nothing.
 SEED_SOURCE=perf-seed
 WRITE_BATCH_SOURCE=perf-test
 
@@ -56,7 +62,26 @@ perf_bootstrap() {
     return 1
   fi
 
+  # One token per row source, minted once for the whole run and passed to k6 by
+  # each cell as `-e TOKEN=...`, the same way a cell passes any other knob. A cell
+  # that forgets it is answered 401 on every request, which the summary reports
+  # only as a failure rate — so the two names below are what a new cell copies.
+  SEED_TOKEN=$(mint_token "$SEED_SOURCE") || return 1
+  WRITE_TOKEN=$(mint_token "$WRITE_BATCH_SOURCE") || return 1
+
   seed_corpus
+}
+
+# Sign a bearer token asserting one tenant, which is what the app now reads a row's
+# `source` from. Runs from the pinned node image like the corpus seeder, so the
+# suite still needs nothing on the host but Docker.
+mint_token() {
+  docker run --rm \
+    --volume "$PWD":/work --workdir /work \
+    "$NODE_IMAGE" node perf/lib/mint-token.mjs "$1" || {
+    echo "Could not mint a token for '$1' — is dev-keys/ still present?" >&2
+    return 1
+  }
 }
 
 # Run the pinned k6 image against the host-resident app and repo.
@@ -66,15 +91,19 @@ perf_bootstrap() {
 #   --user $(id -u)…  so the summary file k6 writes into the mounted repo is
 #                     owned by us, not the image's baked-in uid.
 # Usage: k6_run <script.js> [extra docker/k6 args...]. The common env (base URL,
-# run id, token, summary path) is forwarded here; a test appends its own knobs
-# as further --env flags, and a later -e wins so a warm-up can override them.
+# run id, summary path) is forwarded here; a test appends its own knobs as further
+# --env flags, and a later -e wins so a warm-up can override them.
+#
+# TOKEN is deliberately not among them: which tenant a cell authenticates as decides
+# which rows it writes and which it can read, so every cell passes it explicitly as
+# `-e TOKEN=...` rather than inheriting whatever the shell happens to hold.
 k6_run() {
   local script="$1"
   shift
   docker run --rm --network host \
     --user "$(id -u):$(id -g)" \
     --volume "$PWD":/work --workdir /work \
-    --env BASE_URL --env RUN_ID --env TOKEN --env SUMMARY_OUT \
+    --env BASE_URL --env RUN_ID --env SUMMARY_OUT \
     "$@" \
     "$K6_IMAGE" run "$script"
 }
@@ -177,7 +206,7 @@ warm_reads() {
 
   k6_run perf/read/load/stats-read.js \
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS \
-    -e ENDPOINT="$1" -e GROUP_BY="${2:-}" \
+    -e ENDPOINT="$1" -e GROUP_BY="${2:-}" -e TOKEN="$SEED_TOKEN" \
     -e VUS=4 -e DURATION=10s -e SUMMARY_OUT=/dev/null >/dev/null 2>&1 || true
   READS_WARMED=1
 }

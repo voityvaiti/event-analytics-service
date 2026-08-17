@@ -70,6 +70,19 @@ jobs:
       - name: Start backing services
         run: scripts/actions/dependencies
 
+      # The k6 scenario authenticates, so both sides need a token for the source a
+      # write cell posts as. Node is already pinned above, and the signer has no
+      # dependencies, so this is the same script the local harness runs.
+      #
+      # One token serves both sides only while they agree on the request contract. A
+      # PR that changes the ingest payload itself cannot be compared this way — the
+      # single k6 script would speak the PR's contract to a main jar that rejects it,
+      # and the summaries would report a broken side rather than a slower one. Such a
+      # PR is measured against its journal on a fixed rig instead, so leave the perf
+      # label off it.
+      - name: Mint the perf token
+        run: echo "TOKEN=$(node perf/lib/mint-token.mjs perf-test)" >> "$GITHUB_ENV"
+
       # Build both jars up front so the measured rounds run back-to-back with no
       # Gradle work in between. main is built in a worktree to leave the PR
       # working tree (and its fixed k6 script) untouched.
