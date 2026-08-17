@@ -57,12 +57,13 @@ analysis, coverage, CI, and dependency automation are wired. **Stage 1 (MVP) is
 in progress:** event ingestion is implemented — the synchronous write path
 (`POST /api/v1/events` → PostgreSQL, idempotent on a client-supplied `event_id`)
 on a Flyway-managed schema, with its write throughput tracked over time (see
-[Performance](#performance)). The MVP read side is in place: `GET
+[Performance](#performance)). Batch ingestion (`POST /api/v1/events/batch`, up to
+1000 events per request, all-or-nothing on validation) shares that path and its
+idempotency. The MVP read side is in place: `GET
 /api/v1/stats/event-counts` (event counts over a time window, grouped by type,
 hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day
 bucket), and `GET /api/v1/stats/top-pages` (top-N pages by event count, with a
-truncation flag). Still to come: batch ingestion (`POST /api/v1/events/batch`)
-and JWT authentication.
+truncation flag). Still to come: JWT authentication.
 
 ## Build & checks
 
@@ -86,18 +87,20 @@ Optionally install the git pre-commit hook once after cloning:
 The write path is load-tested and its throughput tracked over time, matching the
 high-frequency-ingest focus above. The suite lives in [`perf/`](./perf):
 
-- **Load** — steady-state ingest write throughput (`POST /api/v1/events`).
+- **Load** — steady-state ingest write throughput, one cell per request shape
+  (`POST /api/v1/events` and `POST /api/v1/events/batch`). Events per second is
+  the field the two are compared over; their request rates differ by the batch
+  size and mean nothing side by side.
 - **Spike** — behaviour under a sudden surge far above capacity, and whether the
-  service recovers afterwards.
+  service recovers afterwards, again per request shape.
 
 Each test appends to its own journal — a self-stamped, rig-aware series — so a
 regression shows up as a number, not a surprise. The journal is meant to be kept
 on **one machine under roughly the same conditions** each run: there is some
 measurement noise, but it is acceptable at this stage of the project, so the
 journal is read for **significant shifts, not small deltas**. Run the tests with
-the actions (`scripts/actions/perf/{load,spike,all}`) or the _PERF - Load / Spike
-/ All_ run configs; k6 runs from a pinned container, so nothing beyond Docker and
-a running app is needed. A per-PR throughput comparison also runs in CI, opt-in
+the actions under `scripts/actions/perf/` or the _PERF - …_ run configs; k6 runs
+from a pinned container, so nothing beyond Docker and a running app is needed. A per-PR throughput comparison also runs in CI, opt-in
 via the `perf` label. See [`perf/README.md`](./perf/README.md) for the details
 and how to add a test.
 
