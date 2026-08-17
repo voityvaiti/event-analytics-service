@@ -1,6 +1,8 @@
 package dev.rymarovych.event_analytics.web;
 
 import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -125,6 +127,31 @@ class TopPagesStatsIntegrationTest {
     return get(TOP_PAGES).with(bearerTokenFor(TENANT));
   }
 
+  /**
+   * The other tenant's page is seeded often enough to top the ranking if it were counted, so its
+   * absence from first place is the assertion rather than an incidental ordering.
+   */
+  @Test
+  void ranksOnlyTheAuthenticatedTenantsPages() throws Exception {
+    seedFourPagesOnThe24th();
+    for (var index = 0; index < 5; index++) {
+      insertForTenant(
+          "other",
+          "evt_other_" + index,
+          "{\"page_url\": \"/secret\"}",
+          Instant.parse("2026-05-24T10:30:00Z").plusSeconds(index));
+    }
+
+    mockMvc
+        .perform(
+            topPages().param("from", "2026-05-24T00:00:00Z").param("to", "2026-05-25T00:00:00Z"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.pages.length()").value(4))
+        .andExpect(jsonPath("$.pages[0].page_url").value("/home"))
+        .andExpect(jsonPath("$.pages[0].count").value(3))
+        .andExpect(jsonPath("$.pages[*].page_url", not(hasItem("/secret"))));
+  }
+
   private void seedFourPagesOnThe24th() {
     insertPageView("evt_1", "/home", Instant.parse("2026-05-24T10:00:00Z"));
     insertPageView("evt_2", "/home", Instant.parse("2026-05-24T11:00:00Z"));
@@ -142,13 +169,19 @@ class TopPagesStatsIntegrationTest {
   }
 
   private void insert(String eventId, String propertiesJson, Instant occurredAt) {
+    insertForTenant(TENANT, eventId, propertiesJson, occurredAt);
+  }
+
+  private void insertForTenant(
+      String source, String eventId, String propertiesJson, Instant occurredAt) {
     jdbcClient
         .sql(
             """
             INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, 'web', 'user_1', 'page_view', :at, CAST(:props AS JSONB))
+            VALUES (:id, :source, 'user_1', 'page_view', :at, CAST(:props AS JSONB))
             """)
         .param("id", eventId)
+        .param("source", source)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .param("props", propertiesJson)
         .update();

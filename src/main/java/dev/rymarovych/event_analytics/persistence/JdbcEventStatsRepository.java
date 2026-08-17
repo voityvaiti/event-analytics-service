@@ -25,8 +25,13 @@ import org.springframework.stereotype.Repository;
  * {@link JdbcClient}-backed {@link EventStatsRepository}.
  *
  * <p>Time buckets use the three-argument {@code date_trunc(unit, ts, zone)} so the boundary follows
- * the requested zone's calendar, independent of the session time zone. All queries are driven by
- * the {@code (occurred_at, event_type)} index through their {@code occurred_at} range predicate.
+ * the requested zone's calendar, independent of the session time zone.
+ *
+ * <p>Every query is scoped to one {@code source} — the tenant key — and narrowed by the {@code
+ * occurred_at} range through the {@code (occurred_at, event_type)} index. {@code source} is not in
+ * that index, so the range predicate still selects the rows but each one must be visited to check
+ * its tenant; a count grouped by type can therefore no longer be answered from the index alone.
+ * What that costs is measured rather than assumed — see the read cells under {@code perf/}.
  *
  * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
  * set once per connection rather than per request. A query the database cancels for exceeding it
@@ -43,7 +48,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT event_type AS bucket, COUNT(*) AS count
       FROM events
-      WHERE occurred_at >= :from AND occurred_at < :to
+      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
       GROUP BY event_type
       ORDER BY count DESC, event_type
       """;
@@ -52,7 +57,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT date_trunc(:unit, occurred_at, :zone) AS bucket_start, COUNT(*) AS count
       FROM events
-      WHERE occurred_at >= :from AND occurred_at < :to
+      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
       GROUP BY bucket_start
       ORDER BY bucket_start
       """;
@@ -62,7 +67,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       SELECT date_trunc(:unit, occurred_at, :zone) AS bucket_start,
              COUNT(DISTINCT user_id) AS active_users
       FROM events
-      WHERE occurred_at >= :from AND occurred_at < :to
+      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
       GROUP BY bucket_start
       ORDER BY bucket_start
       """;
@@ -71,7 +76,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT properties->>'page_url' AS page_url, COUNT(*) AS count
       FROM events
-      WHERE occurred_at >= :from AND occurred_at < :to
+      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
         AND properties->>'page_url' IS NOT NULL
       GROUP BY page_url
       ORDER BY count DESC, page_url
@@ -86,26 +91,27 @@ class JdbcEventStatsRepository implements EventStatsRepository {
 
   @Override
   public EventCountReport countEvents(
-      Instant from, Instant to, EventCountGrouping grouping, ZoneId zone) {
+      String source, Instant from, Instant to, EventCountGrouping grouping, ZoneId zone) {
     var buckets =
         translatingCancellation(
             () ->
                 switch (grouping) {
-                  case TYPE -> countByType(from, to);
-                  case HOUR -> countByTimeBucket(from, to, TimeGrouping.HOUR, zone);
-                  case DAY -> countByTimeBucket(from, to, TimeGrouping.DAY, zone);
+                  case TYPE -> countByType(source, from, to);
+                  case HOUR -> countByTimeBucket(source, from, to, TimeGrouping.HOUR, zone);
+                  case DAY -> countByTimeBucket(source, from, to, TimeGrouping.DAY, zone);
                 });
     return new EventCountReport(zone, buckets);
   }
 
   @Override
   public ActiveUsersReport countActiveUsers(
-      Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
+      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
     var buckets =
         translatingCancellation(
             () ->
                 jdbcClient
                     .sql(ACTIVE_USERS_BY_TIME_BUCKET)
+                    .param("source", source)
                     .param("from", getUtc(from))
                     .param("to", getUtc(to))
                     .param("unit", truncationUnit(grouping))
@@ -121,12 +127,13 @@ class JdbcEventStatsRepository implements EventStatsRepository {
 
   /** Probes one row beyond the requested limit to learn whether the ranking was truncated. */
   @Override
-  public TopPagesReport topPages(Instant from, Instant to, int limit) {
+  public TopPagesReport topPages(String source, Instant from, Instant to, int limit) {
     var pages =
         translatingCancellation(
             () ->
                 jdbcClient
                     .sql(TOP_PAGES)
+                    .param("source", source)
                     .param("from", getUtc(from))
                     .param("to", getUtc(to))
                     .param("probe", limit + 1)
@@ -165,9 +172,10 @@ class JdbcEventStatsRepository implements EventStatsRepository {
     return false;
   }
 
-  private List<EventCount> countByType(Instant from, Instant to) {
+  private List<EventCount> countByType(String source, Instant from, Instant to) {
     return jdbcClient
         .sql(COUNT_BY_TYPE)
+        .param("source", source)
         .param("from", getUtc(from))
         .param("to", getUtc(to))
         .query(
@@ -178,9 +186,10 @@ class JdbcEventStatsRepository implements EventStatsRepository {
   }
 
   private List<EventCount> countByTimeBucket(
-      Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
+      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
     return jdbcClient
         .sql(COUNT_BY_TIME_BUCKET)
+        .param("source", source)
         .param("from", getUtc(from))
         .param("to", getUtc(to))
         .param("unit", truncationUnit(grouping))

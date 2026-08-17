@@ -7,25 +7,33 @@ import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import java.time.Instant;
 
-/** Answers analytics questions over the stored event stream. */
+/**
+ * Answers analytics questions over the stored event stream, always about one tenant.
+ *
+ * <p>{@code source} is the tenant asking, not a filter it chose, so no caller can widen its own
+ * scope. It is also what a per-tenant reporting zone will be resolved from once tenants are stored.
+ */
 public interface AnalyticsService {
 
   /**
-   * Counts events in the half-open interval {@code [from, to)}, grouped by the given dimension. The
-   * returned {@link EventCountReport} carries the time zone its time buckets were computed in.
+   * Counts {@code source}'s events in the half-open interval {@code [from, to)}, grouped by the
+   * given dimension. The returned {@link EventCountReport} carries the time zone its time buckets
+   * were computed in.
    */
-  EventCountReport countEvents(Instant from, Instant to, EventCountGrouping grouping);
+  EventCountReport countEvents(
+      String source, Instant from, Instant to, EventCountGrouping grouping);
 
   /**
-   * Counts distinct active users in the half-open interval {@code [from, to)}, grouped into time
-   * buckets. The returned {@link ActiveUsersReport} carries the time zone its buckets were computed
-   * in.
+   * Counts {@code source}'s distinct active users in the half-open interval {@code [from, to)},
+   * grouped into time buckets. The returned {@link ActiveUsersReport} carries the time zone its
+   * buckets were computed in.
    */
-  ActiveUsersReport countActiveUsers(Instant from, Instant to, TimeGrouping grouping);
+  ActiveUsersReport countActiveUsers(
+      String source, Instant from, Instant to, TimeGrouping grouping);
 
   /**
-   * Ranks the pages most referenced by events in the half-open interval {@code [from, to)},
-   * returning at most {@code limit} pages and whether the ranking was truncated.
+   * Ranks the pages most referenced by {@code source}'s events in the half-open interval {@code
+   * [from, to)}, returning at most {@code limit} pages and whether the ranking was truncated.
    */
-  TopPagesReport topPages(Instant from, Instant to, int limit);
+  TopPagesReport topPages(String source, Instant from, Instant to, int limit);
 }
