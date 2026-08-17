@@ -1,6 +1,7 @@
 package dev.rymarovych.event_analytics.web;
 
 import dev.rymarovych.event_analytics.domain.NewEvent;
+import java.util.List;
 import org.mapstruct.Mapper;
 
 /**
@@ -14,4 +15,6 @@ import org.mapstruct.Mapper;
 interface EventMapper {
 
   NewEvent toNewEvent(EventRequest request);
+
+  List<NewEvent> toNewEvents(List<EventRequest> requests);
 }

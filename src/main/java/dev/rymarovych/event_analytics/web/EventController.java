@@ -26,4 +26,15 @@ public class EventController {
     ingestionService.ingest(eventMapper.toNewEvent(request));
     return ResponseEntity.accepted().build();
   }
+
+  /**
+   * Accepts a batch as one unit: any invalid event rejects the whole request, so the response is
+   * the same empty {@code 202} the single-event path returns or a {@code 400} naming the offending
+   * events. Nothing partial, and nothing per-event to report — duplicates are no-ops.
+   */
+  @PostMapping("/batch")
+  public ResponseEntity<Void> ingestBatch(@Valid @RequestBody EventBatchRequest request) {
+    ingestionService.ingestBatch(eventMapper.toNewEvents(request.events()));
+    return ResponseEntity.accepted().build();
+  }
 }
