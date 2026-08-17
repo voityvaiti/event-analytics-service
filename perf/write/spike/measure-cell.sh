@@ -39,7 +39,8 @@ perf_write_spike_cell() {
   # Warm JIT and pool with the matching steady load scenario before the surge, so
   # the spike hits a warmed app and measures the surge, not cold start. Its rows
   # are then dropped, putting the table back to the seeded corpus.
-  k6_run "$warmup_script" "${batch[@]}" -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
+  k6_run "$warmup_script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
+    -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -47,7 +48,7 @@ perf_write_spike_cell() {
   start_rows=$CORPUS_ROWS
 
   rm -f "$summary"
-  k6_run "$script" "${batch[@]}" \
+  k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
     --env BASELINE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
     -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" || true

@@ -43,6 +43,7 @@ perf_read_spike_cell() {
     --env BASELINE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
     -e ENDPOINT="$endpoint" -e GROUP_BY="$group_by" -e LIMIT="$limit" \
+    -e TOKEN="$SEED_TOKEN" \
     -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" || true
   scans_after=$(read_scan_counters) || return 1
   [ -s "$summary" ] || {

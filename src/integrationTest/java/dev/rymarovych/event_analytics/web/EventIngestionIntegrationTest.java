@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,6 +40,8 @@ class EventIngestionIntegrationTest {
       }
       """;
 
+  private static final String TENANT = "web";
+
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
 
@@ -50,7 +53,11 @@ class EventIngestionIntegrationTest {
   @Test
   void acceptsValidEventAndPersistsOneRow() throws Exception {
     mockMvc
-        .perform(post("/api/v1/events").contentType(MediaType.APPLICATION_JSON).content(EVENT_JSON))
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(EVENT_JSON))
         .andExpect(status().isAccepted());
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
@@ -59,10 +66,18 @@ class EventIngestionIntegrationTest {
   @Test
   void retriedEventIsDeduplicatedAgainstACommittedRow() throws Exception {
     mockMvc
-        .perform(post("/api/v1/events").contentType(MediaType.APPLICATION_JSON).content(EVENT_JSON))
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(EVENT_JSON))
         .andExpect(status().isAccepted());
     mockMvc
-        .perform(post("/api/v1/events").contentType(MediaType.APPLICATION_JSON).content(EVENT_JSON))
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(EVENT_JSON))
         .andExpect(status().isAccepted());
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
@@ -82,7 +97,10 @@ class EventIngestionIntegrationTest {
 
     mockMvc
         .perform(
-            post("/api/v1/events").contentType(MediaType.APPLICATION_JSON).content(missingEventId))
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(missingEventId))
         .andExpect(status().isBadRequest());
   }
 

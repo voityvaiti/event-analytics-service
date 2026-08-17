@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,6 +17,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * End-to-end tests for the top-pages read endpoint, driving the real controller → service →
@@ -28,6 +30,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class TopPagesStatsIntegrationTest {
 
   private static final String TOP_PAGES = "/api/v1/stats/top-pages";
+
+  private static final String TENANT = "web";
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
@@ -43,9 +47,7 @@ class TopPagesStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(TOP_PAGES)
-                .param("from", "2026-05-24T00:00:00Z")
-                .param("to", "2026-05-25T00:00:00Z"))
+            topPages().param("from", "2026-05-24T00:00:00Z").param("to", "2026-05-25T00:00:00Z"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.limit").value(10))
         .andExpect(jsonPath("$.has_more").value(false))
@@ -66,7 +68,7 @@ class TopPagesStatsIntegrationTest {
 
     mockMvc
         .perform(
-            get(TOP_PAGES)
+            topPages()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("limit", "2"))
@@ -82,7 +84,7 @@ class TopPagesStatsIntegrationTest {
   void rejectsNonPositiveLimit() throws Exception {
     mockMvc
         .perform(
-            get(TOP_PAGES)
+            topPages()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("limit", "0"))
@@ -93,7 +95,7 @@ class TopPagesStatsIntegrationTest {
   void rejectsLimitAboveMaximum() throws Exception {
     mockMvc
         .perform(
-            get(TOP_PAGES)
+            topPages()
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("limit", "101"))
@@ -103,7 +105,7 @@ class TopPagesStatsIntegrationTest {
   @Test
   void rejectsMissingWindowBound() throws Exception {
     mockMvc
-        .perform(get(TOP_PAGES).param("to", "2026-05-25T00:00:00Z"))
+        .perform(topPages().param("to", "2026-05-25T00:00:00Z"))
         .andExpect(status().isBadRequest());
   }
 
@@ -111,9 +113,7 @@ class TopPagesStatsIntegrationTest {
   void rejectsInvertedWindow() throws Exception {
     mockMvc
         .perform(
-            get(TOP_PAGES)
-                .param("from", "2026-05-25T00:00:00Z")
-                .param("to", "2026-05-24T00:00:00Z"))
+            topPages().param("from", "2026-05-25T00:00:00Z").param("to", "2026-05-24T00:00:00Z"))
         .andExpect(status().isBadRequest());
   }
 
@@ -121,6 +121,10 @@ class TopPagesStatsIntegrationTest {
    * Four ranked pages inside the window, plus two events that must not surface: one without a
    * {@code page_url} property and one for {@code /home} the day before the window.
    */
+  private static MockHttpServletRequestBuilder topPages() {
+    return get(TOP_PAGES).with(bearerTokenFor(TENANT));
+  }
+
   private void seedFourPagesOnThe24th() {
     insertPageView("evt_1", "/home", Instant.parse("2026-05-24T10:00:00Z"));
     insertPageView("evt_2", "/home", Instant.parse("2026-05-24T11:00:00Z"));

@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,6 +27,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import(TestcontainersConfiguration.class)
 class ApiErrorHandlingIntegrationTest {
 
+  private static final String TENANT = "web";
+
   @Autowired private MockMvc mockMvc;
 
   @Test
@@ -33,6 +36,7 @@ class ApiErrorHandlingIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/stats/top-pages")
+                .with(bearerTokenFor(TENANT))
                 .param("from", "2026-05-25T00:00:00Z")
                 .param("to", "2026-05-24T00:00:00Z"))
         .andExpect(status().isBadRequest())
@@ -47,6 +51,7 @@ class ApiErrorHandlingIntegrationTest {
     mockMvc
         .perform(
             get("/api/v1/stats/top-pages")
+                .with(bearerTokenFor(TENANT))
                 .param("from", "2026-05-24T00:00:00Z")
                 .param("to", "2026-05-25T00:00:00Z")
                 .param("limit", "0"))
@@ -59,7 +64,10 @@ class ApiErrorHandlingIntegrationTest {
   void unparseableTimestampParameterIsProblemDetail() throws Exception {
     mockMvc
         .perform(
-            get("/api/v1/stats/event-counts").param("from", "notadate").param("to", "notadate"))
+            get("/api/v1/stats/event-counts")
+                .with(bearerTokenFor(TENANT))
+                .param("from", "notadate")
+                .param("to", "notadate"))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"));
   }
@@ -79,6 +87,7 @@ class ApiErrorHandlingIntegrationTest {
     mockMvc
         .perform(
             post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(blankSourceMissingEventId))
         .andExpect(status().isBadRequest())
