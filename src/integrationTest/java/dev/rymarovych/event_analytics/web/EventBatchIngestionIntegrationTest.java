@@ -78,7 +78,6 @@ class EventBatchIngestionIntegrationTest {
     var missingEventId =
         """
         {
-          "source": "web",
           "user_id": "user_42",
           "event_type": "page_view",
           "timestamp": "2026-05-24T10:15:30Z"
@@ -128,7 +127,6 @@ class EventBatchIngestionIntegrationTest {
     var withNulByte =
         """
         {
-          "source": "web",
           "event_id": "evt_2",
           "user_id": "user_\\u0000_42",
           "event_type": "page_view",
@@ -159,7 +157,6 @@ class EventBatchIngestionIntegrationTest {
   private static String eventJson(String eventId) {
     return """
         {
-          "source": "web",
           "event_id": "%s",
           "user_id": "user_42",
           "event_type": "page_view",

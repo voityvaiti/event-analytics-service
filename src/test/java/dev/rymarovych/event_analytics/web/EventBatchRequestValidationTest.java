@@ -62,17 +62,17 @@ class EventBatchRequestValidationTest {
 
   @Test
   void namesTheOffendingEventByItsPositionInTheBatch() {
-    var invalid = new EventRequest("", "evt_2", "user_42", "page_view", null, null);
+    var invalid = new EventRequest("", "user_42", "page_view", null, null);
     var request = new EventBatchRequest(List.of(event("evt_1"), invalid, event("evt_3")));
 
     assertThat(validator.validate(request))
         .extracting(v -> v.getPropertyPath().toString())
-        .containsExactlyInAnyOrder("events[1].source", "events[1].occurredAt");
+        .containsExactlyInAnyOrder("events[1].eventId", "events[1].occurredAt");
   }
 
   private static EventRequest event(String eventId) {
     return new EventRequest(
-        "web", eventId, "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
+        eventId, "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
   }
 
   private static List<EventRequest> events(int count) {

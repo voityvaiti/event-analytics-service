@@ -74,11 +74,9 @@ class ApiErrorHandlingIntegrationTest {
 
   @Test
   void bodyValidationListsOffendingFields() throws Exception {
-    var blankSourceMissingEventId =
+    var missingEventIdAndUserId =
         """
         {
-          "source": "",
-          "user_id": "user_42",
           "event_type": "page_view",
           "timestamp": "2026-05-24T10:15:30Z"
         }
@@ -89,10 +87,10 @@ class ApiErrorHandlingIntegrationTest {
             post("/api/v1/events")
                 .with(bearerTokenFor(TENANT))
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(blankSourceMissingEventId))
+                .content(missingEventIdAndUserId))
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-        .andExpect(jsonPath("$.errors[*].field", hasItem("source")))
-        .andExpect(jsonPath("$.errors[*].field", hasItem("eventId")));
+        .andExpect(jsonPath("$.errors[*].field", hasItem("eventId")))
+        .andExpect(jsonPath("$.errors[*].field", hasItem("userId")));
   }
 }

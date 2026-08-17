@@ -31,7 +31,7 @@ class EventRequestValidationTest {
   void acceptsFullyPopulatedRequest() {
     var request =
         new EventRequest(
-            "web", "evt_1", "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
+            "evt_1", "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
 
     assertThat(validator.validate(request)).isEmpty();
   }
@@ -40,17 +40,17 @@ class EventRequestValidationTest {
   void defaultsMissingPropertiesToEmptyObject() {
     var request =
         new EventRequest(
-            "web", "evt_1", "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
+            "evt_1", "user_42", "page_view", Instant.parse("2026-05-24T10:15:30Z"), null);
 
     assertThat(request.properties()).isEqualTo(JsonNodeFactory.instance.objectNode());
   }
 
   @Test
   void rejectsBlankRequiredFields() {
-    var request = new EventRequest("", "", "", "", null, null);
+    var request = new EventRequest("", "", "", null, null);
 
     assertThat(validator.validate(request))
         .extracting(v -> v.getPropertyPath().toString())
-        .containsExactlyInAnyOrder("source", "eventId", "userId", "eventType", "occurredAt");
+        .containsExactlyInAnyOrder("eventId", "userId", "eventType", "occurredAt");
   }
 }

@@ -14,7 +14,6 @@ function buildEvent(eventId, seq) {
   return {
     event_id: eventId,
     timestamp: new Date().toISOString(),
-    source: event.source,
     user_id: event.user_id,
     event_type: event.event_type,
     properties: event.properties,
