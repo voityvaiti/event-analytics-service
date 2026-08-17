@@ -3,6 +3,10 @@ package dev.rymarovych.event_analytics.persistence;
 import dev.rymarovych.event_analytics.domain.NewEvent;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -11,6 +15,11 @@ import org.springframework.stereotype.Repository;
  *
  * <p>Inserts are idempotent on {@code event_id}: a re-delivered event is silently skipped via
  * {@code ON CONFLICT DO NOTHING}. {@code created_at} is left to the database default.
+ *
+ * <p>One statement serves both methods, so there is a single INSERT and a single conflict clause to
+ * keep in step with the schema. The batch runs through {@link NamedParameterJdbcTemplate} rather
+ * than the client because {@link JdbcClient} exposes no batch API — the template is what the client
+ * is built on, so this is the same statement over the same datasource, not a second access style.
  */
 @Repository
 class JdbcEventRepository implements EventRepository {
@@ -30,21 +39,32 @@ class JdbcEventRepository implements EventRepository {
       """;
 
   private final JdbcClient jdbcClient;
+  private final NamedParameterJdbcTemplate jdbcTemplate;
 
-  JdbcEventRepository(JdbcClient jdbcClient) {
+  JdbcEventRepository(JdbcClient jdbcClient, NamedParameterJdbcTemplate jdbcTemplate) {
     this.jdbcClient = jdbcClient;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Override
   public void save(NewEvent event) {
-    jdbcClient
-        .sql(INSERT)
-        .param(PARAM_EVENT_ID, event.eventId())
-        .param(PARAM_SOURCE, event.source())
-        .param(PARAM_USER_ID, event.userId())
-        .param(PARAM_EVENT_TYPE, event.eventType())
-        .param(PARAM_OCCURRED_AT, OffsetDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC))
-        .param(PARAM_PROPERTIES, event.properties().toString())
-        .update();
+    jdbcClient.sql(INSERT).paramSource(parameters(event)).update();
+  }
+
+  @Override
+  public void saveAll(List<NewEvent> events) {
+    jdbcTemplate.batchUpdate(
+        INSERT,
+        events.stream().map(JdbcEventRepository::parameters).toArray(SqlParameterSource[]::new));
+  }
+
+  private static SqlParameterSource parameters(NewEvent event) {
+    return new MapSqlParameterSource()
+        .addValue(PARAM_EVENT_ID, event.eventId())
+        .addValue(PARAM_SOURCE, event.source())
+        .addValue(PARAM_USER_ID, event.userId())
+        .addValue(PARAM_EVENT_TYPE, event.eventType())
+        .addValue(PARAM_OCCURRED_AT, OffsetDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC))
+        .addValue(PARAM_PROPERTIES, event.properties().toString());
   }
 }
