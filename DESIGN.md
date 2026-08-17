@@ -274,8 +274,10 @@ Measured on the current single-node setup against a 20M-row corpus spanning 180
 days (AMD Ryzen 7 7700, 16 cores, connection pool 10). Full series in
 [`perf/`](./perf).
 
-**Where it is today.** Steady-state ingest holds ~4,100 req/s with p99 under
-5 ms and no failures. Reads are cheap on short windows — a 1-hour
+**Where it is today.** Steady-state single-event ingest holds ~3,800-4,100 req/s
+with p99 under 5 ms and no failures, and the batch endpoint holds ~125,000 events/s
+at 100 events per request — 0.078 ms of latency per event against 4.2 ms, which is
+what the per-request overhead was worth. Reads are cheap on short windows — a 1-hour
 `event-counts` is ~2 ms — and degrade linearly with the scanned range: ~27 ms
 at 1 day, ~206 ms at 7 days, ~980 ms at 30 days. `active-users` is the
 expensive endpoint, since a distinct-user count cannot be served from the index

@@ -28,11 +28,11 @@ const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 100);
 // request here carries BATCH_SIZE events: the surge is in events per second, and
 // the rate that delivers it is smaller by that factor.
 //
-// Both are predictions until the batch load cell has rows — the cell's README
-// carries the rule they come from and this file's defaults get replaced by the
-// derived figures, the way the read spike cells' did.
-const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 50);
-const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 2000);
+// Derived from this shape's own load journal at 1252 req/s sustained, by the same
+// multiples the single-event cell uses of its own: ~2x sustained for the surge,
+// ~12% of it for the baseline. The cell's README carries the arithmetic.
+const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 150);
+const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 2500);
 
 const BASELINE_SECONDS = Number(__ENV.BASELINE_SECONDS || 20);
 const SPIKE_SECONDS = Number(__ENV.SPIKE_SECONDS || 30);

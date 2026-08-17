@@ -8,7 +8,7 @@ request shape, judged identically:
 | Cell | Request shape | Surge |
 |---|---|---|
 | [`single/`](./single) | `POST /api/v1/events` — one event per request | 8000 req/s |
-| [`batch/`](./batch) | `POST /api/v1/events/batch` — 100 events per request | 2000 req/s, predicted |
+| [`batch/`](./batch) | `POST /api/v1/events/batch` — 100 events per request | 2500 req/s |
 
 The k6 scenarios sit here beside [`measure-cell.sh`](./measure-cell.sh), the
 routine that applies a surge and judges it. A run is three back-to-back phases,
