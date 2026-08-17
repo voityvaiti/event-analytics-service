@@ -29,14 +29,16 @@ class SynchronousEventIngestionService implements EventIngestionService {
 
   /**
    * The only transaction in the codebase, and it is here so that "all or nothing" is a property of
-   * this method rather than of the driver. A batched statement may well already commit once: the
-   * extended protocol treats everything between two {@code Sync} messages as an implicit
-   * transaction block, and pgjdbc sends a whole batch followed by one. But nothing in this project
-   * pins that, a driver upgrade could change it, and the endpoint's contract is that a rejected
-   * batch leaves no rows behind — so the boundary is declared rather than inherited.
+   * this method rather than of the driver. pgjdbc sends a whole batch followed by one {@code Sync},
+   * and Postgres treats everything between two of those as an implicit transaction block, so a
+   * batch already commits once today: {@code
+   * EventBatchIngestionIntegrationTest.midBatchDatabaseFailureLeavesNothingWritten} passes with
+   * this annotation removed. It changes no outcome, then. What it changes is where the guarantee
+   * lives — declared by the method the endpoint's contract rests on, rather than inherited from a
+   * driver detail that no test here pins and a version bump could take away.
    *
-   * <p>Its cost is constant in batch size: one commit round trip and one WAL flush, against a batch
-   * that does a hundred inserts.
+   * <p>The cost is constant in batch size: one commit round trip and one WAL flush per request,
+   * against a batch that does a hundred inserts.
    */
   @Override
   @Transactional
