@@ -7,6 +7,7 @@ request shape, measured identically:
 | Cell | Request shape |
 |---|---|
 | [`single/`](./single) | `POST /api/v1/events` — one event per request |
+| [`batch/`](./batch) | `POST /api/v1/events/batch` — 100 events per request |
 
 Each cell owns its `journal.jsonl`; the k6 scenarios sit here beside
 [`measure-cell.sh`](./measure-cell.sh), the measuring routine they share, because
@@ -48,11 +49,18 @@ they drift. Both are recorded with every journal row.
   reads the running app's actual pool from its actuator metrics and records that,
   so the journalled pool is always the one the run used — it is never passed in.
 
-Four more columns keep distinct series from being read as one trend:
+Five more columns keep distinct series from being read as one trend:
 
-- **`scenario`** — the request shape (`ingest-single`). Each cell's k6 scenario
-  stamps its own, so one shape's number is never read against another's as a
-  series.
+- **`scenario`** — the request shape (`ingest-single`, `ingest-batch`). Each cell's
+  k6 scenario stamps its own, so one shape's number is never read against
+  another's as a series.
+- **`batch_size`** — events per request, reported by the scenario rather than
+  passed in. It is the factor between the row's `throughput_rps` and its
+  `events_per_sec`, and it appears only in the rows of a cell that posts batches,
+  together with those two derived fields. A single-event row carries none of the
+  three: `requests` is already its event count and `throughput_rps` already its
+  event rate, and a second copy of each under another name is a field that can go
+  stale against itself.
 - **`duration`** — the measured window. The measured run holds a constant VU count
   for the whole window — no ramp stages, the throwaway warm-up pass does the
   warming — so every metric is steady-state. Longer windows give rare events (GC
@@ -69,13 +77,24 @@ Four more columns keep distinct series from being read as one trend:
   INSERT costlier, so throughput steps down when they land; this column marks
   that step as a migration, not a regression.
 
-## Which field the spread is taken over
+## Throughput, and which throughput
 
-Throughput, not latency. The write cost of a secondary index is a few percent
-either way — close enough to run-to-run jitter that the two are easy to confuse —
-so throughput is the number a comparison here turns on, and the one whose floor
-has to be known before a delta is called real. The latency percentiles ride along
-in every row for context, but a write comparison is not decided on them.
+A write comparison turns on throughput, not latency: the write cost of a secondary
+index is a few percent either way, close enough to run-to-run jitter that the two
+are easy to confuse, so throughput is the figure whose floor has to be known before
+a delta is called real. The latency percentiles ride along in every row for
+context, but nothing is decided on them.
+
+Which throughput depends on what is being compared. **Events per second is the only
+field that reads across the cells**, because a request means a different amount of
+work in each; requests per second is what reads across rounds *within* a cell.
+`single/` takes its spread over `throughput_rps`, where the two are the same
+number and its rows have carried that field since the beginning; `batch/` takes its
+over `events_per_sec`.
+
+A floor measured in one cell does not transfer to the other. The suite's ~6% write
+figure belongs to a request that does one insert, and
+[the floor belongs to the amount of work](../../README.md#the-measured-floor).
 
 ## Running
 
@@ -89,7 +108,8 @@ dependencies are added.
 # Start the app however you normally do (IDE run config, or ./gradlew bootRun).
 # The action brings backing services up itself.
 
-scripts/actions/perf/write/load/single      # one cell
+scripts/actions/perf/write/load/single      # one event per request
+scripts/actions/perf/write/load/batch       # 100 events per request
 scripts/actions/perf/write/load/all         # every write load cell
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:

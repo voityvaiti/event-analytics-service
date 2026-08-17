@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# PERF - Write Spike batch: step the request rate for POST /api/v1/events/batch far
+# above steady-state capacity, then back down, and check the batch path recovers.
+# Appends one row per round to perf/write/spike/batch/journal.jsonl. This cell
+# gates, like its single-event sibling, so it exits non-zero when the app did not
+# recover — but its SPIKE_RATE and baseline ceiling are predictions until the batch
+# load cell has rows, so read a red verdict against the cell's README first. The app
+# must already be running on the host. Tunables: SPIKE_RATE, BATCH_SIZE,
+# BASELINE_RATE, *_SECONDS, MAX_VUS, ROUNDS (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/spike/measure-cell.sh
+source perf/write/spike/batch/measure.sh
+
+perf_bootstrap
+perf_run_tests "write spike batch:perf_write_spike_batch"

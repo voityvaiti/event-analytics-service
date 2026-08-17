@@ -5,9 +5,10 @@ the steady state?" but "what happens when ingest traffic suddenly jumps far abov
 that steady state, and does the app recover once it subsides?" One cell per
 request shape, judged identically:
 
-| Cell | Request shape |
-|---|---|
-| [`single/`](./single) | `POST /api/v1/events` — one event per request |
+| Cell | Request shape | Surge |
+|---|---|---|
+| [`single/`](./single) | `POST /api/v1/events` — one event per request | 8000 req/s |
+| [`batch/`](./batch) | `POST /api/v1/events/batch` — 100 events per request | 2000 req/s, predicted |
 
 The k6 scenarios sit here beside [`measure-cell.sh`](./measure-cell.sh), the
 routine that applies a surge and judges it. A run is three back-to-back phases,
@@ -30,7 +31,9 @@ would just park on `getConnection()` and we'd measure the pool, not the shock.
 Because it's open, a cell's `SPIKE_RATE` must **exceed what its own shape sustains
 in the load journal**, or there is no surge to observe. Each cell derives its rate
 from its own ceiling and says so; a rate shared across shapes would mean different
-things at each of them.
+things at each of them — two orders of magnitude apart here, since a batch request
+carries a hundred events. What the two cells compare over is
+`spike_achieved_events_per_sec`, not the request rates behind it.
 
 ## What the app does under surge — and what this asserts
 
@@ -85,7 +88,8 @@ See the [suite README](../../README.md#rounds-and-the-noise-floor).
 
 ```bash
 # App must be running on the host; the action brings backing services up itself.
-scripts/actions/perf/write/spike/single      # one cell
+scripts/actions/perf/write/spike/single      # one event per request
+scripts/actions/perf/write/spike/batch       # 100 events per request
 scripts/actions/perf/write/spike/all         # every write spike cell
 
 # Tunables via env (each cell's defaults are sized for its own ceiling):

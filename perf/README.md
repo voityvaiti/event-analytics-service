@@ -8,7 +8,9 @@ production.
 | Path | Cell | Question it answers |
 |------|------|---------------------|
 | Write | [`write/load/single/`](./write/load/single) | Steady-state ingest throughput one event at a time — how many events/s can we persist, and is it drifting over time? |
+| Write | [`write/load/batch/`](./write/load/batch) | How many events/s does a batch request persist, and how much of the single-event cost was per-request overhead? |
 | Write | [`write/spike/single/`](./write/spike/single) | Does the ingest path survive a sudden surge far above steady-state capacity, and recover afterwards? |
+| Write | [`write/spike/batch/`](./write/spike/batch) | Does the batch path survive a surge, when each request holds a connection for a hundred inserts? |
 | Read | [`read/load/event-counts/`](./read/load/event-counts) | How long does counting events in a window take, per grouping? |
 | Read | [`read/load/active-users/`](./read/load/active-users) | How long does `COUNT(DISTINCT user_id)` over a window take — the read the index can help least? |
 | Read | [`read/load/top-pages/`](./read/load/top-pages) | How long does ranking pages out of JSONB take? |
@@ -88,14 +90,18 @@ densities:
 
 | Regime | Peak-to-peak over 3 rounds |
 |---|---|
-| Write load, `throughput_rps` | 1.4% – 4.8% |
+| Write load, `throughput_rps`, one event per request | 1.4% – 4.8% |
 | Read load, `p95_ms`, served from the index | 0% – 1.4% |
 | Read load, `p95_ms`, sequential scan over gigabytes | 1.6% – 10.0% |
 | Read load, `p95_ms`, sequential scan over megabytes | 0% – 1.0% |
 | Read load, `p95_ms`, empty table | 0% – 4.6% |
 
 Read the write figure as **~6%**, and treat anything below it as no measured
-effect. Three things about this table are worth stating outright.
+effect. The batch cell is a regime of its own and has no row here yet: its request
+does a hundred inserts rather than one, and by the rule two paragraphs down its
+floor has to be measured rather than inherited.
+
+Three things about this table are worth stating outright.
 
 **Three rounds understates it.** Peak-to-peak can only grow as rounds are added —
 more samples, more chance of catching an extreme. The write cell's ten passes
@@ -165,13 +171,15 @@ perf/
     tests.sh            the write cell list, per workload and combined
     load/
       ingest-events.js  the steady scenario, one event per request
+      ingest-batches.js the steady scenario, BATCH_SIZE events per request
       measure-cell.sh   the measuring routine the load cells share
       compare-runs.mjs  the main-vs-PR comparison CI renders
-      single/
+      single/  batch/
     spike/
       spike-events.js   the surge scenario, one event per request
+      spike-batches.js  the surge scenario, batches at a surging request rate
       measure-cell.sh   the routine the spike cells share, verdict included
-      single/
+      single/  batch/
   read/
     tests.sh            the read cell list, per workload and combined
     load/
@@ -200,7 +208,7 @@ in what they send, never in how they are measured or judged.
   dependencies, checking the app and the k6 image, seeding the corpus and
   restoring it after a write test, and reading the pool/schema/CPU stamps. A
   test never re-implements this.
-- **`lib/k6-ingest.js`** owns the `/api/v1/events` request shape, so a contract
+- **`lib/k6-ingest.js`** owns both `/api/v1/events` request shapes, so a contract
   change touches one file, not every scenario.
 - **`lib/event-generator.js`** owns what an event *looks like*. Both write
   scenarios and the corpus seeder draw from it, so the table a read test queries

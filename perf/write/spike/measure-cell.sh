@@ -14,10 +14,12 @@
 # k6's recovery threshold tripping is data, not a reason to abort before it is
 # recorded. The function returns non-zero only when the app did not recover.
 #
-# Four things arrive as arguments rather than being read here, because each is a
-# property of the request shape being surged rather than of a surge:
+# Everything a cell differs by arrives as an argument rather than being read here,
+# because each is a property of the request shape being surged rather than of a
+# surge:
 #   - the scenario, and the load scenario used to warm for it;
 #   - the surge rate, derived per cell from its own load journal;
+#   - the batch size, when the shape sends more than one event per request;
 #   - the ceiling on a healthy baseline. That last one is not a formality: it
 #     asks "is the baseline phase a state worth measuring recovery against", and
 #     the answer scales with the unit of work. A single insert answers in ~2ms, a
@@ -25,16 +27,19 @@
 #     other as having no valid baseline on every round.
 #
 # Usage: perf_write_spike_cell <journal> <script> <warmup_script> <spike_rate>
-#                              <baseline_max_p95_ms>
+#                              <baseline_max_p95_ms> [batch_size]
 
 perf_write_spike_cell() {
   local journal=$1 script=$2 warmup_script=$3 spike_rate=$4 baseline_max_p95_ms=$5
+  local batch_size=${6:-}
   local summary=perf/write/spike/last-summary.json
+  local batch=()
+  [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
 
   # Warm JIT and pool with the matching steady load scenario before the surge, so
   # the spike hits a warmed app and measures the surge, not cold start. Its rows
   # are then dropped, putting the table back to the seeded corpus.
-  k6_run "$warmup_script" -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
+  k6_run "$warmup_script" "${batch[@]}" -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -42,7 +47,7 @@ perf_write_spike_cell() {
   start_rows=$CORPUS_ROWS
 
   rm -f "$summary"
-  k6_run "$script" \
+  k6_run "$script" "${batch[@]}" \
     --env BASELINE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
     -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" || true
@@ -76,6 +81,18 @@ baseline = s["phases"]["baseline"]
 
 def r(value, digits=2):
     return round(value, digits) if isinstance(value, (int, float)) else value
+
+
+# What the two shapes can be surged against each other over: their request rates
+# differ by the batch size, so only the events behind them compare. Journalled
+# only where it says something the row does not already say — a scenario posting
+# one event per request reports no batch size, and for it the achieved request
+# rate already is the achieved event rate.
+batch_size = s.get("batch_size")
+
+
+def events(value):
+    return r(value * batch_size, 1) if isinstance(value, (int, float)) else value
 
 
 # Same definition of recovered the read spike uses: serving every request is not
@@ -113,12 +130,14 @@ row = {
     "cores": int(cores),
     "pool": int(pool),
     "start_rows": int(start_rows),
+    "batch_size": batch_size,
     "baseline_rate": s["baseline_rate"],
     "spike_rate": s["spike_rate"],
     "max_vus": s["max_vus"],
     "spike_seconds": s["seconds"]["spike"],
     "baseline_max_p95_ms": round(BASELINE_MAX_P95_MS, 2),
     "spike_achieved_rps": r(spike["achieved_rps"], 1),
+    "spike_achieved_events_per_sec": events(spike["achieved_rps"]) if batch_size else None,
     "spike_dropped": round(spike["dropped"]) if isinstance(spike["dropped"], (int, float)) else 0,
     "spike_failed_rate": r(spike["failed_rate"], 4),
     "spike_p95_ms": r(spike["p95_ms"]),
@@ -130,6 +149,7 @@ row = {
     "baseline_p95_ms": r(baseline["p95_ms"]),
     "recovered": recovered,
 }
+row = {name: value for name, value in row.items() if value is not None}
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
@@ -150,7 +170,8 @@ print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
     "PERF_RESULT write spike %s: %s | baseline %s of %s rps, p95 %sms | spike →%d rps "
-    "achieved %s, dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, p95 %sms"
+    "achieved %s%s, dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, "
+    "p95 %sms"
     % (
         row["scenario"],
         verdict,
@@ -159,6 +180,7 @@ print(
         row["baseline_p95_ms"],
         row["spike_rate"],
         row["spike_achieved_rps"],
+        " (%s events/s)" % row["spike_achieved_events_per_sec"] if batch_size else "",
         row["spike_dropped"],
         r(spike["failed_rate"] * 100, 2) if isinstance(spike["failed_rate"], (int, float)) else "n/a",
         row["spike_p99_ms"],
