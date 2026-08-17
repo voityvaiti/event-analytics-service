@@ -17,3 +17,18 @@ export const SPIKE_PHASE_SEQ_BASE = {
   spike: 50000000,
   recovery: 60000000,
 };
+
+// The batch scenarios draw BATCH_SIZE numbers per request where the single-event
+// ones draw one, so their bands are sized for the product rather than for the
+// request count. At the default batch of 100: a 30s load window at even 1000
+// req/s is 3M, and a 30s surge offering a few thousand req/s is under 10M — so
+// 20M for load and 10M/30M/17M for the surge phases leave room for a rate an
+// order of magnitude above anything measured, while the last band still ends
+// below the ~147M aliasing ceiling.
+export const BATCH_LOAD_SEQ_BASE = 70000000;
+
+export const BATCH_SPIKE_PHASE_SEQ_BASE = {
+  baseline: 90000000,
+  spike: 100000000,
+  recovery: 130000000,
+};

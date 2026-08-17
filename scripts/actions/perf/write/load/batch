@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# PERF - Write Load batch: measure steady-state throughput for BATCH_SIZE events
+# per request and append one row per round to
+# perf/write/load/batch/journal.jsonl. The headline field is events_per_sec — a
+# batch's request rate is not comparable with the single-event cell's. The app must
+# already be running on the host; backing services are brought up by the harness.
+# Tunables: VUS, DURATION, BATCH_SIZE, ROUNDS (default 1; repeats with nothing
+# changed and reports the spread across the rounds — this regime's noise floor,
+# which is not the single-event cell's).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/load/measure-cell.sh
+source perf/write/load/batch/measure.sh
+
+perf_bootstrap
+perf_run_tests "write load batch:perf_write_load_batch"
