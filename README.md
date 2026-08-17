@@ -90,7 +90,9 @@ high-frequency-ingest focus above. The suite lives in [`perf/`](./perf):
 - **Load** — steady-state ingest write throughput, one cell per request shape
   (`POST /api/v1/events` and `POST /api/v1/events/batch`). Events per second is
   the field the two are compared over; their request rates differ by the batch
-  size and mean nothing side by side.
+  size and mean nothing side by side. At 20M rows the single-event path holds
+  ~3,800 events/s and a 100-event batch holds ~125,000 — a factor of 33, which is
+  what the per-request overhead was worth.
 - **Spike** — behaviour under a sudden surge far above capacity, and whether the
   service recovers afterwards, again per request shape.
 

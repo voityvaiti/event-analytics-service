@@ -91,15 +91,18 @@ densities:
 | Regime | Peak-to-peak over 3 rounds |
 |---|---|
 | Write load, `throughput_rps`, one event per request | 1.4% – 4.8% |
+| Write load, `events_per_sec`, 100 events per request | 0.8% |
 | Read load, `p95_ms`, served from the index | 0% – 1.4% |
 | Read load, `p95_ms`, sequential scan over gigabytes | 1.6% – 10.0% |
 | Read load, `p95_ms`, sequential scan over megabytes | 0% – 1.0% |
 | Read load, `p95_ms`, empty table | 0% – 4.6% |
 
-Read the write figure as **~6%**, and treat anything below it as no measured
-effect. The batch cell is a regime of its own and has no row here yet: its request
-does a hundred inserts rather than one, and by the rule two paragraphs down its
-floor has to be measured rather than inherited.
+Read the single-event write figure as **~6%**, and treat anything below it as no
+measured effect. The batch row is one three-round pass rather than ten, so it is a
+first reading and not yet a range — but it is an order of magnitude tighter than
+the single-event regime, which is the rule below doing what it says: a request that
+does a hundred inserts spends proportionally less of itself in the per-request
+overhead that jitters.
 
 Three things about this table are worth stating outright.
 

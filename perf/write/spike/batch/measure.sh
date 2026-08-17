@@ -5,36 +5,33 @@
 # perf_write_spike_batch; the harness and perf/write/spike/measure-cell.sh must
 # already be sourced. Appends one row to perf/write/spike/batch/journal.jsonl.
 #
-# SPIKE_RATE 2000, BASELINE_RATE 50 and BASELINE_MAX_P95_MS 500 are all
-# predictions, not measurements — this cell's load journal is still empty. The
-# rules they are placeholders for are the single-event cell's: surge at ~2x the
-# request rate the same shape sustains under load, hold the baseline at roughly a
-# tenth of it (500 against ~4100 there), and set the healthy-baseline ceiling an
-# order of magnitude above the p95 that shape actually answers in. All three get
-# replaced by figures read off perf/write/load/batch/journal.jsonl once it has
-# rows, as the read spike cells' rates were.
+# All three constants are derived from this shape's own load journal — 1252 req/s
+# sustained at p95 7.78ms, median of three rounds at 20M rows — by the multiples
+# the single-event cell uses of its own numbers:
 #
-# The baseline needs re-deriving as much as the surge does, and for the same
-# reason in reverse: a rate the app does not notice measures idle rather than a
-# healthy state, and the recovery clause compares recovery p95 against it. Two
-# numbers both at the floor make a verdict one scheduler hiccup decides.
+#   SPIKE_RATE           2500 = 2.0x sustained      (single: 8000 = 2.1x of 3756)
+#   BASELINE_RATE         150 = 12% of sustained    (single:  500 = 13% of 3756)
+#   BASELINE_MAX_P95_MS   100 = 12.9x load p95      (single:   50 = 12.7x of 3.93)
 #
-# 2000 rather than the 600 this cell was first written with, because 600 is not a
-# surge: a plumbing check on an empty table at batch 25 absorbed it with nothing
-# dropped and p95 at 3ms. That check is not a measurement — no corpus, a 5s window,
-# a quarter of the batch size — but it is enough to rule out a rate the app plainly
-# does not notice, and a cell that never surges always passes.
+# The baseline matters as much as the surge, for the same reason in reverse: a rate
+# the app does not notice measures idle rather than a healthy state, and the
+# recovery clause compares recovery p95 against it. Two numbers both at the floor
+# make a verdict one scheduler hiccup decides.
+#
+# The surge started life at 600 before there was anything to derive it from, and a
+# plumbing check absorbed that without dropping a request — a cell that never
+# surges always passes, which is why the rate had to come from a measurement.
 #
 # Held equal with the single-event cell so the two rows stay comparable:
 # BATCH_SIZE aside, the phase durations, MAX_VUS and the surge multiple are the
 # same. What differs is that each request here carries 100 events, so the row's
 # spike_achieved_events_per_sec is the field the two cells share.
 #
-# Tunables via env: SPIKE_RATE (default 2000), BATCH_SIZE (default 100),
-# BASELINE_RATE (default 50, in spike-batches.js), *_SECONDS, MAX_VUS.
+# Tunables via env: SPIKE_RATE (default 2500), BATCH_SIZE (default 100),
+# BASELINE_RATE (default 150, in spike-batches.js), *_SECONDS, MAX_VUS.
 
 perf_write_spike_batch() {
   perf_write_spike_cell perf/write/spike/batch/journal.jsonl \
     perf/write/spike/spike-batches.js perf/write/load/ingest-batches.js \
-    "${SPIKE_RATE:-2000}" 500 "${BATCH_SIZE:-100}"
+    "${SPIKE_RATE:-2500}" 100 "${BATCH_SIZE:-100}"
 }
