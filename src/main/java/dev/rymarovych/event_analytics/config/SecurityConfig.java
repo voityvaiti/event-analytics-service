@@ -28,7 +28,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * plus a catch-all deny: one rule fewer, no dependence on which dispatcher types the authorization
  * filter covers, and a future endpoint is closed until someone opens it.
  *
- * <p>CSRF is disabled because the API is token-based, not cookie or session based.
+ * <p>CSRF is disabled, and the reason is narrower than "the API is token-based": CSRF matters when
+ * a browser attaches the credential itself, as it does a cookie. It never adds an {@code
+ * Authorization} header on its own, so a forged cross-site request arrives with no token. Moving
+ * the token into a cookie would bring CSRF straight back — being a JWT changes nothing, only who
+ * attaches it does.
  */
 @Configuration
 class SecurityConfig {

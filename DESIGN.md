@@ -130,13 +130,17 @@ time range and only some of them constrain `event_type`; a composite led by
 `event_type` cannot serve a range scan when no type is given. The trailing
 `event_type` keeps `groupBy=type` grouped from the same index.
 
-`source` is deliberately *not* in it yet. Every read is now scoped to one tenant,
-so the argument for leading with `source` is real — it would prune by tenant
-before scanning a range, which is the right shape for pooled multitenancy. But
-the corpus the suite measures against holds a single tenant, so leading with
-`source` would prune nothing there, and a 20M-row index rebuild cannot be
-justified by numbers that cannot show its benefit. It is the next index
-experiment, not a change to make on reasoning alone.
+`source` is not in it, and that is now the read path's largest cost. A range
+`COUNT(*)` needed nothing outside the index; checking `source` sends it to the heap
+per row, taking a 1-hour `event-counts` from ~2 ms to ~38 ms by type and ~7 ms by
+hour. `active-users` and `top-pages` already visited the heap and moved 12–23%.
+
+The fix is a **covering** index, not a pruning one, and the distinction decides what
+the suite can prove: leading with `source` would prune by tenant, which a
+single-tenant corpus cannot demonstrate, whereas restoring covering shows up on one
+tenant as well as on a thousand. `(source, occurred_at, event_type)` and
+`(occurred_at, event_type) INCLUDE (source)` are the candidates for the next index
+experiment.
 
 ## Key design decisions
 
@@ -302,11 +306,16 @@ days (AMD Ryzen 7 7700, 16 cores, connection pool 10). Full series in
 **Where it is today.** Steady-state single-event ingest holds ~3,800-4,100 req/s
 with p99 under 5 ms and no failures, and the batch endpoint holds ~125,000 events/s
 at 100 events per request — 0.078 ms of latency per event against 4.2 ms, which is
-what the per-request overhead was worth. Reads are cheap on short windows — a 1-hour
-`event-counts` is ~2 ms — and degrade linearly with the scanned range: ~27 ms
-at 1 day, ~206 ms at 7 days, ~980 ms at 30 days. `active-users` is the
-expensive endpoint, since a distinct-user count cannot be served from the index
-alone: ~3.6 s at a 30-day window.
+what the per-request overhead was worth. Verifying a token per request cost neither
+figure anything measurable: 127.5k to 126.0k events/s on the batch cell, inside its
+0.8% spread.
+
+Reads got worse when they were scoped to a tenant, short windows most of all: a
+1-hour `event-counts` is ~38 ms by type and ~7 ms by hour, against ~2 ms for both
+before. Wider windows degrade from a higher floor — ~48 ms at 1 day, ~435 ms at
+7 days, ~1.3 s at 30 days by hour. `active-users` stayed the expensive endpoint and
+barely noticed: ~3.8 s at 30 days. Cause and fix are under
+[the data model](#data-model).
 
 **What saturates first: the read path, not the write path.** A read spike
 demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering
@@ -322,6 +331,16 @@ spike cells then established what that is worth here: it never fires under this
 surge, and every verdict is unchanged. The tail is time spent waiting for a
 connection, not time spent running a query, and a bound on the second does not
 touch the first.
+
+Scoping reads to a tenant then cost the one cell that used to pass. `event-counts`
+absorbed a surge and drained afterwards: offered 4,000 req/s it served ~717 and
+recovered to a p95 of ~15 ms. With the heap fetch per row it serves ~256 and recovers
+to ~600 ms — it no longer recovers at all. `active-users` under its own surge did not
+move on any field, which pins that to the query rather than to the rig. A few
+milliseconds per query is not a latency detail when ten connections are the only
+place a request waits; it sets how deep the queue goes and how long it drains. That
+is the strongest argument for the covering index, and it is about surge rather than
+about average latency.
 
 **What would have to change.** The first item has landed: a bound on how long
 any single statement may run, so nothing occupies a connection indefinitely.
@@ -352,10 +371,10 @@ case and does nothing for the bad one.
 
 - Time bucketing is UTC-only in practice until the tenant table exists, though
   the query layer is already zone-parametric.
-- `source` is not in any index, though every read now filters on it. The range
-  predicate still selects the rows, but each has to be visited to check its
-  tenant, so a count grouped by type is no longer answerable from the index
-  alone.
+- `source` is not in any index, though every read now filters on it — the largest
+  open item on the read path, and the one the numbers above are waiting on. A
+  covering index is the fix; see [the data model](#data-model) for why covering
+  rather than pruning, and which two candidates are in the running.
 - `properties` has no GIN index, so any future filter on a JSON field is a
   sequential scan.
 - There is no index on `user_id`; `active-users` shows sequential scans in the

@@ -28,7 +28,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  *
  * <p>This is the second signer over the same key; {@code perf/lib/mint-token.mjs} is the first. The
  * duplication is intended: the perf suite runs from a node image with no JVM, and these tests run
- * with no node. One key, one token format, two runtimes.
+ * with no node. So the claim's name lives in three places — {@code SecurityConfig} reads it, both
+ * signers write it — and only the reader is load-bearing: a signer with the wrong name produces
+ * tokens that fail verification immediately, while a reader with the wrong name would scope
+ * requests to the wrong tenant in silence.
  */
 public final class DevKeyTokens {
 
