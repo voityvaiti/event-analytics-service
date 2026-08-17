@@ -63,7 +63,33 @@ idempotency. The MVP read side is in place: `GET
 /api/v1/stats/event-counts` (event counts over a time window, grouped by type,
 hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day
 bucket), and `GET /api/v1/stats/top-pages` (top-N pages by event count, with a
-truncation flag). Still to come: JWT authentication.
+truncation flag). **JWT authentication is in place**, which makes the service
+multi-tenant in practice rather than only in the schema: every `/api/v1`
+endpoint requires an RS256 bearer token, a row's `source` comes from the
+token's tenant claim instead of the request body, and every `/stats` query is
+scoped to the caller's own tenant.
+
+## Authentication
+
+Every `/api/v1` endpoint needs `Authorization: Bearer <token>`. Tokens are
+verified with an RSA **public** key, so the service can check a token but never
+mint one — issuing lives outside it. `/actuator` is left open, because the perf
+suite reads the live connection-pool size from it to stamp every journal row.
+
+Mint a token for local use:
+
+```bash
+TOKEN=$(scripts/actions/mint-token acme)
+curl -H "Authorization: Bearer $TOKEN" \
+  'localhost:8080/api/v1/stats/event-counts?from=2026-05-24T00:00:00Z&to=2026-05-25T00:00:00Z'
+```
+
+The tenant passed there is the `source` the caller's events are written under
+and the only rows its queries can see. The committed key pair is a throwaway for
+local runs and the perf suite — see [`dev-keys/`](./dev-keys). **A deployment
+must override
+`spring.security.oauth2.resourceserver.jwt.public-key-location`**, or it will
+trust tokens anyone with this repository can sign.
 
 ## Build & checks
 
