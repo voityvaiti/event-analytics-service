@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# PERF - Write Load single: measure steady-state throughput for one event per
+# request and append one row per round to perf/write/load/single/journal.jsonl.
+# The app must already be running on the host; backing services are brought up by
+# the harness. Tunables: VUS, DURATION, ROUNDS (default 1; repeats with nothing
+# changed and reports the spread across the rounds — the rig's noise floor).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/load/measure-cell.sh
+source perf/write/load/single/measure.sh
+
+perf_bootstrap
+perf_run_tests "write load single:perf_write_load_single"

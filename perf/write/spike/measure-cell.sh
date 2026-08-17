@@ -1,27 +1,40 @@
 #!/bin/bash
 
-# Spike test: how the ingest path behaves when request rate suddenly steps far
-# above steady-state capacity, and whether it recovers afterwards. Defines
-# perf_spike, which the harness (perf/lib/harness.sh) must already be sourced
-# for. Appends one row to perf/write/spike/journal.jsonl — its own series, never
-# merged with the load journal (different scenario, different meaning).
+# One measured write spike cell, shared by every leaf under write/spike: warm up,
+# step the request rate far above steady-state capacity and back down, put the
+# corpus back, and append one row with a recovery verdict to the leaf's journal.
+# Defines perf_write_spike_cell, which the harness (perf/lib/harness.sh) must
+# already be sourced for.
 #
-# The measured run is tolerated failing (|| true): a spike is allowed to shed,
-# so k6's recovery threshold tripping is data, not a reason to abort before we
-# record it. perf_spike returns non-zero only when the app did not recover.
+# Separate from write/load/measure-cell.sh on purpose: a surge is measured in
+# phases against a verdict, not as one steady window, so the two share the
+# harness and nothing else.
 #
-# Tunables via env: BASELINE_RATE, SPIKE_RATE (must exceed the load test's
-# throughput), BASELINE_SECONDS, SPIKE_SECONDS, RECOVERY_SECONDS, MAX_VUS.
+# The measured run is tolerated failing (|| true): a spike is allowed to shed, so
+# k6's recovery threshold tripping is data, not a reason to abort before it is
+# recorded. The function returns non-zero only when the app did not recover.
+#
+# Four things arrive as arguments rather than being read here, because each is a
+# property of the request shape being surged rather than of a surge:
+#   - the scenario, and the load scenario used to warm for it;
+#   - the surge rate, derived per cell from its own load journal;
+#   - the ceiling on a healthy baseline. That last one is not a formality: it
+#     asks "is the baseline phase a state worth measuring recovery against", and
+#     the answer scales with the unit of work. A single insert answers in ~2ms, a
+#     batch of a hundred cannot, and a bound written for one would report the
+#     other as having no valid baseline on every round.
+#
+# Usage: perf_write_spike_cell <journal> <script> <warmup_script> <spike_rate>
+#                              <baseline_max_p95_ms>
 
-perf_spike() {
-  local script=perf/write/spike/spike-events.js
+perf_write_spike_cell() {
+  local journal=$1 script=$2 warmup_script=$3 spike_rate=$4 baseline_max_p95_ms=$5
   local summary=perf/write/spike/last-summary.json
-  local journal=perf/write/spike/journal.jsonl
 
-  # Warm JIT and pool with the steady load scenario before the surge, so the
-  # spike hits a warmed app and measures the surge, not cold start. Its rows are
-  # then dropped, putting the table back to the seeded corpus.
-  k6_run perf/write/load/ingest-events.js -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
+  # Warm JIT and pool with the matching steady load scenario before the surge, so
+  # the spike hits a warmed app and measures the surge, not cold start. Its rows
+  # are then dropped, putting the table back to the seeded corpus.
+  k6_run "$warmup_script" -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
   local start_rows
@@ -30,9 +43,9 @@ perf_spike() {
 
   rm -f "$summary"
   k6_run "$script" \
-    --env BASELINE_RATE --env SPIKE_RATE \
+    --env BASELINE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
-    -e SUMMARY_OUT="$summary" || true
+    -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" || true
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Spike run produced no summary at $summary — did the app stay up?" >&2
@@ -46,13 +59,13 @@ perf_spike() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
+    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" "$baseline_max_p95_ms" <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path,
-    schema_version, start_rows,
-) = sys.argv[1:11]
+    schema_version, start_rows, baseline_max_p95_ms,
+) = sys.argv[1:12]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -73,13 +86,10 @@ RECOVERY_LATENCY_FACTOR = 5
 
 # The read spike's precondition, for the same reason: everything else here is
 # relative to the baseline phase, so a baseline that has itself collapsed is not a
-# reference. Kept on this side too even though the write path has never come close
-# to failing it — an insert answers in about 2ms and the baseline measures 2ms — a
-# gate that only holds while the numbers stay healthy is not a gate.
-#
-# 50ms is more than an order of magnitude above the healthy figure, so it marks
-# genuine saturation of the write path rather than jitter around it.
-BASELINE_MAX_P95_MS = 50
+# reference. The bound comes from the cell rather than from here, because what
+# counts as a healthy baseline is a property of the request being surged — see the
+# usage note above.
+BASELINE_MAX_P95_MS = float(baseline_max_p95_ms)
 
 baseline_valid = (
     isinstance(baseline["p95_ms"], (int, float))
@@ -107,6 +117,7 @@ row = {
     "spike_rate": s["spike_rate"],
     "max_vus": s["max_vus"],
     "spike_seconds": s["seconds"]["spike"],
+    "baseline_max_p95_ms": round(BASELINE_MAX_P95_MS, 2),
     "spike_achieved_rps": r(spike["achieved_rps"], 1),
     "spike_dropped": round(spike["dropped"]) if isinstance(spike["dropped"], (int, float)) else 0,
     "spike_failed_rate": r(spike["failed_rate"], 4),
@@ -138,9 +149,10 @@ else:
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT spike: %s | baseline %s of %s rps, p95 %sms | spike →%d rps achieved %s, "
-    "dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, p95 %sms"
+    "PERF_RESULT write spike %s: %s | baseline %s of %s rps, p95 %sms | spike →%d rps "
+    "achieved %s, dropped %d, %s%% failed, p99 %sms | recovery %s%% failed, p95 %sms"
     % (
+        row["scenario"],
         verdict,
         row["baseline_achieved_rps"],
         row["baseline_rate"],

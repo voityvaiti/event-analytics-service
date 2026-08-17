@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# PERF - Write Load: run every write load cell back to back against the seeded
+# corpus and print one combined digest at the end. The cell list lives in
+# perf/write/tests.sh, shared with the whole-path and whole-suite actions. Each
+# cell appends to its own journal — eyeball and commit those yourself. Tunables:
+# VUS, DURATION, ROUNDS (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/tests.sh
+
+perf_bootstrap
+perf_run_tests "${WRITE_LOAD_TESTS[@]}"
