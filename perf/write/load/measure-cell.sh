@@ -1,22 +1,28 @@
 #!/bin/bash
 
-# Load test: steady-state ingest write throughput. Defines perf_load, which the
-# harness (perf/lib/harness.sh) must already be sourced for. Appends one row to
-# perf/write/load/journal.jsonl — the absolute throughput series, comparable only
-# within a fixed rig, so every row self-stamps CPU/cores/pool/schema.
+# One measured write load cell, shared by every leaf under write/load: warm up,
+# run the scenario against the seeded corpus, put the corpus back, and append one
+# row to the leaf's journal. Defines perf_write_load_cell, which the harness
+# (perf/lib/harness.sh) must already be sourced for. The spike cells do not share
+# it — a surge is measured in phases against a recovery verdict, not as one
+# steady window.
 #
-# Tunables via env: VUS (default 10, keep near the pool), DURATION (default 60s).
+# Unlike a read cell, a write cell mutates: every measured run inserts rows and
+# then deletes exactly the ones it inserted, so the next cell starts from the
+# same corpus this one did.
+#
+# The scenario is an argument rather than a constant here, because that is what
+# separates one write cell from another: they post different request shapes to
+# different endpoints and are measured identically. VUS and DURATION arrive
+# resolved for the same reason a cell resolves its own knobs — the window a cell
+# wants is a property of the request it sends, and an exported one would outlive
+# the cell that set it.
+#
+# Usage: perf_write_load_cell <journal> <script> <vus> <duration>
 
-perf_load() {
-  local script=perf/write/load/ingest-events.js
+perf_write_load_cell() {
+  local journal=$1 script=$2 vus=$3 duration=$4
   local summary=perf/write/load/last-summary.json
-  local journal=perf/write/load/journal.jsonl
-
-  # Resolved into locals and handed to k6 explicitly rather than exported: an
-  # exported knob outlives the cell that set it, so the read cells that follow
-  # in a full-suite run would silently inherit this test's VUs and window
-  # instead of their own defaults.
-  local vus=${VUS:-10} duration=${DURATION:-60s}
 
   # Warm up (JIT + connection pool) and throw the numbers away, so the measured
   # run reflects steady state, not cold start. This pass also stands in for a
@@ -84,8 +90,9 @@ with open(journal_path, "a") as f:
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT load: %d req/s | p95 %sms | p99 %sms | %.2f%% failed (vus %d, %s)"
+    "PERF_RESULT write load %s: %d req/s | p95 %sms | p99 %sms | %.2f%% failed (vus %d, %s)"
     % (
+        row["scenario"],
         row["throughput_rps"],
         row["p95_ms"],
         row["p99_ms"],
@@ -98,13 +105,4 @@ PY
   ) || return 1
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
-}
-
-# Throughput is the field whose spread decides anything here: the write side of a
-# secondary index costs a few percent either way, close enough to jitter that the
-# two are easy to confuse, so the floor has to be known before a delta is called
-# real. Latency percentiles ride along in the rows for context but are not what a
-# write comparison turns on.
-perf_load_spread() {
-  perf_spread "write load" perf/write/load/journal.jsonl "$1" throughput_rps
 }

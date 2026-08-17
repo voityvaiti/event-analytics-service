@@ -7,8 +7,8 @@ production.
 
 | Path | Cell | Question it answers |
 |------|------|---------------------|
-| Write | [`write/load/`](./write/load) | Steady-state ingest throughput — how many events/s can we persist, and is it drifting over time? |
-| Write | [`write/spike/`](./write/spike) | Does the ingest path survive a sudden surge far above steady-state capacity, and recover afterwards? |
+| Write | [`write/load/single/`](./write/load/single) | Steady-state ingest throughput one event at a time — how many events/s can we persist, and is it drifting over time? |
+| Write | [`write/spike/single/`](./write/spike/single) | Does the ingest path survive a sudden surge far above steady-state capacity, and recover afterwards? |
 | Read | [`read/load/event-counts/`](./read/load/event-counts) | How long does counting events in a window take, per grouping? |
 | Read | [`read/load/active-users/`](./read/load/active-users) | How long does `COUNT(DISTINCT user_id)` over a window take — the read the index can help least? |
 | Read | [`read/load/top-pages/`](./read/load/top-pages) | How long does ranking pages out of JSONB take? |
@@ -18,9 +18,10 @@ production.
 
 Each cell owns its own `journal.jsonl` (an absolute series, self-stamped with
 the rig and config so a number is only ever compared within a fixed rig). Read
-each cell's README for what its numbers mean and why; the read cells share
-[one README](./read) for the parts common to all of them, and the read spike
-cells [another](./read/spike) for the parts common to a surge.
+each cell's README for what its numbers mean and why, and its workload's README
+one level up for the parts common to every cell measured that way —
+[`write/load`](./write/load), [`write/spike`](./write/spike),
+[`read`](./read) and [`read/spike`](./read/spike).
 
 ## Running
 
@@ -35,9 +36,11 @@ one-line compose edit and nothing here changes.
 The IDE run configs (`.run/`) wrap the actions below:
 
 ```bash
-scripts/actions/perf/write/load               # steady-state throughput
-scripts/actions/perf/write/spike              # surge and recover
-scripts/actions/perf/write/all                # every write cell
+scripts/actions/perf/write/load/<shape>       # one request shape's throughput
+scripts/actions/perf/write/load/all           # every write load cell
+scripts/actions/perf/write/spike/<shape>      # one request shape's surge
+scripts/actions/perf/write/spike/all          # every write spike cell
+scripts/actions/perf/write/all                # every write cell, both workloads
 scripts/actions/perf/read/load/<endpoint>     # one read endpoint's latency
 scripts/actions/perf/read/load/all            # every read load cell
 scripts/actions/perf/read/spike/<endpoint>    # one read surge
@@ -159,8 +162,16 @@ perf/
     k6-stats.js         shared /api/v1/stats request shape
     k6-summary.js       shared k6 summary reader
   write/
-    tests.sh            the write cell list, sourced by every write action
-    load/  spike/       one directory per cell: <scenario>.js, measure.sh, journal.jsonl, README.md
+    tests.sh            the write cell list, per workload and combined
+    load/
+      ingest-events.js  the steady scenario, one event per request
+      measure-cell.sh   the measuring routine the load cells share
+      compare-runs.mjs  the main-vs-PR comparison CI renders
+      single/
+    spike/
+      spike-events.js   the surge scenario, one event per request
+      measure-cell.sh   the routine the spike cells share, verdict included
+      single/
   read/
     tests.sh            the read cell list, per workload and combined
     load/
@@ -174,13 +185,16 @@ perf/
 ```
 
 Both paths split by workload first, because `load` and `spike` are measured
-differently and judged differently. Only `read/` then splits again by endpoint:
-the write path has one ingest endpoint, while each read endpoint is a different
-query shape worth its own series.
+differently and judged differently, then again by what varies within the path:
+the write side by request shape, the read side by endpoint. Either way the leaf is
+a cell — a directory holding `measure.sh`, `journal.jsonl` and `README.md`, and
+nothing else.
 
-The write cells each own their k6 scenario; each read workload shares one across
-its three cells, because within a workload they differ only in the request they
-make and not in how they are measured.
+A k6 scenario and a measuring routine both live at the workload level. The read
+cells share one scenario because they differ only in the query string; the write
+cells need one each because they post different bodies to different endpoints. The
+routine is shared in both cases, which is the point: cells of one workload differ
+in what they send, never in how they are measured or judged.
 
 - **`lib/harness.sh`** owns everything identical across tests — bringing up
   dependencies, checking the app and the k6 image, seeding the corpus and
@@ -191,15 +205,19 @@ make and not in how they are measured.
 - **`lib/event-generator.js`** owns what an event *looks like*. Both write
   scenarios and the corpus seeder draw from it, so the table a read test queries
   and the traffic a write test posts are one population, not two.
-- **`<cell>/measure.sh`** defines a single `perf_<cell>` function: warm up, run
-  the scenario, stamp and append the journal row, and record a one-line result
-  for the digest. It assumes the harness is already sourced.
+- **`<workload>/measure-cell.sh`** owns a measurement: warm up, run the
+  scenario, stamp and append the journal row, and record a one-line result for
+  the digest. It assumes the harness is already sourced.
+- **`<cell>/measure.sh`** defines a single `perf_<cell>` function, which is one
+  delegating call into that routine carrying what is specific to the cell — its
+  journal, its scenario, and the knobs it owns the defaults for.
 
 ## Adding a cell
 
-A cell's directory is its identity: `<path>/<workload>/` on the write side,
-`<path>/<workload>/<endpoint>/` on the read side. Its function name spells the
-same route out — `perf_read_load_top_pages` sits in `read/load/top-pages/`.
+A cell's directory is its identity: `<path>/<workload>/<cell>/`, where the leaf
+is a request shape on the write side and an endpoint on the read side. Its
+function name spells the same route out — `perf_read_load_top_pages` sits in
+`read/load/top-pages/`, `perf_write_load_single` in `write/load/single/`.
 
 1. Create the cell directory with a `measure.sh` defining that function, an empty
    `journal.jsonl`, and a `README.md` explaining what the numbers mean. Reuse an
@@ -209,8 +227,8 @@ same route out — `perf_read_load_top_pages` sits in `read/load/top-pages/`.
    existing one — source the harness and the cell's `measure.sh`, bootstrap, run,
    report). Mind the `cd` depth: it counts back to the repository root.
 3. Add a run config `.run/PERF - <Name>.run.xml` (copy an existing one). Configs
-   exist per path and per workload, not per read endpoint — those run through
-   their workload's `all`.
+   exist per path and per workload, not per cell — a single cell runs from its
+   action, or through its workload's `all`.
 4. Wire it into the pipelines: source its `measure.sh` in its path's `tests.sh`
    and add one entry to that workload's array. The `all` actions read those
    arrays, so nothing else needs touching. A single-cell action names its own
@@ -224,9 +242,11 @@ same route out — `perf_read_load_top_pages` sits in `read/load/top-pages/`.
 
 ## What runs in CI
 
-Only the **write load** cell feeds the per-PR comparison
+Only the **`write/load/single`** cell feeds the per-PR comparison
 (`.github/workflows/perf.yml`): steady-state throughput is a single, stable
 number that survives a relative main-vs-PR comparison on a noisy shared runner.
+CI runs its k6 scenario directly rather than through the harness, which is why
+that scenario stays at the workload level.
 
 Everything else is deliberately **local / journalled only**. The spike cells'
 overload metrics are too high-variance to reduce to a trustworthy per-PR delta,

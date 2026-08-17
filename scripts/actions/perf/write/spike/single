@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# PERF - Write Spike single: step the request rate for POST /api/v1/events far
+# above steady-state capacity, then back down, and check the ingest path recovers.
+# Appends one row per round to perf/write/spike/single/journal.jsonl. This cell
+# gates — it exits non-zero when the app did not recover, unlike the read spike
+# cells, which only journal their verdict. The app must already be running on the
+# host. Tunables: SPIKE_RATE, BASELINE_RATE, *_SECONDS, MAX_VUS, ROUNDS
+# (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/spike/measure-cell.sh
+source perf/write/spike/single/measure.sh
+
+perf_bootstrap
+perf_run_tests "write spike single:perf_write_spike_single"

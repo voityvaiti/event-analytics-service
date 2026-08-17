@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# PERF - Write Spike: surge every write spike cell back to back and print one
+# combined digest at the end. The cell list lives in perf/write/tests.sh, shared
+# with the whole-path and whole-suite actions. Exits non-zero when a cell's app did
+# not recover. Tunables: SPIKE_RATE, BASELINE_RATE, *_SECONDS, MAX_VUS, ROUNDS
+# (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/tests.sh
+
+perf_bootstrap
+perf_run_tests "${WRITE_SPIKE_TESTS[@]}"
