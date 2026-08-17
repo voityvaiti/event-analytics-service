@@ -120,6 +120,27 @@ class ActiveUsersStatsIntegrationTest {
     return get(ACTIVE_USERS).with(bearerTokenFor(TENANT));
   }
 
+  /**
+   * A distinct-user count is where a leak would be easiest to miss: another tenant's user inflates
+   * the number without adding a bucket, so nothing about the shape of the answer looks wrong.
+   */
+  @Test
+  void countsOnlyTheAuthenticatedTenantsUsers() throws Exception {
+    seedThreeUsersOverTwoDays();
+    insertForTenant("other", "evt_other_1", "user_99", Instant.parse("2026-05-24T10:30:00Z"));
+
+    mockMvc
+        .perform(
+            activeUsers()
+                .param("from", "2026-05-24T00:00:00Z")
+                .param("to", "2026-05-26T00:00:00Z")
+                .param("groupBy", "day"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.buckets.length()").value(2))
+        .andExpect(jsonPath("$.buckets[0].active_users").value(2))
+        .andExpect(jsonPath("$.buckets[1].active_users").value(2));
+  }
+
   private void seedThreeUsersOverTwoDays() {
     insert("evt_1", "user_1", Instant.parse("2026-05-24T10:15:00Z"));
     insert("evt_2", "user_1", Instant.parse("2026-05-24T11:05:00Z"));
@@ -129,13 +150,18 @@ class ActiveUsersStatsIntegrationTest {
   }
 
   private void insert(String eventId, String userId, Instant occurredAt) {
+    insertForTenant(TENANT, eventId, userId, occurredAt);
+  }
+
+  private void insertForTenant(String source, String eventId, String userId, Instant occurredAt) {
     jdbcClient
         .sql(
             """
             INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, 'web', :user, 'page_view', :at, '{}'::JSONB)
+            VALUES (:id, :source, :user, 'page_view', :at, '{}'::JSONB)
             """)
         .param("id", eventId)
+        .param("source", source)
         .param("user", userId)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .update();

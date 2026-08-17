@@ -152,6 +152,30 @@ class EventCountStatsIntegrationTest {
     return get(EVENT_COUNTS).with(bearerTokenFor(TENANT));
   }
 
+  /**
+   * The window and grouping are the same as the first test's; only another tenant's rows have been
+   * added. Identical numbers are the assertion.
+   */
+  @Test
+  void countsOnlyTheAuthenticatedTenantsEvents() throws Exception {
+    seedFourEventsOnThe24th();
+    insertForTenant("other", "evt_other_1", "page_view", Instant.parse("2026-05-24T10:20:00Z"));
+    insertForTenant("other", "evt_other_2", "signup", Instant.parse("2026-05-24T10:30:00Z"));
+
+    mockMvc
+        .perform(
+            eventCounts()
+                .param("from", "2026-05-24T00:00:00Z")
+                .param("to", "2026-05-25T00:00:00Z")
+                .param("groupBy", "type"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.buckets.length()").value(2))
+        .andExpect(jsonPath("$.buckets[0].bucket").value("page_view"))
+        .andExpect(jsonPath("$.buckets[0].count").value(3))
+        .andExpect(jsonPath("$.buckets[1].bucket").value("purchase"))
+        .andExpect(jsonPath("$.buckets[1].count").value(1));
+  }
+
   private void seedFourEventsOnThe24th() {
     insert("evt_1", "page_view", Instant.parse("2026-05-24T10:15:00Z"));
     insert("evt_2", "page_view", Instant.parse("2026-05-24T10:40:00Z"));
@@ -160,13 +184,19 @@ class EventCountStatsIntegrationTest {
   }
 
   private void insert(String eventId, String eventType, Instant occurredAt) {
+    insertForTenant(TENANT, eventId, eventType, occurredAt);
+  }
+
+  private void insertForTenant(
+      String source, String eventId, String eventType, Instant occurredAt) {
     jdbcClient
         .sql(
             """
             INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, 'web', 'user_1', :type, :at, '{}'::JSONB)
+            VALUES (:id, :source, 'user_1', :type, :at, '{}'::JSONB)
             """)
         .param("id", eventId)
+        .param("source", source)
         .param("type", eventType)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .update();

@@ -33,17 +33,19 @@ class OnDemandAnalyticsService implements AnalyticsService {
   }
 
   @Override
-  public EventCountReport countEvents(Instant from, Instant to, EventCountGrouping grouping) {
-    return statsRepository.countEvents(from, to, grouping, DEFAULT_BUCKETING_ZONE);
+  public EventCountReport countEvents(
+      String source, Instant from, Instant to, EventCountGrouping grouping) {
+    return statsRepository.countEvents(source, from, to, grouping, DEFAULT_BUCKETING_ZONE);
   }
 
   @Override
-  public ActiveUsersReport countActiveUsers(Instant from, Instant to, TimeGrouping grouping) {
-    return statsRepository.countActiveUsers(from, to, grouping, DEFAULT_BUCKETING_ZONE);
+  public ActiveUsersReport countActiveUsers(
+      String source, Instant from, Instant to, TimeGrouping grouping) {
+    return statsRepository.countActiveUsers(source, from, to, grouping, DEFAULT_BUCKETING_ZONE);
   }
 
   @Override
-  public TopPagesReport topPages(Instant from, Instant to, int limit) {
-    return statsRepository.topPages(from, to, limit);
+  public TopPagesReport topPages(String source, Instant from, Instant to, int limit) {
+    return statsRepository.topPages(source, from, to, limit);
   }
 }
