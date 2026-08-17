@@ -47,7 +47,9 @@ const arrival = (rate, duration, startTime) => ({
 // can read them; the one real gate is recovery health — after the surge the app
 // must serve cleanly again. The spike phase itself is observed, never gated: a
 // spike is allowed to shed, and gating it would either hide that or red every
-// run.
+// run. A phase whose http_reqs is not named here reports no request count at
+// all, which is how baseline_achieved_rps journalled as null until all three
+// were listed.
 export const options = {
   scenarios: {
     baseline: arrival(BASELINE_RATE, `${BASELINE_SECONDS}s`, '0s'),
@@ -65,7 +67,9 @@ export const options = {
     'http_req_duration{scenario:baseline}': ['p(95)>=0'],
     'http_req_duration{scenario:spike}': ['p(95)>=0'],
     'http_req_duration{scenario:recovery}': ['p(95)>=0'],
+    'http_reqs{scenario:baseline}': ['count>=0'],
     'http_reqs{scenario:spike}': ['count>=0'],
+    'http_reqs{scenario:recovery}': ['count>=0'],
     'dropped_iterations{scenario:spike}': ['count>=0'],
   },
   summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)', 'max'],
@@ -79,11 +83,15 @@ export default function () {
   check(response, { 'status is 202': (r) => r.status === 202 });
 }
 
-function phase(data, scenario) {
+// Rated over the phase's own seconds rather than over the metric's rate, which
+// is a counter averaged across the whole run: at 20s baseline, 30s spike and 30s
+// recovery, a surge that carried 1500 req/s for its 30s would report 560.
+function phase(data, scenario, seconds) {
   const tag = (name) => `${name}{scenario:${scenario}}`;
+  const requests = metric(data, tag('http_reqs'), 'count');
   return {
-    achieved_rps: metric(data, tag('http_reqs'), 'rate'),
-    requests: metric(data, tag('http_reqs'), 'count'),
+    achieved_rps: requests / seconds,
+    requests,
     failed_rate: metric(data, tag('http_req_failed'), 'rate'),
     dropped: metric(data, tag('dropped_iterations'), 'count'),
     p95_ms: metric(data, tag('http_req_duration'), 'p(95)'),
@@ -93,9 +101,9 @@ function phase(data, scenario) {
 }
 
 export function handleSummary(data) {
-  const baseline = phase(data, 'baseline');
-  const spike = phase(data, 'spike');
-  const recovery = phase(data, 'recovery');
+  const baseline = phase(data, 'baseline', BASELINE_SECONDS);
+  const spike = phase(data, 'spike', SPIKE_SECONDS);
+  const recovery = phase(data, 'recovery', RECOVERY_SECONDS);
 
   const summary = {
     scenario: SCENARIO,
