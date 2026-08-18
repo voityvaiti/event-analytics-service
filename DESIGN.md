@@ -116,7 +116,7 @@ CREATE TABLE events (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_occurred_at ON events (occurred_at, event_type);
+CREATE INDEX idx_events_source_occurred_at ON events (source, occurred_at, event_type);
 ```
 
 `event_id` is client-supplied and the primary key — the idempotency mechanism,
@@ -125,22 +125,22 @@ authenticated token's tenant claim rather than from the request, so a client
 cannot attribute events to anyone else. Rows are never updated or deleted; every
 aggregate is derived data that can be rebuilt from this table.
 
-The index is led by `occurred_at` because every analytics query filters on a
-time range and only some of them constrain `event_type`; a composite led by
-`event_type` cannot serve a range scan when no type is given. The trailing
-`event_type` keeps `groupBy=type` grouped from the same index.
+The index is led by `source` because every analytics query filters on the
+token's tenant before its time range: an equality ahead of the range makes the
+scan one contiguous slice per tenant, and prunes by tenant as soon as more than
+one exists. `occurred_at` carries the range, and the trailing `event_type` keeps
+`groupBy=type` grouped from the same index.
 
-`source` is not in it, and that is now the read path's largest cost. A range
-`COUNT(*)` needed nothing outside the index; checking `source` sends it to the heap
-per row, taking a 1-hour `event-counts` from ~2 ms to ~38 ms by type and ~7 ms by
-hour. `active-users` and `top-pages` already visited the heap and moved 12–23%.
-
-The fix is a **covering** index, not a pruning one, and the distinction decides what
-the suite can prove: leading with `source` would prune by tenant, which a
-single-tenant corpus cannot demonstrate, whereas restoring covering shows up on one
-tenant as well as on a thousand. `(source, occurred_at, event_type)` and
-`(occurred_at, event_type) INCLUDE (source)` are the candidates for the next index
-experiment.
+It replaced `(occurred_at, event_type)`, which tenancy broke: `source` was not
+in it, so checking it sent every candidate row to the heap, taking a 1-hour
+`event-counts` from ~2 ms to ~38 ms by type, while `active-users` and
+`top-pages` — heap-bound already — moved 12–23%. Of the two candidate fixes,
+`(occurred_at, event_type) INCLUDE (source)` would have restored covering
+without pruning — it still walks every tenant's entries inside the window — so
+the tenant-led key won. The old index went with the migration rather than
+staying beside the new one: no query filters on a time range without a tenant
+any more, so it would only tax writes and disk. What the replacement is worth
+is in the read cells' journals, either side of the V3 migration.
 
 ## Key design decisions
 
@@ -371,10 +371,6 @@ case and does nothing for the bad one.
 
 - Time bucketing is UTC-only in practice until the tenant table exists, though
   the query layer is already zone-parametric.
-- `source` is not in any index, though every read now filters on it — the largest
-  open item on the read path, and the one the numbers above are waiting on. A
-  covering index is the fix; see [the data model](#data-model) for why covering
-  rather than pruning, and which two candidates are in the running.
 - `properties` has no GIN index, so any future filter on a JSON field is a
   sequential scan.
 - There is no index on `user_id`; `active-users` shows sequential scans in the
