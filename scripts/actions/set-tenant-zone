@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Set the time zone a tenant's /stats time buckets are computed in.
+#
+#   scripts/actions/set-tenant-zone acme Asia/Tokyo
+#
+# Only for tenants that report outside UTC: a tenant with no row here is
+# bucketed in UTC, so minting a token is still all it takes to get correct
+# figures. Idempotent — running it twice is the same as running it once, and
+# running it again with another zone moves the tenant.
+#
+# The zone is validated by the INSERT itself, which takes the name from
+# pg_timezone_names rather than from the argument, so a name Postgres does not
+# know writes nothing. That is why the empty result is checked: without it a
+# typo would exit 0 and look like a success while the old zone stayed in place.
+#
+# Reaches the database the way perf/lib/harness.sh does. The table it writes to
+# is created by Flyway, so the app has to have started once against this
+# database or psql will report that `tenants` does not exist.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+
+if [ $# -ne 2 ]; then
+  echo "Usage: scripts/actions/set-tenant-zone <tenant> <zone>" >&2
+  exit 1
+fi
+
+scripts/actions/dependencies
+
+# Fed on stdin rather than through -c, because psql interpolates :'variables'
+# only in a script it reads, and quoting the arguments is the whole point of
+# using them: a tenant name containing an apostrophe would otherwise end the
+# string literal.
+upsert="INSERT INTO tenants (name, timezone)
+SELECT :'tenant', zone.name FROM pg_timezone_names zone WHERE zone.name = :'zone'
+ON CONFLICT (name) DO UPDATE SET timezone = EXCLUDED.timezone
+RETURNING timezone;"
+
+stored=$(printf '%s\n' "$upsert" \
+  | docker compose exec -T postgres \
+      psql -U event_analytics -d event_analytics \
+        -v ON_ERROR_STOP=1 -v tenant="$1" -v zone="$2" -qtA \
+  | tr -d '[:space:]')
+
+if [ -z "$stored" ]; then
+  echo "Postgres knows no time zone called '$2', so nothing was written." >&2
+  echo "Names come from pg_timezone_names, e.g. Asia/Tokyo or Europe/Kyiv." >&2
+  exit 1
+fi
+
+echo "Time buckets for '$1' are now computed in $stored."
