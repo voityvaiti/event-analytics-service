@@ -11,7 +11,7 @@ import tools.jackson.databind.JsonNode;
  * persistence type leaks across a boundary.
  */
 public record NewEvent(
-    String source,
+    TenantName tenant,
     String eventId,
     String userId,
     String eventType,

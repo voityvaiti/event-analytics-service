@@ -19,9 +19,13 @@ public class InvalidTenantZoneException extends RuntimeException {
 
   private final String zone;
 
-  public InvalidTenantZoneException(String source, String zone, Throwable cause) {
+  public InvalidTenantZoneException(TenantName tenant, String zone, Throwable cause) {
     super(
-        "Tenant '" + source + "' has a stored reporting time zone that is not one: '" + zone + "'",
+        "Tenant '"
+            + tenant.value()
+            + "' has a stored reporting time zone that is not one: '"
+            + zone
+            + "'",
         cause);
     this.zone = zone;
   }

@@ -3,6 +3,7 @@ package dev.rymarovych.event_analytics.service;
 import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.EventCountReport;
+import dev.rymarovych.event_analytics.domain.TenantName;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import dev.rymarovych.event_analytics.persistence.EventStatsRepository;
@@ -49,36 +50,36 @@ class OnDemandAnalyticsService implements AnalyticsService {
   @Override
   @Transactional(readOnly = true)
   public EventCountReport countEvents(
-      String source, Instant from, Instant to, EventCountGrouping grouping) {
+      TenantName tenant, Instant from, Instant to, EventCountGrouping grouping) {
     return switch (grouping) {
-      case TYPE -> new EventCountReport(null, statsRepository.countEventsByType(source, from, to));
-      case HOUR -> countEventsPerTimeBucket(source, from, to, TimeGrouping.HOUR);
-      case DAY -> countEventsPerTimeBucket(source, from, to, TimeGrouping.DAY);
+      case TYPE -> new EventCountReport(null, statsRepository.countEventsByType(tenant, from, to));
+      case HOUR -> countEventsPerTimeBucket(tenant, from, to, TimeGrouping.HOUR);
+      case DAY -> countEventsPerTimeBucket(tenant, from, to, TimeGrouping.DAY);
     };
   }
 
   @Override
   @Transactional(readOnly = true)
   public ActiveUsersReport countActiveUsers(
-      String source, Instant from, Instant to, TimeGrouping grouping) {
-    var zone = bucketingZone(source);
+      TenantName tenant, Instant from, Instant to, TimeGrouping grouping) {
+    var zone = bucketingZone(tenant);
     return new ActiveUsersReport(
-        zone, statsRepository.countActiveUsers(source, from, to, grouping, zone));
+        zone, statsRepository.countActiveUsers(tenant, from, to, grouping, zone));
   }
 
   @Override
-  public TopPagesReport topPages(String source, Instant from, Instant to, int limit) {
-    return statsRepository.topPages(source, from, to, limit);
+  public TopPagesReport topPages(TenantName tenant, Instant from, Instant to, int limit) {
+    return statsRepository.topPages(tenant, from, to, limit);
   }
 
   private EventCountReport countEventsPerTimeBucket(
-      String source, Instant from, Instant to, TimeGrouping grouping) {
-    var zone = bucketingZone(source);
+      TenantName tenant, Instant from, Instant to, TimeGrouping grouping) {
+    var zone = bucketingZone(tenant);
     return new EventCountReport(
-        zone, statsRepository.countEventsByTimeBucket(source, from, to, grouping, zone));
+        zone, statsRepository.countEventsByTimeBucket(tenant, from, to, grouping, zone));
   }
 
-  private ZoneId bucketingZone(String source) {
-    return tenantSettingsRepository.findBucketingZone(source).orElse(DEFAULT_BUCKETING_ZONE);
+  private ZoneId bucketingZone(TenantName tenant) {
+    return tenantSettingsRepository.findBucketingZone(tenant).orElse(DEFAULT_BUCKETING_ZONE);
   }
 }

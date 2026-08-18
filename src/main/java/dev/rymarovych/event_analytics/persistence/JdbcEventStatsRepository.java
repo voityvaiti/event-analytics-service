@@ -5,6 +5,7 @@ import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
 import dev.rymarovych.event_analytics.domain.PageCount;
+import dev.rymarovych.event_analytics.domain.TenantName;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.domain.TopPagesReport;
 import java.sql.SQLException;
@@ -24,11 +25,11 @@ import org.springframework.stereotype.Repository;
  * <p>Time buckets use the three-argument {@code date_trunc(unit, ts, zone)} so the boundary follows
  * the requested zone's calendar, independent of the session time zone.
  *
- * <p>Every query is scoped to one {@code source} — the tenant key — and rides the {@code (source,
- * occurred_at, event_type)} index: tenant equality first, then the {@code occurred_at} range. Both
- * count shapes are answered from the index alone; {@code top-pages} and {@code active-users} still
- * visit the heap, because {@code properties} and {@code user_id} are not in it. What that costs is
- * measured rather than assumed — see the read cells under {@code perf/}.
+ * <p>Every query is scoped to one tenant and rides the {@code (source, occurred_at, event_type)}
+ * index: tenant equality first, then the {@code occurred_at} range. Both count shapes are answered
+ * from the index alone; {@code top-pages} and {@code active-users} still visit the heap, because
+ * {@code properties} and {@code user_id} are not in it. What that costs is measured rather than
+ * assumed — see the read cells under {@code perf/}.
  *
  * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
  * set once per connection rather than per request. A query the database cancels for exceeding it
@@ -87,12 +88,12 @@ class JdbcEventStatsRepository implements EventStatsRepository {
   }
 
   @Override
-  public List<EventCount> countEventsByType(String source, Instant from, Instant to) {
+  public List<EventCount> countEventsByType(TenantName tenant, Instant from, Instant to) {
     return translatingCancellation(
         () ->
             jdbcClient
                 .sql(COUNT_BY_TYPE)
-                .param("source", source)
+                .param("source", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .query(
@@ -105,12 +106,12 @@ class JdbcEventStatsRepository implements EventStatsRepository {
 
   @Override
   public List<EventCount> countEventsByTimeBucket(
-      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
+      TenantName tenant, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
     return translatingCancellation(
         () ->
             jdbcClient
                 .sql(COUNT_BY_TIME_BUCKET)
-                .param("source", source)
+                .param("source", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .param("unit", truncationUnit(grouping))
@@ -126,12 +127,12 @@ class JdbcEventStatsRepository implements EventStatsRepository {
 
   @Override
   public List<ActiveUsersBucket> countActiveUsers(
-      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
+      TenantName tenant, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
     return translatingCancellation(
         () ->
             jdbcClient
                 .sql(ACTIVE_USERS_BY_TIME_BUCKET)
-                .param("source", source)
+                .param("source", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .param("unit", truncationUnit(grouping))
@@ -146,13 +147,13 @@ class JdbcEventStatsRepository implements EventStatsRepository {
 
   /** Probes one row beyond the requested limit to learn whether the ranking was truncated. */
   @Override
-  public TopPagesReport topPages(String source, Instant from, Instant to, int limit) {
+  public TopPagesReport topPages(TenantName tenant, Instant from, Instant to, int limit) {
     var pages =
         translatingCancellation(
             () ->
                 jdbcClient
                     .sql(TOP_PAGES)
-                    .param("source", source)
+                    .param("source", tenant.value())
                     .param("from", getUtc(from))
                     .param("to", getUtc(to))
                     .param("probe", limit + 1)
