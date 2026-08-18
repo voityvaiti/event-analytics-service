@@ -38,13 +38,17 @@ interface StatsMapper {
     };
   }
 
+  /**
+   * The report always carries a zone, but only a time grouping computed anything in it, so the
+   * response states one only then. See {@link EventCountsResponse}.
+   */
   default EventCountsResponse toEventCountsResponse(
       EventCountGrouping grouping, Instant from, Instant to, EventCountReport report) {
     return new EventCountsResponse(
         grouping.name().toLowerCase(Locale.ROOT),
         from,
         to,
-        report.zone().getId(),
+        grouping == EventCountGrouping.TYPE ? null : report.zone().getId(),
         toBuckets(report.buckets()));
   }
 

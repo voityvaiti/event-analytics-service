@@ -3,6 +3,7 @@ package dev.rymarovych.event_analytics.web;
 import static java.util.Objects.requireNonNullElse;
 
 import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
+import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
 import java.net.URI;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpHeaders;
@@ -49,6 +50,25 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             "The query took too long to run and was cancelled. Retry over a narrower time window.");
     return handleExceptionInternal(
         ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
+
+  /**
+   * A stored reporting zone the service cannot read is a 500, not a 400 or a 503: the request was
+   * well formed, the fault is in the tenant's own settings, and no retry or narrower window will
+   * change it. It is answered here rather than left to escape so that this failure carries the same
+   * problem+json body as every other, and the detail names the offending value — the caller's own
+   * setting — so it can be corrected without reading the server's logs.
+   */
+  @ExceptionHandler(InvalidTenantZoneException.class)
+  @Nullable ResponseEntity<Object> handleInvalidTenantZone(
+      InvalidTenantZoneException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "The reporting time zone configured for this tenant, '%s', is not a time zone this service can use."
+                .formatted(ex.zone()));
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR, request);
   }
 
   @Override
