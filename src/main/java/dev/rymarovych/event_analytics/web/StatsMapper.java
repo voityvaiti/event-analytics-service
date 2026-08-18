@@ -39,16 +39,17 @@ interface StatsMapper {
   }
 
   /**
-   * The report always carries a zone, but only a time grouping computed anything in it, so the
-   * response states one only then. See {@link EventCountsResponse}.
+   * A report with no zone had no time buckets, so the response states none either. See {@link
+   * EventCountsResponse}.
    */
   default EventCountsResponse toEventCountsResponse(
       EventCountGrouping grouping, Instant from, Instant to, EventCountReport report) {
+    var zone = report.zone();
     return new EventCountsResponse(
         grouping.name().toLowerCase(Locale.ROOT),
         from,
         to,
-        grouping == EventCountGrouping.TYPE ? null : report.zone().getId(),
+        zone == null ? null : zone.getId(),
         toBuckets(report.buckets()));
   }
 

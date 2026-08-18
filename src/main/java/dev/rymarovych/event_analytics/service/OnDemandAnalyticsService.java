@@ -24,9 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
  * to get correct figures. The resolved zone travels with the result, so the caller can report which
  * zone the buckets used.
  *
- * <p>Only the shapes that bucket by time resolve a zone. Grouping by event type produces no buckets
- * for a zone to place, so it reads no settings, which also leaves the cheapest query in the system
- * paying for nothing it uses.
+ * <p>Grouping by event type reads no settings, because it produces no buckets for a zone to place.
+ * That also leaves the cheapest query in the system paying for nothing it uses.
  *
  * <p>Where a zone is resolved the read is transactional and read-only — not for atomicity, which a
  * single-statement read does not need, but so the settings lookup and the aggregation ride one
@@ -51,20 +50,32 @@ class OnDemandAnalyticsService implements AnalyticsService {
   @Transactional(readOnly = true)
   public EventCountReport countEvents(
       String source, Instant from, Instant to, EventCountGrouping grouping) {
-    var zone = grouping == EventCountGrouping.TYPE ? DEFAULT_BUCKETING_ZONE : bucketingZone(source);
-    return statsRepository.countEvents(source, from, to, grouping, zone);
+    return switch (grouping) {
+      case TYPE -> new EventCountReport(null, statsRepository.countEventsByType(source, from, to));
+      case HOUR -> countEventsPerTimeBucket(source, from, to, TimeGrouping.HOUR);
+      case DAY -> countEventsPerTimeBucket(source, from, to, TimeGrouping.DAY);
+    };
   }
 
   @Override
   @Transactional(readOnly = true)
   public ActiveUsersReport countActiveUsers(
       String source, Instant from, Instant to, TimeGrouping grouping) {
-    return statsRepository.countActiveUsers(source, from, to, grouping, bucketingZone(source));
+    var zone = bucketingZone(source);
+    return new ActiveUsersReport(
+        zone, statsRepository.countActiveUsers(source, from, to, grouping, zone));
   }
 
   @Override
   public TopPagesReport topPages(String source, Instant from, Instant to, int limit) {
     return statsRepository.topPages(source, from, to, limit);
+  }
+
+  private EventCountReport countEventsPerTimeBucket(
+      String source, Instant from, Instant to, TimeGrouping grouping) {
+    var zone = bucketingZone(source);
+    return new EventCountReport(
+        zone, statsRepository.countEventsByTimeBucket(source, from, to, grouping, zone));
   }
 
   private ZoneId bucketingZone(String source) {

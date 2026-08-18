@@ -1,12 +1,9 @@
 package dev.rymarovych.event_analytics.persistence;
 
 import dev.rymarovych.event_analytics.domain.ActiveUsersBucket;
-import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
 import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.EventCountBucket;
-import dev.rymarovych.event_analytics.domain.EventCountGrouping;
-import dev.rymarovych.event_analytics.domain.EventCountReport;
 import dev.rymarovych.event_analytics.domain.PageCount;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.domain.TopPagesReport;
@@ -90,39 +87,61 @@ class JdbcEventStatsRepository implements EventStatsRepository {
   }
 
   @Override
-  public EventCountReport countEvents(
-      String source, Instant from, Instant to, EventCountGrouping grouping, ZoneId zone) {
-    var buckets =
-        translatingCancellation(
-            () ->
-                switch (grouping) {
-                  case TYPE -> countByType(source, from, to);
-                  case HOUR -> countByTimeBucket(source, from, to, TimeGrouping.HOUR, zone);
-                  case DAY -> countByTimeBucket(source, from, to, TimeGrouping.DAY, zone);
-                });
-    return new EventCountReport(zone, buckets);
+  public List<EventCount> countEventsByType(String source, Instant from, Instant to) {
+    return translatingCancellation(
+        () ->
+            jdbcClient
+                .sql(COUNT_BY_TYPE)
+                .param("source", source)
+                .param("from", getUtc(from))
+                .param("to", getUtc(to))
+                .query(
+                    (rs, rowNum) ->
+                        new EventCount(
+                            new EventCountBucket.OfType(rs.getString("bucket")),
+                            rs.getLong("count")))
+                .list());
   }
 
   @Override
-  public ActiveUsersReport countActiveUsers(
+  public List<EventCount> countEventsByTimeBucket(
       String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
-    var buckets =
-        translatingCancellation(
-            () ->
-                jdbcClient
-                    .sql(ACTIVE_USERS_BY_TIME_BUCKET)
-                    .param("source", source)
-                    .param("from", getUtc(from))
-                    .param("to", getUtc(to))
-                    .param("unit", truncationUnit(grouping))
-                    .param("zone", zone.getId())
-                    .query(
-                        (rs, rowNum) ->
-                            new ActiveUsersBucket(
-                                rs.getObject("bucket_start", OffsetDateTime.class).toInstant(),
-                                rs.getLong("active_users")))
-                    .list());
-    return new ActiveUsersReport(zone, buckets);
+    return translatingCancellation(
+        () ->
+            jdbcClient
+                .sql(COUNT_BY_TIME_BUCKET)
+                .param("source", source)
+                .param("from", getUtc(from))
+                .param("to", getUtc(to))
+                .param("unit", truncationUnit(grouping))
+                .param("zone", zone.getId())
+                .query(
+                    (rs, rowNum) ->
+                        new EventCount(
+                            new EventCountBucket.OfInterval(
+                                rs.getObject("bucket_start", OffsetDateTime.class).toInstant()),
+                            rs.getLong("count")))
+                .list());
+  }
+
+  @Override
+  public List<ActiveUsersBucket> countActiveUsers(
+      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
+    return translatingCancellation(
+        () ->
+            jdbcClient
+                .sql(ACTIVE_USERS_BY_TIME_BUCKET)
+                .param("source", source)
+                .param("from", getUtc(from))
+                .param("to", getUtc(to))
+                .param("unit", truncationUnit(grouping))
+                .param("zone", zone.getId())
+                .query(
+                    (rs, rowNum) ->
+                        new ActiveUsersBucket(
+                            rs.getObject("bucket_start", OffsetDateTime.class).toInstant(),
+                            rs.getLong("active_users")))
+                .list());
   }
 
   /** Probes one row beyond the requested limit to learn whether the ranking was truncated. */
@@ -170,37 +189,6 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       }
     }
     return false;
-  }
-
-  private List<EventCount> countByType(String source, Instant from, Instant to) {
-    return jdbcClient
-        .sql(COUNT_BY_TYPE)
-        .param("source", source)
-        .param("from", getUtc(from))
-        .param("to", getUtc(to))
-        .query(
-            (rs, rowNum) ->
-                new EventCount(
-                    new EventCountBucket.OfType(rs.getString("bucket")), rs.getLong("count")))
-        .list();
-  }
-
-  private List<EventCount> countByTimeBucket(
-      String source, Instant from, Instant to, TimeGrouping grouping, ZoneId zone) {
-    return jdbcClient
-        .sql(COUNT_BY_TIME_BUCKET)
-        .param("source", source)
-        .param("from", getUtc(from))
-        .param("to", getUtc(to))
-        .param("unit", truncationUnit(grouping))
-        .param("zone", zone.getId())
-        .query(
-            (rs, rowNum) ->
-                new EventCount(
-                    new EventCountBucket.OfInterval(
-                        rs.getObject("bucket_start", OffsetDateTime.class).toInstant()),
-                    rs.getLong("count")))
-        .list();
   }
 
   private static String truncationUnit(TimeGrouping grouping) {
