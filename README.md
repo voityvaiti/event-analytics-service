@@ -143,11 +143,13 @@ move the tail: the wait is for a connection, not for a query. The queue is still
 unbounded, and the pool is shared with ingest, so a read burst can hold every
 connection the write path needs.
 
-Scoping reads to a tenant made this worse before it makes it better. `source` is not
-in the `(occurred_at, event_type)` index, so `event-counts` lost its index-only scan:
-a 1-hour count by type went from ~2 ms to ~38 ms, and under surge that cell stopped
-recovering. A covering index is the fix and is the next thing measured; token
-verification itself cost the write path nothing.
+Scoping reads to a tenant briefly made it worse: `source` was not in the
+`(occurred_at, event_type)` index, so `event-counts` lost its index-only scan — a
+1-hour count by type went from ~2 ms to ~38 ms and the cell stopped recovering from
+a surge. Leading the index with `source` bought both back, to 0.9 ms and to ~693 of
+4,000 req/s served with a 15 ms recovery. The wider index entry leaves a residue
+where a scan reads many of them — 6–8% on the widest `event-counts` windows, ~3%
+on `top-pages` — and token verification cost the write path nothing measurable.
 Full numbers and the ordered fix list are in
 [DESIGN.md → Known limitations](./DESIGN.md#known-limitations-and-what-breaks-at-10x).
 

@@ -4,9 +4,10 @@
 how a row is read and how the questions are generated.
 
 The heaviest read, and the only one whose cost is dominated by something the
-index cannot serve: `user_id` is not in `(occurred_at, event_type)`, so every
-row in the window is fetched from the heap and fed through `COUNT(DISTINCT)`.
-The index narrows *which* rows; the work after that is the query.
+index cannot serve: `user_id` is not in `(source, occurred_at, event_type)`, so
+every row in the window is fetched from the heap and fed through
+`COUNT(DISTINCT)`. The index narrows *which* rows; the work after that is the
+query.
 
 That makes this the cell where the index is worth least in relative terms — a
 useful counterweight to `event-counts groupBy=type`, which it serves completely.
