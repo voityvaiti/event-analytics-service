@@ -16,4 +16,4 @@ nothing.
 
 If an expression or GIN index on `page_url` is ever proposed, this is the cell
 that would show whether it earns its keep — and the same before/after protocol
-used for `idx_events_occurred_at` applies unchanged.
+the two index migrations were measured by applies unchanged.

@@ -310,12 +310,18 @@ what the per-request overhead was worth. Verifying a token per request cost neit
 figure anything measurable: 127.5k to 126.0k events/s on the batch cell, inside its
 0.8% spread.
 
-Reads got worse when they were scoped to a tenant, short windows most of all: a
-1-hour `event-counts` is ~38 ms by type and ~7 ms by hour, against ~2 ms for both
-before. Wider windows degrade from a higher floor — ~48 ms at 1 day, ~435 ms at
-7 days, ~1.3 s at 30 days by hour. `active-users` stayed the expensive endpoint and
-barely noticed: ~3.8 s at 30 days. Cause and fix are under
-[the data model](#data-model).
+Reads are within a few percent of where they were before tenancy, because the
+index leads with the tenant it is filtered by (see [the data
+model](#data-model)). A 1-hour `event-counts` answers in 0.9 ms by type and
+1.7 ms by hour, a 1-day in 11.6 ms and 27.4 ms, and `active-users` is unmoved at
+~120 ms for a day and ~3.6 s for 30 days. What residue there is belongs to the
+wider index entry — `source` is now stored in every one of them — and shows up
+where a scan reads many entries: `event-counts` by type loses 6–8% on its 7- and
+30-day windows (346 ms against 326 ms at 30 days), and `top-pages` a uniform ~3%.
+Both are past their spreads, and the first is the crossover the [index
+experiment](./perf/index-experiment.md) predicted, where a window stops being
+selective and a larger index only costs. What tenancy cost *without* the new index
+is the arm in between: 32x on the narrowest window.
 
 **What saturates first: the read path, not the write path.** A read spike
 demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering
@@ -332,15 +338,17 @@ surge, and every verdict is unchanged. The tail is time spent waiting for a
 connection, not time spent running a query, and a bound on the second does not
 touch the first.
 
-Scoping reads to a tenant then cost the one cell that used to pass. `event-counts`
-absorbed a surge and drained afterwards: offered 4,000 req/s it served ~717 and
-recovered to a p95 of ~15 ms. With the heap fetch per row it serves ~256 and recovers
-to ~600 ms — it no longer recovers at all. `active-users` under its own surge did not
-move on any field, which pins that to the query rather than to the rig. A few
-milliseconds per query is not a latency detail when ten connections are the only
-place a request waits; it sets how deep the queue goes and how long it drains. That
-is the strongest argument for the covering index, and it is about surge rather than
-about average latency.
+Scoping reads to a tenant then cost the one cell that used to pass, and the
+tenant-led index bought it back. `event-counts` absorbed a surge and drained
+afterwards: offered 4,000 req/s it served ~717 and recovered to a p95 of ~15 ms.
+With a heap fetch per row it served ~260 and recovered to ~655 ms — no recovery at
+all. Over the new index it serves ~693 and recovers to 15.2 ms, in all three
+rounds. `active-users` and `top-pages` did not move on any field in either
+direction, which pins the swing to the query rather than to the rig — and leaves
+them draining, as they were before tenancy. A few milliseconds per query is not a
+latency detail when ten connections are the only place a request waits; it sets how
+deep the queue goes and how long it drains, which is why a query plan decided a
+surge verdict here while the statement timeout above could not.
 
 **What would have to change.** The first item has landed: a bound on how long
 any single statement may run, so nothing occupies a connection indefinitely.

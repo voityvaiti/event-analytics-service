@@ -6,11 +6,15 @@ applied, judged and journalled is the same for every cell here and is described
 
 ## The heaviest read, so the lowest ceiling
 
-`user_id` is not in `idx_events_occurred_at`, so the index narrows the window and
-every row inside it is then fetched from the heap and fed through
-`COUNT(DISTINCT)`. At 126ms for a 1d window that is a ceiling of ~79 req/s — an
-order of magnitude below the other two — which is why this endpoint got the
-suite's first spike cell and why 400 req/s has always been its rate.
+`user_id` is not in `idx_events_source_occurred_at`, so the index narrows the
+window to one tenant's slice and every row inside it is then fetched from the heap
+and fed through `COUNT(DISTINCT)`. At a 1d `p95` of 123ms that is a ceiling of
+~81 req/s — an order of magnitude below the other two — which is why this endpoint
+got the suite's first spike cell and why 400 req/s has always been its rate.
+
+Being heap-bound is also why this cell barely noticed the two changes that moved
+its siblings: scoping reads to a tenant cost it 3% and leading the index with the
+tenant gave that back, because a row was being fetched either way.
 
 It is also the cell with history: every read-spike row written before the
 siblings existed is this query, including the thirty the
