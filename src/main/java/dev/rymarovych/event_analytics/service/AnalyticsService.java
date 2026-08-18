@@ -11,7 +11,8 @@ import java.time.Instant;
  * Answers analytics questions over the stored event stream, always about one tenant.
  *
  * <p>{@code source} is the tenant asking, not a filter it chose, so no caller can widen its own
- * scope. It is also what a per-tenant reporting zone will be resolved from once tenants are stored.
+ * scope. It is also what the reporting zone is resolved from, so two tenants asking the same
+ * question over the same window can legitimately get different bucket boundaries.
  */
 public interface AnalyticsService {
 
