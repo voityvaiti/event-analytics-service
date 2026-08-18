@@ -260,7 +260,7 @@ warm_reads() {
 read_scan_counters() {
   psql_events -tAc "
     SELECT coalesce((SELECT idx_scan FROM pg_stat_user_indexes
-                     WHERE indexrelname = 'idx_events_occurred_at'), 0)
+                     WHERE indexrelname = 'idx_events_source_occurred_at'), 0)
            || ' ' ||
            coalesce((SELECT seq_scan FROM pg_stat_user_tables
                      WHERE relname = 'events'), 0)"

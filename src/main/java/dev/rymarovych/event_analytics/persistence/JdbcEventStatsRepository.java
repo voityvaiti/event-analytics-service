@@ -27,11 +27,11 @@ import org.springframework.stereotype.Repository;
  * <p>Time buckets use the three-argument {@code date_trunc(unit, ts, zone)} so the boundary follows
  * the requested zone's calendar, independent of the session time zone.
  *
- * <p>Every query is scoped to one {@code source} — the tenant key — and narrowed by the {@code
- * occurred_at} range through the {@code (occurred_at, event_type)} index. {@code source} is not in
- * that index, so the range predicate still selects the rows but each one must be visited to check
- * its tenant; a count grouped by type can therefore no longer be answered from the index alone.
- * What that costs is measured rather than assumed — see the read cells under {@code perf/}.
+ * <p>Every query is scoped to one {@code source} — the tenant key — and rides the {@code (source,
+ * occurred_at, event_type)} index: tenant equality first, then the {@code occurred_at} range. Both
+ * count shapes are answered from the index alone; {@code top-pages} and {@code active-users} still
+ * visit the heap, because {@code properties} and {@code user_id} are not in it. What that costs is
+ * measured rather than assumed — see the read cells under {@code perf/}.
  *
  * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
  * set once per connection rather than per request. A query the database cancels for exceeding it
