@@ -67,7 +67,9 @@ truncation flag). **JWT authentication is in place**, which makes the service
 multi-tenant in practice rather than only in the schema: every `/api/v1`
 endpoint requires an RS256 bearer token, a row's `source` comes from the
 token's tenant claim instead of the request body, and every `/stats` query is
-scoped to the caller's own tenant.
+scoped to the caller's own tenant. **Time buckets follow the tenant's own
+calendar**: a `tenants` settings table holds a zone per tenant, absence means
+UTC, and the two bucketed query shapes report the zone they were computed in.
 
 ## Authentication
 
@@ -90,6 +92,25 @@ local runs and the perf suite — see [`dev-keys/`](./dev-keys). **A deployment
 must override
 `spring.security.oauth2.resourceserver.jwt.public-key-location`**, or it will
 trust tokens anyone with this repository can sign.
+
+## Reporting zone
+
+A tenant's daily and hourly figures are bucketed in the zone stored for it, so
+the same events give different numbers to a tenant in Tokyo and a tenant in
+UTC — which is the point, not a discrepancy. A tenant with no stored zone is
+bucketed in UTC, so most tenants need no setup:
+
+```bash
+scripts/actions/set-tenant-zone acme Asia/Tokyo
+```
+
+Idempotent, and validated against `pg_timezone_names`, so a misspelled zone
+writes nothing and exits non-zero rather than looking like it worked.
+
+`event-counts` grouped by hour or day and `active-users` state the zone in a
+`timezone` field. `event-counts` grouped by type does not — it has no time
+buckets, so there is no zone it was computed in — and neither does `top-pages`.
+Read the field as optional.
 
 ## Build & checks
 
