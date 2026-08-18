@@ -17,7 +17,7 @@ context:
 ```json
 {
   "event_id": "evt_abc123",
-  "source": "acme",
+  "tenant_name": "acme",
   "user_id": "user_42",
   "event_type": "page_view",
   "timestamp": "2026-05-24T10:15:30Z",
@@ -111,7 +111,7 @@ One table carries the data, append-only:
 ```sql
 CREATE TABLE events (
     event_id     TEXT        PRIMARY KEY,
-    source       TEXT        NOT NULL,
+    tenant_name  TEXT        NOT NULL,
     user_id      TEXT        NOT NULL,
     event_type   TEXT        NOT NULL,
     occurred_at  TIMESTAMPTZ NOT NULL,
@@ -119,13 +119,15 @@ CREATE TABLE events (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_source_occurred_at ON events (source, occurred_at, event_type);
+CREATE INDEX idx_events_tenant_name_occurred_at ON events (tenant_name, occurred_at, event_type);
 ```
 
 `event_id` is client-supplied and the primary key — the idempotency mechanism,
-not a surrogate. `source` is the tenant key, and it is written from the
-authenticated token's tenant claim rather than from the request, so a client
-cannot attribute events to anyone else. Rows are never updated or deleted; every
+not a surrogate. `tenant_name` is written from the authenticated token's tenant
+claim rather than from the request, so a client cannot attribute events to anyone
+else. It was called `source` until it was renamed to say what it holds; the perf
+cells' own notes keep the old name where they describe a measurement taken
+against it. Rows are never updated or deleted; every
 aggregate is derived data that can be rebuilt from this table.
 
 Beside it sits one settings side-table, read only on the analytics path:
@@ -142,17 +144,17 @@ job — so it has no foreign key to `events` and a tenant with no row is buckete
 in UTC. Which is why it stays empty for most tenants, and why ingest never
 touches it.
 
-The index is led by `source` because every analytics query filters on the
+The index is led by `tenant_name` because every analytics query filters on the
 token's tenant before its time range: an equality ahead of the range makes the
 scan one contiguous slice per tenant, and prunes by tenant as soon as more than
 one exists. `occurred_at` carries the range, and the trailing `event_type` keeps
 `groupBy=type` grouped from the same index.
 
-It replaced `(occurred_at, event_type)`, which tenancy broke: `source` was not
-in it, so checking it sent every candidate row to the heap, taking a 1-hour
+It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was
+not in it, so checking it sent every candidate row to the heap, taking a 1-hour
 `event-counts` from ~2 ms to ~38 ms by type, while `active-users` and
 `top-pages` — heap-bound already — moved 12–23%. Of the two candidate fixes,
-`(occurred_at, event_type) INCLUDE (source)` would have restored covering
+`(occurred_at, event_type) INCLUDE (tenant_name)` would have restored covering
 without pruning — it still walks every tenant's entries inside the window — so
 the tenant-led key won. The old index went with the migration rather than
 staying beside the new one: no query filters on a time range without a tenant
@@ -232,9 +234,9 @@ Each decision states what was chosen, why, and what was rejected.
   signs faster and verifies slower, the wrong side of that trade for a service
   that verifies on every request and signs rarely.
 - **The tenant is never a request parameter.** Both paths take it from the
-  verified token: ingest writes `source` from the tenant claim, and every
+  verified token: ingest writes `tenant_name` from the tenant claim, and every
   `/stats` query is scoped to it, with no parameter through which a caller could
-  name a different one. A `source` left in a request body is ignored rather than
+  name a different one. A tenant named in a request body is ignored rather than
   rejected, since it carries no authority and failing over it would only break
   clients.
   *Rejected:* a tenant query parameter or header validated against the token —
@@ -243,14 +245,14 @@ Each decision states what was chosen, why, and what was rejected.
   *Also rejected:* leaving reads unscoped until the tenant table lands. It would
   have made ingest attribution trustworthy while `/stats` still answered every
   caller about everyone, which is not a smaller contract but an incoherent one.
-- **No foreign key from `events.source` to the tenant table.** Tenant validity
+- **No foreign key from `events.tenant_name` to the tenant table.** Tenant validity
   is proven at the auth layer, before the write; the tenant table is read on
   the analytics path only.
   *Rejected:* enforcing referential integrity on ingest — a foreign key puts a
   lookup and a shared lock on every insert in the hottest path in the system,
   to re-verify something the request was already authenticated against.
 - **Tenant as a data dimension, not an instance.** Pooled multitenancy: one
-  app, one database, one `events` table, with `source` as the tenant key.
+  app, one database, one `events` table, with `tenant_name` as the tenant key.
   *Rejected:* database- or instance-per-tenant — stronger isolation, but the
   operational cost per tenant becomes non-trivial and cross-tenant queries stop
   being possible.

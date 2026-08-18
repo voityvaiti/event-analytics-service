@@ -25,7 +25,7 @@ import org.springframework.stereotype.Repository;
 class JdbcEventRepository implements EventRepository {
 
   private static final String PARAM_EVENT_ID = "eventId";
-  private static final String PARAM_SOURCE = "source";
+  private static final String PARAM_TENANT_NAME = "tenantName";
   private static final String PARAM_USER_ID = "userId";
   private static final String PARAM_EVENT_TYPE = "eventType";
   private static final String PARAM_OCCURRED_AT = "occurredAt";
@@ -33,8 +33,8 @@ class JdbcEventRepository implements EventRepository {
 
   private static final String INSERT =
       """
-      INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-      VALUES (:eventId, :source, :userId, :eventType, :occurredAt, CAST(:properties AS JSONB))
+      INSERT INTO events (event_id, tenant_name, user_id, event_type, occurred_at, properties)
+      VALUES (:eventId, :tenantName, :userId, :eventType, :occurredAt, CAST(:properties AS JSONB))
       ON CONFLICT (event_id) DO NOTHING
       """;
 
@@ -61,7 +61,7 @@ class JdbcEventRepository implements EventRepository {
   private static SqlParameterSource parameters(NewEvent event) {
     return new MapSqlParameterSource()
         .addValue(PARAM_EVENT_ID, event.eventId())
-        .addValue(PARAM_SOURCE, event.tenant().value())
+        .addValue(PARAM_TENANT_NAME, event.tenant().value())
         .addValue(PARAM_USER_ID, event.userId())
         .addValue(PARAM_EVENT_TYPE, event.eventType())
         .addValue(PARAM_OCCURRED_AT, OffsetDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC))

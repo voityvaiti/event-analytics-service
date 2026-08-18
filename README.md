@@ -65,7 +65,7 @@ hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day
 bucket), and `GET /api/v1/stats/top-pages` (top-N pages by event count, with a
 truncation flag). **JWT authentication is in place**, which makes the service
 multi-tenant in practice rather than only in the schema: every `/api/v1`
-endpoint requires an RS256 bearer token, a row's `source` comes from the
+endpoint requires an RS256 bearer token, a row's `tenant_name` comes from the
 token's tenant claim instead of the request body, and every `/stats` query is
 scoped to the caller's own tenant. **Time buckets follow the tenant's own
 calendar**: a `tenants` settings table holds a zone per tenant, absence means
@@ -86,7 +86,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   'localhost:8080/api/v1/stats/event-counts?from=2026-05-24T00:00:00Z&to=2026-05-25T00:00:00Z'
 ```
 
-The tenant passed there is the `source` the caller's events are written under
+The tenant passed there is the `tenant_name` the caller's events are written under
 and the only rows its queries can see. The committed key pair is a throwaway for
 local runs and the perf suite — see [`dev-keys/`](./dev-keys). **A deployment
 must override
@@ -164,10 +164,10 @@ move the tail: the wait is for a connection, not for a query. The queue is still
 unbounded, and the pool is shared with ingest, so a read burst can hold every
 connection the write path needs.
 
-Scoping reads to a tenant briefly made it worse: `source` was not in the
+Scoping reads to a tenant briefly made it worse: the tenant was not in the
 `(occurred_at, event_type)` index, so `event-counts` lost its index-only scan — a
 1-hour count by type went from ~2 ms to ~38 ms and the cell stopped recovering from
-a surge. Leading the index with `source` bought both back, to 0.9 ms and to ~693 of
+a surge. Leading the index with the tenant bought both back, to 0.9 ms and to ~693 of
 4,000 req/s served with a 15 ms recovery. The wider index entry leaves a residue
 where a scan reads many of them — 6–8% on the widest `event-counts` windows, ~3%
 on `top-pages` — and token verification cost the write path nothing measurable.

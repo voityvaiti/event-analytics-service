@@ -25,11 +25,11 @@ import org.springframework.stereotype.Repository;
  * <p>Time buckets use the three-argument {@code date_trunc(unit, ts, zone)} so the boundary follows
  * the requested zone's calendar, independent of the session time zone.
  *
- * <p>Every query is scoped to one tenant and rides the {@code (source, occurred_at, event_type)}
- * index: tenant equality first, then the {@code occurred_at} range. Both count shapes are answered
- * from the index alone; {@code top-pages} and {@code active-users} still visit the heap, because
- * {@code properties} and {@code user_id} are not in it. What that costs is measured rather than
- * assumed — see the read cells under {@code perf/}.
+ * <p>Every query is scoped to one tenant and rides the {@code (tenant_name, occurred_at,
+ * event_type)} index: tenant equality first, then the {@code occurred_at} range. Both count shapes
+ * are answered from the index alone; {@code top-pages} and {@code active-users} still visit the
+ * heap, because {@code properties} and {@code user_id} are not in it. What that costs is measured
+ * rather than assumed — see the read cells under {@code perf/}.
  *
  * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
  * set once per connection rather than per request. A query the database cancels for exceeding it
@@ -46,7 +46,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT event_type AS bucket, COUNT(*) AS count
       FROM events
-      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
+      WHERE tenant_name = :tenantName AND occurred_at >= :from AND occurred_at < :to
       GROUP BY event_type
       ORDER BY count DESC, event_type
       """;
@@ -55,7 +55,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT date_trunc(:unit, occurred_at, :zone) AS bucket_start, COUNT(*) AS count
       FROM events
-      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
+      WHERE tenant_name = :tenantName AND occurred_at >= :from AND occurred_at < :to
       GROUP BY bucket_start
       ORDER BY bucket_start
       """;
@@ -65,7 +65,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       SELECT date_trunc(:unit, occurred_at, :zone) AS bucket_start,
              COUNT(DISTINCT user_id) AS active_users
       FROM events
-      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
+      WHERE tenant_name = :tenantName AND occurred_at >= :from AND occurred_at < :to
       GROUP BY bucket_start
       ORDER BY bucket_start
       """;
@@ -74,7 +74,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
       """
       SELECT properties->>'page_url' AS page_url, COUNT(*) AS count
       FROM events
-      WHERE source = :source AND occurred_at >= :from AND occurred_at < :to
+      WHERE tenant_name = :tenantName AND occurred_at >= :from AND occurred_at < :to
         AND properties->>'page_url' IS NOT NULL
       GROUP BY page_url
       ORDER BY count DESC, page_url
@@ -93,7 +93,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
         () ->
             jdbcClient
                 .sql(COUNT_BY_TYPE)
-                .param("source", tenant.value())
+                .param("tenantName", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .query(
@@ -111,7 +111,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
         () ->
             jdbcClient
                 .sql(COUNT_BY_TIME_BUCKET)
-                .param("source", tenant.value())
+                .param("tenantName", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .param("unit", truncationUnit(grouping))
@@ -132,7 +132,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
         () ->
             jdbcClient
                 .sql(ACTIVE_USERS_BY_TIME_BUCKET)
-                .param("source", tenant.value())
+                .param("tenantName", tenant.value())
                 .param("from", getUtc(from))
                 .param("to", getUtc(to))
                 .param("unit", truncationUnit(grouping))
@@ -153,7 +153,7 @@ class JdbcEventStatsRepository implements EventStatsRepository {
             () ->
                 jdbcClient
                     .sql(TOP_PAGES)
-                    .param("source", tenant.value())
+                    .param("tenantName", tenant.value())
                     .param("from", getUtc(from))
                     .param("to", getUtc(to))
                     .param("probe", limit + 1)

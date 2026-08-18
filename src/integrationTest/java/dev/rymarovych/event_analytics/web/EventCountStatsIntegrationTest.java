@@ -193,11 +193,11 @@ class EventCountStatsIntegrationTest {
     jdbcClient
         .sql(
             """
-            INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, :source, 'user_1', :type, :at, '{}'::JSONB)
+            INSERT INTO events (event_id, tenant_name, user_id, event_type, occurred_at, properties)
+            VALUES (:id, :tenantName, 'user_1', :type, :at, '{}'::JSONB)
             """)
         .param("id", eventId)
-        .param("source", source)
+        .param("tenantName", source)
         .param("type", eventType)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .update();
