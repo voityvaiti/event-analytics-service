@@ -61,7 +61,7 @@ class JdbcEventRepository implements EventRepository {
   private static SqlParameterSource parameters(NewEvent event) {
     return new MapSqlParameterSource()
         .addValue(PARAM_EVENT_ID, event.eventId())
-        .addValue(PARAM_SOURCE, event.source())
+        .addValue(PARAM_SOURCE, event.tenant().value())
         .addValue(PARAM_USER_ID, event.userId())
         .addValue(PARAM_EVENT_TYPE, event.eventType())
         .addValue(PARAM_OCCURRED_AT, OffsetDateTime.ofInstant(event.occurredAt(), ZoneOffset.UTC))

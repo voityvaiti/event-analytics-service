@@ -1,6 +1,7 @@
 package dev.rymarovych.event_analytics.web;
 
 import dev.rymarovych.event_analytics.domain.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.TenantName;
 import dev.rymarovych.event_analytics.domain.TimeGrouping;
 import dev.rymarovych.event_analytics.service.AnalyticsService;
 import jakarta.validation.constraints.Max;
@@ -40,7 +41,7 @@ public class StatsController {
       @RequestParam(defaultValue = "type") EventCountGrouping groupBy,
       Principal principal) {
     requireOrderedWindow(from, to);
-    var report = analyticsService.countEvents(principal.getName(), from, to, groupBy);
+    var report = analyticsService.countEvents(tenantOf(principal), from, to, groupBy);
     return statsMapper.toEventCountsResponse(groupBy, from, to, report);
   }
 
@@ -51,7 +52,7 @@ public class StatsController {
       @RequestParam(defaultValue = "day") TimeGrouping groupBy,
       Principal principal) {
     requireOrderedWindow(from, to);
-    var report = analyticsService.countActiveUsers(principal.getName(), from, to, groupBy);
+    var report = analyticsService.countActiveUsers(tenantOf(principal), from, to, groupBy);
     return statsMapper.toActiveUsersResponse(groupBy, from, to, report);
   }
 
@@ -62,8 +63,12 @@ public class StatsController {
       @RequestParam(defaultValue = "10") @Min(1) @Max(100) int limit,
       Principal principal) {
     requireOrderedWindow(from, to);
-    var report = analyticsService.topPages(principal.getName(), from, to, limit);
+    var report = analyticsService.topPages(tenantOf(principal), from, to, limit);
     return statsMapper.toTopPagesResponse(from, to, limit, report);
+  }
+
+  private static TenantName tenantOf(Principal principal) {
+    return new TenantName(principal.getName());
   }
 
   private static void requireOrderedWindow(Instant from, Instant to) {

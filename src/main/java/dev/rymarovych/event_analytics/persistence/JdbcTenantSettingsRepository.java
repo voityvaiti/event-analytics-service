@@ -1,6 +1,7 @@
 package dev.rymarovych.event_analytics.persistence;
 
 import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
+import dev.rymarovych.event_analytics.domain.TenantName;
 import java.time.DateTimeException;
 import java.time.ZoneId;
 import java.util.Optional;
@@ -33,20 +34,20 @@ class JdbcTenantSettingsRepository implements TenantSettingsRepository {
   }
 
   @Override
-  public Optional<ZoneId> findBucketingZone(String source) {
+  public Optional<ZoneId> findBucketingZone(TenantName tenant) {
     return jdbcClient
         .sql(SELECT_BUCKETING_ZONE)
-        .param("name", source)
+        .param("name", tenant.value())
         .query(String.class)
         .optional()
-        .map(timezone -> parseZone(source, timezone));
+        .map(timezone -> parseZone(tenant, timezone));
   }
 
-  private static ZoneId parseZone(String source, String timezone) {
+  private static ZoneId parseZone(TenantName tenant, String timezone) {
     try {
       return ZoneId.of(timezone);
     } catch (DateTimeException ex) {
-      throw new InvalidTenantZoneException(source, timezone, ex);
+      throw new InvalidTenantZoneException(tenant, timezone, ex);
     }
   }
 }
