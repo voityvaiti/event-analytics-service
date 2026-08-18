@@ -191,11 +191,11 @@ class TenantBucketingZoneIntegrationTest {
     jdbcClient
         .sql(
             """
-            INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, :source, :user, 'page_view', :at, '{}'::JSONB)
+            INSERT INTO events (event_id, tenant_name, user_id, event_type, occurred_at, properties)
+            VALUES (:id, :tenantName, :user, 'page_view', :at, '{}'::JSONB)
             """)
         .param("id", eventId)
-        .param("source", source)
+        .param("tenantName", source)
         .param("user", userId)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .update();

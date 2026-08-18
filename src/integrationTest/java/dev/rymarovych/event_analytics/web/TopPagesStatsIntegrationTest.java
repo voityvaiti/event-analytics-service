@@ -177,11 +177,11 @@ class TopPagesStatsIntegrationTest {
     jdbcClient
         .sql(
             """
-            INSERT INTO events (event_id, source, user_id, event_type, occurred_at, properties)
-            VALUES (:id, :source, 'user_1', 'page_view', :at, CAST(:props AS JSONB))
+            INSERT INTO events (event_id, tenant_name, user_id, event_type, occurred_at, properties)
+            VALUES (:id, :tenantName, 'user_1', 'page_view', :at, CAST(:props AS JSONB))
             """)
         .param("id", eventId)
-        .param("source", source)
+        .param("tenantName", source)
         .param("at", OffsetDateTime.ofInstant(occurredAt, ZoneOffset.UTC))
         .param("props", propertiesJson)
         .update();

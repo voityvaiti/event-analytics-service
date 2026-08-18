@@ -7,10 +7,10 @@
 // how an event table actually accumulates, and it keeps physical row order
 // aligned with the index the read tests exercise.
 //
-// `source` is set here rather than by the generator, which no longer emits one:
-// a write scenario's rows now take their source from the tenant its token
-// asserts, and only this COPY still writes the column directly. The two must
-// stay different so a write test's teardown deletes its own batch and leaves the
+// The tenant is set here rather than by the generator, which no longer emits
+// one: a write scenario's rows take theirs from the tenant its token asserts,
+// and only this COPY still writes `tenant_name` directly. The two must stay
+// different so a write test's teardown deletes its own batch and leaves the
 // corpus standing.
 
 import { generateEvent } from './event-generator.js';

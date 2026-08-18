@@ -93,20 +93,20 @@ class EventIngestionIntegrationTest {
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
 
-    assertThat(sourceOf("evt_abc123")).isEqualTo("acme");
+    assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
 
   /**
-   * A leftover {@code source} in the body is ignored rather than honoured or rejected: honouring it
-   * would let any client write as any tenant, and rejecting it would break callers over a field
-   * that no longer carries any authority.
+   * A tenant named in the body is ignored rather than honoured or rejected: honouring it would let
+   * any client write as any tenant, and rejecting it would break callers over a field that no
+   * longer carries any authority.
    */
   @Test
-  void sourceInTheBodyIsIgnored() throws Exception {
+  void aTenantNamedInTheBodyIsIgnored() throws Exception {
     var claimingAnotherTenant =
         """
         {
-          "source": "somebody-else",
+          "tenant_name": "somebody-else",
           "event_id": "evt_abc123",
           "user_id": "user_42",
           "event_type": "page_view",
@@ -122,7 +122,7 @@ class EventIngestionIntegrationTest {
                 .content(claimingAnotherTenant))
         .andExpect(status().isAccepted());
 
-    assertThat(sourceOf("evt_abc123")).isEqualTo("acme");
+    assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
 
   @Test
@@ -145,9 +145,9 @@ class EventIngestionIntegrationTest {
         .andExpect(status().isBadRequest());
   }
 
-  private String sourceOf(String eventId) {
+  private String tenantNameOf(String eventId) {
     return jdbcClient
-        .sql("SELECT source FROM events WHERE event_id = :id")
+        .sql("SELECT tenant_name FROM events WHERE event_id = :id")
         .param("id", eventId)
         .query(String.class)
         .single();

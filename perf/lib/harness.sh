@@ -178,7 +178,7 @@ seed_corpus() {
   fi
 
   local existing
-  existing=$(psql_events -tAc "SELECT count(*) FROM events WHERE source = '$SEED_SOURCE'" \
+  existing=$(psql_events -tAc "SELECT count(*) FROM events WHERE tenant_name = '$SEED_SOURCE'" \
     | tr -d '[:space:]') || return 1
 
   # Reuse an intact corpus: rebuilding millions of rows before every run costs
@@ -196,7 +196,7 @@ seed_corpus() {
     --env SEED_ROWS --env SEED_SPREAD_DAYS --env SEED_ANCHOR \
     "$NODE_IMAGE" node perf/lib/seed-corpus.mjs \
     | psql_events -qc \
-      "COPY events (event_id, source, user_id, event_type, occurred_at, properties)
+      "COPY events (event_id, tenant_name, user_id, event_type, occurred_at, properties)
        FROM STDIN WITH (FORMAT csv)" || return 1
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
@@ -213,7 +213,7 @@ seed_corpus() {
 # 2M it is over a tenth of the table, and against an empty one it is the whole
 # difference between an index and a sequential scan.
 restore_seed_baseline() {
-  psql_events -qc "DELETE FROM events WHERE source = '$WRITE_BATCH_SOURCE';" || return 1
+  psql_events -qc "DELETE FROM events WHERE tenant_name = '$WRITE_BATCH_SOURCE';" || return 1
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
 
@@ -260,7 +260,7 @@ warm_reads() {
 read_scan_counters() {
   psql_events -tAc "
     SELECT coalesce((SELECT idx_scan FROM pg_stat_user_indexes
-                     WHERE indexrelname = 'idx_events_source_occurred_at'), 0)
+                     WHERE indexrelname = 'idx_events_tenant_name_occurred_at'), 0)
            || ' ' ||
            coalesce((SELECT seq_scan FROM pg_stat_user_tables
                      WHERE relname = 'events'), 0)"
