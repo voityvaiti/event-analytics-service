@@ -82,9 +82,25 @@ that cannot be read as a zone fails the request instead: bucketing in UTC
 behind the caller's back would produce figures that are plausible and wrong,
 which is the failure this section exists to prevent.
 
-The zone is resolved per read and not cached. Whether that lookup costs
-anything measurable is unmeasured, so nothing here claims it is free; the
-read cells are the place to settle it.
+The zone is resolved per read and not cached, and the lookup costs about
+**0.15 ms** per bucketed request. The estimator is not the raw gap between
+`groupBy=type`, which resolves nothing, and a bucketed shape, which does: that gap
+is 0.94 ms at the one-hour window and was already 0.81 ms before this branch
+existed, because the two shapes differ by their aggregation as much as by the
+lookup. It is how much that gap *grew* — 0.14 ms for `groupBy=hour`, 0.13 ms for
+`groupBy=day`, across a 0.04–0.25 ms spread over every round pairing. Both sides of
+each gap sit in the same pass, so the between-run term cancels.
+
+Only the narrowest window can say even that. The estimator spreads ±0.5 ms at one
+day and ±4 ms at thirty, wider than the thing it is measuring, so the lookup is
+worth ~7% of the one-hour `event-counts` cell, ~0.5% of the one-day one, and
+nothing measurable past that. The control that would settle it — one bucketed
+shape against a tenant with a stored zone and one without — has not been run.
+
+What neither estimator can separate is the transaction. `groupBy=type` opens one
+it never uses, and there is no shape without it to compare against inside a
+run, so its cost stays open — see [the perf notes](./perf/README.md#the-floor-between-runs)
+for why comparing two whole-suite runs will not settle it either.
 
 ## Architecture
 
@@ -414,8 +430,13 @@ case and does nothing for the bad one.
 
 **Other known gaps.**
 
-- The bucketing zone is read on every bucketed request with no cache, and the
-  cost of that lookup has not been measured.
+- The bucketing zone is read on every bucketed request with no cache, at about
+  0.15 ms — ~7% of the narrowest `event-counts` cell, and too small to measure at
+  the widest. That is the number a Stage 4 TTL cache would have to beat.
+- `event-counts` grouped by type opens a read-only transaction it never uses, so
+  it pays a `COMMIT` round trip for nothing. The cost is unmeasured: no shape
+  runs the same query without the transaction, so there is nothing to control
+  against.
 - A per-request `?tz=` override is not implemented; the tenant's stored zone is
   the only one a query can be answered in.
 - `properties` has no GIN index, so any future filter on a JSON field is a

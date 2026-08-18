@@ -145,6 +145,40 @@ The floor measured here describes *this* rig and is not the band
 deliberately wider because a shared GitHub runner jitters more than a fixed
 desktop. Two machines, two numbers; they must not be swapped for each other.
 
+### The floor between runs
+
+Everything above measures rounds *inside* one pass. Comparing two passes is a
+different and wider thing, and the tenant-timezone run put a number on why.
+
+That run read `top-pages` 1.1% to 2.2% slower on every window it measures — on a
+branch where `top-pages` resolves nothing, opens no transaction, and executes the
+same statement it always did. No single window clears its own round-to-round spread
+by much, and the one-hour window does not clear it at all; what makes this a term
+rather than jitter is that every window moved the same way, medians and p95 alike,
+on an endpoint the branch cannot reach. The write cells said the same: ±4.4% on a
+path the branch cannot touch.
+
+The mechanism is the suite's own ordering. `perf/all` runs every write cell before
+every read cell, and the write cells insert and delete hundreds of thousands of
+rows. Measured across that run, the index went from 1060MB immediately after a
+`REINDEX` to 1148MB by the time the read cells started — **+8.3% more index for
+the same 20M rows**, and an index scan reads proportionally more pages for it.
+`VACUUM ANALYZE` does not give it back; only `REINDEX` does, and the harness skips
+even the `VACUUM` when it reuses an intact corpus.
+
+So a read delta between two whole-suite passes carries a bloat term nobody
+controls, and it is the same size as the effects the read cells are usually asked
+about. Two consequences:
+
+- **Prefer an internal control.** Two shapes measured in the same pass share the
+  index state exactly, so how the gap between them *changes* from pass to pass
+  survives what a raw delta does not. That is how the per-tenant zone lookup was
+  costed at ~0.15 ms. The raw gap will not do it: two shapes differ by their
+  aggregation as well as by the thing under measurement.
+- **When only a cross-pass comparison will do**, `REINDEX` first and run the read
+  cells alone, or accept a floor of several percent rather than the table's ~1%.
+
+
 ## The corpus
 
 Every test measures against the same seeded corpus — `SEED_ROWS` (default 20M)
