@@ -74,14 +74,17 @@ offset. The zone resolves **per tenant**, not per request, because a tenant's
 reported numbers must not change depending on where the person opening the
 dashboard happens to be; this is what GA4, Amplitude, and Mixpanel all do.
 
-**Current state:** the repository layer is fully zone-parametric — the zone is
-a query parameter and travels back with the result, so every response states
-the zone its buckets were computed in. The service layer pins that zone to UTC
-because there is nowhere to read a per-tenant zone from yet — the tenant table
-does not exist. What it no longer lacks is the tenant: since reads are scoped,
-the service already receives the identity it will resolve a zone for, so the
-remaining change is a table and one resolution step. No query, no schema for
-`events`, and no stored data changes.
+**Current state:** the zone comes from a `tenants` settings table, read by the
+service on the two query shapes that bucket by time. A tenant with no row is
+bucketed in UTC, so holding a token is all it takes to get correct figures and
+`set-tenant-zone` is only for tenants that report elsewhere. A stored value
+that cannot be read as a zone fails the request instead: bucketing in UTC
+behind the caller's back would produce figures that are plausible and wrong,
+which is the failure this section exists to prevent.
+
+The zone is resolved per read and not cached. Whether that lookup costs
+anything measurable is unmeasured, so nothing here claims it is free; the
+read cells are the place to settle it.
 
 ## Architecture
 
@@ -103,7 +106,7 @@ code.
 
 ### Data model
 
-One table, append-only:
+One table carries the data, append-only:
 
 ```sql
 CREATE TABLE events (
@@ -124,6 +127,20 @@ not a surrogate. `source` is the tenant key, and it is written from the
 authenticated token's tenant claim rather than from the request, so a client
 cannot attribute events to anyone else. Rows are never updated or deleted; every
 aggregate is derived data that can be rebuilt from this table.
+
+Beside it sits one settings side-table, read only on the analytics path:
+
+```sql
+CREATE TABLE tenants (
+    name      TEXT PRIMARY KEY,
+    timezone  TEXT NOT NULL
+);
+```
+
+It holds how a tenant reports, never whether it exists — that is the token's
+job — so it has no foreign key to `events` and a tenant with no row is bucketed
+in UTC. Which is why it stays empty for most tenants, and why ingest never
+touches it.
 
 The index is led by `source` because every analytics query filters on the
 token's tenant before its time range: an equality ahead of the range makes the
@@ -243,6 +260,24 @@ Each decision states what was chosen, why, and what was rejected.
   same dashboard would then report different totals to two people in different
   offices, which turns a reporting system into an argument. It survives as an
   explicit override, not as the default.
+- **`tenants` is a settings table, and a missing row means UTC.** A tenant
+  exists because it holds a token, so the table answers "how does this tenant
+  report", never "does this tenant exist". Ingest never reads it.
+  *Rejected:* treating an unknown tenant as an error — it would make minting a
+  token insufficient to use the service, and put an administrative step in
+  front of the thing authentication already settled.
+- **An unreadable stored zone fails the read.** A value that is not a zone
+  gets a 500 in `problem+json`, naming the value.
+  *Rejected:* falling back to UTC — the caller would receive figures that look
+  right and are computed against a calendar their settings say is wrong, which
+  is the one failure this system is least willing to hide. Validation on the
+  write path makes this unreachable through `set-tenant-zone`; the check is for
+  rows that arrive another way.
+- **The response states a zone only where there are buckets.** `groupBy=type`
+  resolves nothing and reports nothing, as `top-pages` always has.
+  *Rejected:* reporting UTC there — it names a zone nothing was computed in,
+  and a tenant would see its own zone under one grouping and UTC under
+  another, which reads as a bug in the resolution.
 - **Store UTC, bucket on read.** Timestamps are stored in UTC; the zone is
   applied at query time.
   *Rejected:* storing local time, or storing a materialised local-day column —
@@ -377,8 +412,10 @@ case and does nothing for the bad one.
 
 **Other known gaps.**
 
-- Time bucketing is UTC-only in practice until the tenant table exists, though
-  the query layer is already zone-parametric.
+- The bucketing zone is read on every bucketed request with no cache, and the
+  cost of that lookup has not been measured.
+- A per-request `?tz=` override is not implemented; the tenant's stored zone is
+  the only one a query can be answered in.
 - `properties` has no GIN index, so any future filter on a JSON field is a
   sequential scan.
 - There is no index on `user_id`; `active-users` shows sequential scans in the
