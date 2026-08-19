@@ -249,21 +249,30 @@ warm_reads() {
   READS_WARMED=1
 }
 
-# "index scans, sequential scans" as of now. A read cell journals the delta over
-# its measured run, which is what keeps a flat read-latency result from being
-# ambiguous: it says outright whether the planner reached for the index or swept
-# the table instead. Taken from counters over the queries the app actually ran,
-# rather than from EXPLAIN on a copy of the SQL — the statements live in the
-# repository class, and a second copy here would be one more thing to keep in
-# step. Reports 0 index scans when the index does not exist, which is exactly
-# what the without-index arm of the experiment should record.
+# Scan counters on events as of now, as JSON: idx_scan per secondary index plus
+# the table's seq_scan. A read cell journals the delta over its measured run,
+# which is what keeps a flat read-latency result from being ambiguous: it says
+# outright whether the planner reached for an index or swept the table instead.
+# Per index rather than one hardcoded name, because the moment two indexes serve
+# different /stats queries a total cannot say which tree answered the run — and
+# a hardcoded name already made one plan change invisible until V5 renamed it
+# here. Taken from counters over the queries the app actually ran, rather than
+# from EXPLAIN on a copy of the SQL — the statements live in the repository
+# class, and a second copy here would be one more thing to keep in step. An
+# index that does not exist is simply absent, which a delta reads as 0 — exactly
+# what the without-index arm of an experiment should record. The primary key is
+# excluded: it exists for idempotency, not for serving reads.
 read_scan_counters() {
   psql_events -tAc "
-    SELECT coalesce((SELECT idx_scan FROM pg_stat_user_indexes
-                     WHERE indexrelname = 'idx_events_tenant_name_occurred_at'), 0)
-           || ' ' ||
-           coalesce((SELECT seq_scan FROM pg_stat_user_tables
-                     WHERE relname = 'events'), 0)"
+    SELECT json_build_object(
+             'by_index',
+             coalesce((SELECT json_object_agg(indexrelname, idx_scan)
+                       FROM pg_stat_user_indexes
+                       WHERE relname = 'events' AND indexrelname <> 'events_pkey'),
+                      '{}'::JSON),
+             'seq_scans',
+             coalesce((SELECT seq_scan FROM pg_stat_user_tables
+                       WHERE relname = 'events'), 0))"
 }
 
 # The pool the run ACTUALLY used, read straight from the app rather than trusted

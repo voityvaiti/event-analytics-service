@@ -65,8 +65,12 @@ import json, sys
 with open(summary_path) as f:
     s = json.load(f)
 
-index_before, seq_before = (int(v) for v in scans_before.split())
-index_after, seq_after = (int(v) for v in scans_after.split())
+before = json.loads(scans_before)
+after = json.loads(scans_after)
+index_scans_by_index = {
+    name: scans - before["by_index"].get(name, 0)
+    for name, scans in after["by_index"].items()
+}
 
 row = {
     "date": date,
@@ -96,8 +100,9 @@ row = {
     "p95_ms": round(s["latency_ms"]["p95"], 2),
     "p99_ms": round(s["latency_ms"]["p99"], 2),
     "failed_rate": s["failed_rate"],
-    "index_scans": index_after - index_before,
-    "seq_scans": seq_after - seq_before,
+    "index_scans": sum(index_scans_by_index.values()),
+    "index_scans_by_index": index_scans_by_index,
+    "seq_scans": after["seq_scans"] - before["seq_scans"],
 }
 
 with open(journal_path, "a") as f:
