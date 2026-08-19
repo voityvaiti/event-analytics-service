@@ -38,6 +38,22 @@ jobs:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/event_analytics
       SPRING_DATASOURCE_USERNAME: event_analytics
       SPRING_DATASOURCE_PASSWORD: event_analytics
+      # The read cells need a corpus to read. 20M rows is the fixed rig's figure
+      # and out of reach here, so this is 2M over the same 180-day span: the
+      # window mix keeps its shape — every window stays a small fraction of the
+      # corpus, so the index is still the access path — at a tenth the density.
+      # That makes CI read numbers comparable between the two sides and to
+      # nothing else, which the rendered comment says outright. Measured cost:
+      # ~16s to generate and COPY, ~625MB on disk, per side per round.
+      SEED_ROWS: '2000000'
+      SEED_SPREAD_DAYS: '180'
+      SEED_ANCHOR: '2026-01-01T00:00:00Z'
+      # Per cell. Seven measured runs per side per round, so the whole matrix is
+      # ROUNDS x 2 x 7 x (warmup + measured) of k6 — around 25 minutes at the
+      # default of three rounds. Lower `rounds` on a manual run if that is too
+      # long; the median just gets less to work with.
+      WARMUP_DURATION: 5s
+      MEASURED_DURATION: 20s
 
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +71,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # Pin Node like the JDK above, instead of running on whatever the runner
-      # image ships — compare-runs.mjs is the only thing that needs it.
+      # image ships — compare-runs.mjs and the corpus seeder both need it.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -70,9 +86,11 @@ jobs:
       - name: Start backing services
         run: scripts/actions/dependencies
 
-      # The k6 scenario authenticates, so both sides need a token for the source a
-      # write cell posts as. Node is already pinned above, and the signer has no
-      # dependencies, so this is the same script the local harness runs.
+      # The k6 scenarios authenticate, and the two paths speak for different
+      # tenants — reads ask about the seeded corpus, writes post their own rows —
+      # so this mints the same pair the local harness does. Keeping them apart is
+      # what lets a write cell delete its own batch without touching the corpus
+      # the read cells just measured against.
       #
       # One token serves both sides only while they agree on the request contract. A
       # PR that changes the ingest payload itself cannot be compared this way — the
@@ -80,8 +98,10 @@ jobs:
       # and the summaries would report a broken side rather than a slower one. Such a
       # PR is measured against its journal on a fixed rig instead, so leave the perf
       # label off it.
-      - name: Mint the perf token
-        run: echo "TOKEN=$(node perf/lib/mint-token.mjs perf-test)" >> "$GITHUB_ENV"
+      - name: Mint the perf tokens
+        run: |
+          echo "SEED_TOKEN=$(node perf/lib/mint-token.mjs perf-seed)" >> "$GITHUB_ENV"
+          echo "WRITE_TOKEN=$(node perf/lib/mint-token.mjs perf-test)" >> "$GITHUB_ENV"
 
       # Build both jars up front so the measured rounds run back-to-back with no
       # Gradle work in between. main is built in a worktree to leave the PR
@@ -103,21 +123,79 @@ jobs:
           [ -n "$jar" ] || { echo "::error::no main boot jar found in build/libs"; exit 1; }
           cp "$jar" /tmp/perf/main-app.jar
 
-      # Alternate main/PR each round so ordering and thermal drift hit both
-      # sides evenly. Per side: recreate the schema (so each app's Flyway
-      # migrates from scratch in isolation — main and PR may carry different
-      # migrations, and a shared history would fail Flyway validation), start
-      # app, throw away a warmup run (JIT + pool warm-up), reset the table, then
-      # the measured run. A failed measured run is tolerated here (|| true) so
-      # both sides still emit a summary; compare-runs.mjs reads the real failure
-      # rate from those summaries and fails the build if either side is broken.
+      # Alternate main/PR each round so ordering and thermal drift hit both sides
+      # evenly. Per side: recreate the schema (so each app's Flyway migrates from
+      # scratch in isolation — main and PR may carry different migrations, and a
+      # shared history would fail Flyway validation), start the app, seed the
+      # corpus, then run every load cell: a throwaway warmup first (JIT, pool,
+      # and for a read cell its query plan), then the measured run.
+      #
+      # A failed measured run is tolerated here (|| true) so both sides still
+      # emit a summary; compare-runs.mjs reads the real failure rate from those
+      # summaries, checks both sides ran the same cells, and fails the build if
+      # either side is broken.
       - name: Run load comparison
         run: |
           set -euo pipefail
           mkdir -p results/main results/pr
 
           exec_sql() {
-            docker compose exec -T postgres psql -U event_analytics -d event_analytics -c "$1"
+            docker compose exec -T postgres psql -U event_analytics -d event_analytics -qc "$1"
+          }
+
+          # main and PR need not name the tenant column the same way — a rename
+          # lands on one side before the other — so the seed and the write-cell
+          # teardown ask the schema instead of assuming. Hardcoding either name
+          # would fail on the side that does not have it and silently cost the
+          # comparison every read cell.
+          tenant_column() {
+            docker compose exec -T postgres psql -U event_analytics -d event_analytics -tAc \
+              "SELECT column_name FROM information_schema.columns
+               WHERE table_name = 'events' AND column_name IN ('source', 'tenant_name')" \
+              | tr -d '[:space:]'
+          }
+
+          seed_corpus() {
+            node perf/lib/seed-corpus.mjs \
+              | docker compose exec -T postgres psql -U event_analytics -d event_analytics -q -c \
+                "COPY events (event_id, $TENANT_COLUMN, user_id, event_type, occurred_at, properties)
+                 FROM STDIN WITH (FORMAT csv)"
+            exec_sql 'VACUUM ANALYZE events;'
+          }
+
+          # Only the write tenant's rows, never TRUNCATE: the corpus the read
+          # cells measured against lives in the same table.
+          clear_write_rows() {
+            exec_sql "DELETE FROM events WHERE $TENANT_COLUMN = 'perf-test';"
+          }
+
+          run_read_cell() {
+            local side="$1" round="$2" endpoint="$3" group_by="$4" limit="${5:-}"
+            local tag="stats-$endpoint${group_by:+-$group_by}"
+            local args=(
+              -e BASE_URL=http://localhost:8080 -e TOKEN="$SEED_TOKEN"
+              -e ENDPOINT="$endpoint" -e GROUP_BY="$group_by" -e LIMIT="$limit"
+              -e SEED_ANCHOR="$SEED_ANCHOR" -e SEED_SPREAD_DAYS="$SEED_SPREAD_DAYS"
+            )
+            k6 run "${args[@]}" -e DURATION="$WARMUP_DURATION" \
+              -e RUN_ID="warmup_${tag}_${side}_${round}" -e SUMMARY_OUT=/dev/null \
+              perf/read/load/stats-read.js || true
+            k6 run "${args[@]}" -e DURATION="$MEASURED_DURATION" \
+              -e RUN_ID="${side}_${round}" -e SUMMARY_OUT="results/$side/$tag-$round.json" \
+              perf/read/load/stats-read.js || true
+          }
+
+          run_write_cell() {
+            local side="$1" round="$2" tag="$3" script="$4"
+            local args=(-e BASE_URL=http://localhost:8080 -e TOKEN="$WRITE_TOKEN")
+            k6 run "${args[@]}" -e DURATION="$WARMUP_DURATION" \
+              -e RUN_ID="warmup_${tag}_${side}_${round}" -e SUMMARY_OUT=/dev/null \
+              "$script" || true
+            clear_write_rows
+            k6 run "${args[@]}" -e DURATION="$MEASURED_DURATION" \
+              -e RUN_ID="${side}_${round}" -e SUMMARY_OUT="results/$side/$tag-$round.json" \
+              "$script" || true
+            clear_write_rows
           }
 
           run_side() {
@@ -133,11 +211,23 @@ jobs:
               sleep 2
             done
 
-            RUN_ID="warmup_${side}_${round}" SUMMARY_OUT=/dev/null \
-              DURATION=10s k6 run perf/write/load/ingest-events.js || true
-            exec_sql 'TRUNCATE events;'
-            RUN_ID="${side}_${round}" SUMMARY_OUT="results/${side}/${round}.json" \
-              DURATION=20s k6 run perf/write/load/ingest-events.js || true
+            TENANT_COLUMN=$(tenant_column)
+            [ -n "$TENANT_COLUMN" ] || {
+              echo "::error::events has neither a source nor a tenant_name column on $side"
+              exit 1
+            }
+            seed_corpus
+
+            # Reads before writes. A write cell's inserts and deletes bloat the
+            # index by several percent, and a read cell running after them would
+            # be measuring that as well as the branch.
+            run_read_cell "$side" "$round" event-counts type
+            run_read_cell "$side" "$round" event-counts hour
+            run_read_cell "$side" "$round" event-counts day
+            run_read_cell "$side" "$round" active-users day
+            run_read_cell "$side" "$round" top-pages '' 10
+            run_write_cell "$side" "$round" ingest-single perf/write/load/ingest-events.js
+            run_write_cell "$side" "$round" ingest-batch perf/write/load/ingest-batches.js
 
             kill "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
@@ -157,7 +247,7 @@ jobs:
       # an invalid run turns this step (and the workflow) red rather than posting
       # a misleading "better". The comment still posts — see the step below.
       - name: Render comparison
-        run: node perf/write/load/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
+        run: node perf/lib/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
 
       # Runs even when "Render comparison" failed (invalid run) so the ❌ verdict
       # still reaches the PR; skipped only on cancellation.

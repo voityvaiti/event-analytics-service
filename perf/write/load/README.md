@@ -12,8 +12,10 @@ request shape, measured identically:
 Each cell owns its `journal.jsonl`; the k6 scenarios sit here beside
 [`measure-cell.sh`](./measure-cell.sh), the measuring routine they share, because
 the cells differ in what they post and not in how they are measured.
-[`compare-runs.mjs`](./compare-runs.mjs) also stays at this level: it compares the
-workload across two builds, and CI invokes it by this path.
+
+The main-vs-PR renderer CI uses is [`perf/lib/compare-runs.mjs`](../../lib/compare-runs.mjs),
+not a file at this level: it covers every load cell, read ones included, so it
+belongs to no single workload.
 
 ## Two ways the numbers are used
 
