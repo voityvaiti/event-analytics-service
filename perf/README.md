@@ -145,6 +145,23 @@ The floor measured here describes *this* rig and is not the band
 deliberately wider because a shared GitHub runner jitters more than a fixed
 desktop. Two machines, two numbers; they must not be swapped for each other.
 
+### What CI compares
+
+The `perf` label runs every **load** cell — both write shapes and all five read
+shapes — against `main` and the PR back to back on one runner, alternating sides
+each round. Spike cells stay out: their result is a compound verdict, and a
+shared runner cannot hold an offered rate steady enough for one to mean anything.
+
+Its corpus is 2M rows over the same 180-day span the fixed rig uses, so the
+window mix keeps its shape at a tenth the density. That makes a CI read number
+comparable to the other side of the same run and to nothing else — never to a
+journal row.
+
+Only throughput and the overall p95 carry a verdict there. p99 and the
+per-window figures are printed with their delta and no judgement: measured across
+two runs of an identical jar, batch p99 moved 45% and the narrowest read window
+10%, so a band that trusted them would announce improvements that are not there.
+
 ### The floor between runs
 
 Everything above measures rounds *inside* one pass. Comparing two passes is a
@@ -238,13 +255,13 @@ perf/
     seq-space.js        which sequence numbers each producer may draw from
     k6-stats.js         shared /api/v1/stats request shape
     k6-summary.js       shared k6 summary reader
+    compare-runs.mjs    the main-vs-PR comparison CI renders, over every load cell
   write/
     tests.sh            the write cell list, per workload and combined
     load/
       ingest-events.js  the steady scenario, one event per request
       ingest-batches.js the steady scenario, BATCH_SIZE events per request
       measure-cell.sh   the measuring routine the load cells share
-      compare-runs.mjs  the main-vs-PR comparison CI renders
       single/  batch/
     spike/
       spike-events.js   the surge scenario, one event per request
