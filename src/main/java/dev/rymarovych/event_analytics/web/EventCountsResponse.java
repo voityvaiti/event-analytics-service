@@ -1,6 +1,7 @@
 package dev.rymarovych.event_analytics.web;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -29,6 +30,11 @@ public record EventCountsResponse(
   /**
    * One bucket of the result: the aggregation key — the event type, or an interval start as an RFC
    * 3339 UTC timestamp — and how many events fell in it.
+   *
+   * <p>Named for the API document, where {@code ActiveUsersResponse.Bucket} would otherwise share
+   * the name: OpenAPI has one flat schema namespace, so the two would collide and one shape would
+   * be published under both endpoints.
    */
+  @Schema(name = "EventCountBucket")
   public record Bucket(String bucket, long count) {}
 }
