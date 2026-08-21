@@ -135,7 +135,8 @@ CREATE TABLE events (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_events_tenant_name_occurred_at ON events (tenant_name, occurred_at, event_type);
+CREATE INDEX idx_events_tenant_name_occurred_at_event_type_user_id
+    ON events (tenant_name, occurred_at, event_type, user_id);
 ```
 
 `event_id` is client-supplied and the primary key — the idempotency mechanism,
@@ -163,8 +164,10 @@ touches it.
 The index is led by `tenant_name` because every analytics query filters on the
 token's tenant before its time range: an equality ahead of the range makes the
 scan one contiguous slice per tenant, and prunes by tenant as soon as more than
-one exists. `occurred_at` carries the range, and the trailing `event_type` keeps
-`groupBy=type` grouped from the same index.
+one exists. `occurred_at` carries the range, and the trailing columns keep the
+aggregates on the index: `event_type` answers `groupBy=type`, `user_id` the
+distinct count of `active-users`. Only `top-pages` still visits the heap, for
+`properties`.
 
 It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was
 not in it, so checking it sent every candidate row to the heap, taking a 1-hour
@@ -176,6 +179,15 @@ the tenant-led key won. The old index went with the migration rather than
 staying beside the new one: no query filters on a time range without a tenant
 any more, so it would only tax writes and disk. What the replacement is worth
 is in the read cells' journals, either side of the V3 migration.
+
+`user_id` joined the entry the same way, and against the same rejected shape: a
+separate `(tenant_name, occurred_at, user_id)` tree beside this one serves
+`active-users` identically to within 0.4% on every window, but costs batch
+ingest 5.2% where widening costs 3.0%, and carries 894 MB more disk. Widening
+pays in entry width — ~3% back on `event-counts`' widest windows, nothing past
+the noise floor on the 1-hour and 1-day windows that dominate traffic. Both
+shapes were measured, three rounds of every cell each; the matrix is in
+[the experiment write-up](./perf/active-users-index-experiment.md).
 
 ## Key design decisions
 
@@ -366,15 +378,24 @@ figure anything measurable: 127.5k to 126.0k events/s on the batch cell, inside 
 Reads are within a few percent of where they were before tenancy, because the
 index leads with the tenant it is filtered by (see [the data
 model](#data-model)). A 1-hour `event-counts` answers in 0.9 ms by type and
-1.7 ms by hour, a 1-day in 11.6 ms and 27.4 ms, and `active-users` is unmoved at
-~120 ms for a day and ~3.6 s for 30 days. What residue there is belongs to the
-wider index entry — `source` is now stored in every one of them — and shows up
-where a scan reads many entries: `event-counts` by type loses 6–8% on its 7- and
-30-day windows (346 ms against 326 ms at 30 days), and `top-pages` a uniform ~3%.
-Both are past their spreads, and the first is the crossover the [index
-experiment](./perf/index-experiment.md) predicted, where a window stops being
-selective and a larger index only costs. What tenancy cost *without* the new index
-is the arm in between: 32x on the narrowest window.
+1.7 ms by hour, a 1-day in 11.6 ms and 27.4 ms. What residue there is belongs to
+the wider index entry — the tenant, and since V7 `user_id`, is stored in every
+one of them — and shows up where a scan reads many entries: `event-counts` by
+type loses 6–8% on its 7- and 30-day windows to the first widening and ~3% to
+the second. Both are past their spreads, and the first is the crossover the
+[index experiment](./perf/index-experiment.md) predicted, where a window stops
+being selective and a larger index only costs. What tenancy cost *without* the
+tenant-led index is the arm in between: 32x on the narrowest window.
+
+`active-users` stopped being heap-bound when `user_id` entered the index: its
+1-hour window nearly halved (9.6 to 5.0 ms p95), 1-day dropped 14% to ~110 ms —
+and its 30-day window only 10%, to ~3.4 s, because the scan was 0.9 s of it and
+the rest is the `COUNT(DISTINCT)` sort spilling to disk, which no index removes.
+That 3.4 s is the measured number Stage 4's rollups now own; the shape of the
+trade, and the write and disk price of the index that bought it, is in
+[the second experiment](./perf/active-users-index-experiment.md). Batch ingest
+paid 3.0% for the wider entry — the first write tax the suite has resolved —
+and single-event ingest measurably nothing.
 
 **What saturates first: the read path, not the write path.** A read spike
 demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering
@@ -441,8 +462,10 @@ case and does nothing for the bad one.
   the only one a query can be answered in.
 - `properties` has no GIN index, so any future filter on a JSON field is a
   sequential scan.
-- There is no index on `user_id`; `active-users` shows sequential scans in the
-  perf journal for that reason.
+- `active-users` sorts on disk past a wide enough window: a month of one
+  tenant spills ~94 MB against the default 4 MB `work_mem`, ~2.6 s of the
+  ~3.4 s total. `work_mem`, a hash-friendly query shape, and Stage 4's rollups
+  attack that in ascending order of cost; none is measured yet.
 - One `events` table, unpartitioned. At 10x the corpus, time-range partitioning
   becomes the difference between pruning and scanning.
 - `/actuator` is unauthenticated. The perf harness reads the live pool size from
