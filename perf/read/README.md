@@ -77,6 +77,11 @@ different set of fields around a recovery verdict; their shared
   whether the planner reached for the index or swept the table instead. Zero
   index scans with the index in place means the planner declined it, which is a
   different problem from an index that did not help.
+- **`index_scans_by_index`** — the same count, per index. `index_scans` is its
+  sum, kept for continuity with rows written when there was only one index to
+  count. The moment two indexes can serve different queries a total cannot say
+  which tree answered the run — which is exactly what an index experiment needs
+  a row to say.
 
 ## Why the corpus matters here
 
