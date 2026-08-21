@@ -49,6 +49,8 @@ Ten-minute tour, in order:
 - **PostgreSQL** with **Flyway** migrations
 - **Gradle** (wrapper committed)
 - **JUnit 5** + **Testcontainers** (real Postgres in tests, no H2)
+- **springdoc-openapi** (OpenAPI 3.1 and Swagger UI generated from the
+  controllers)
 
 ## Status
 
@@ -67,9 +69,24 @@ truncation flag). **JWT authentication is in place**, which makes the service
 multi-tenant in practice rather than only in the schema: every `/api/v1`
 endpoint requires an RS256 bearer token, a row's `tenant_name` comes from the
 token's tenant claim instead of the request body, and every `/stats` query is
-scoped to the caller's own tenant. **Time buckets follow the tenant's own
+scoped to the caller's own tenant. **The API documents itself** — OpenAPI 3.1 at
+`/v3/api-docs`, generated from the controllers, with Swagger UI over it.
+**Time buckets follow the tenant's own
 calendar**: a `tenants` settings table holds a zone per tenant, absence means
 UTC, and the two bucketed query shapes report the zone they were computed in.
+
+## API reference
+
+`/swagger-ui.html` for the browsable reference, `/v3/api-docs` for the OpenAPI
+3.1 document behind it. Paths, schemas, required fields and bounds are derived
+from the request mappings and the Bean Validation constraints, so an endpoint
+cannot exist without appearing there and a bound cannot change without the
+document changing with it. Only what the code cannot carry is written by hand:
+the bearer scheme, the `[from, to)` window, and the response codes.
+
+Both are reachable without a token — a token cannot be presented before the
+page that would take it has loaded — and every operation they describe still
+needs one. Paste a minted token into Swagger UI's **Authorize** to call them.
 
 ## Authentication
 

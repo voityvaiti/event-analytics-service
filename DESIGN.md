@@ -331,6 +331,14 @@ Each decision states what was chosen, why, and what was rejected.
   *Rejected:* a uniform `limit` on all endpoints — it would silently drop
   legitimate buckets from a time series, and it saves nothing anyway, since a
   `GROUP BY` computes every group before `LIMIT` discards any.
+- **The API reference is generated, not written.** springdoc derives OpenAPI
+  3.1 from the request mappings and the Bean Validation constraints, so an
+  endpoint or a bound cannot exist without appearing in the document. Only what
+  the code cannot carry is stated by hand: the bearer scheme, the `[from, to)`
+  window, and the response codes each endpoint answers with.
+  *Rejected:* a hand-written endpoint reference — correct the day it is written
+  and silently wrong afterwards, and wrong is worse than absent here: a caller
+  who follows a stale field name sends a request the API rejects.
 - **Two test tiers split by source set.** Unit tests in `src/test/java` run
   with no Docker; integration tests live in a separate `integrationTest` source
   set with Testcontainers on its classpath only.
