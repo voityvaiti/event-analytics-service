@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 
@@ -14,6 +15,9 @@ public record ActiveUsersResponse(
   /**
    * One bucket of the result: the interval start as an RFC 3339 UTC timestamp, and how many
    * distinct users were active in it.
+   *
+   * <p>Named for the API document, for the reason {@code EventCountsResponse.Bucket} gives.
    */
+  @Schema(name = "ActiveUsersBucket")
   public record Bucket(String bucket, long activeUsers) {}
 }
