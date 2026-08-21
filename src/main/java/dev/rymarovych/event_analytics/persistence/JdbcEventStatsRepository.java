@@ -26,10 +26,10 @@ import org.springframework.stereotype.Repository;
  * the requested zone's calendar, independent of the session time zone.
  *
  * <p>Every query is scoped to one tenant and rides the {@code (tenant_name, occurred_at,
- * event_type)} index: tenant equality first, then the {@code occurred_at} range. Both count shapes
- * are answered from the index alone; {@code top-pages} and {@code active-users} still visit the
- * heap, because {@code properties} and {@code user_id} are not in it. What that costs is measured
- * rather than assumed — see the read cells under {@code perf/}.
+ * event_type, user_id)} index: tenant equality first, then the {@code occurred_at} range. Both
+ * count shapes and {@code active-users} are answered from the index alone; {@code top-pages} still
+ * visits the heap, because {@code properties} is not in it. What that costs is measured rather than
+ * assumed — see the read cells under {@code perf/}.
  *
  * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
  * set once per connection rather than per request. A query the database cancels for exceeding it
