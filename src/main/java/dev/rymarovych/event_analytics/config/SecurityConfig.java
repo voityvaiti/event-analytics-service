@@ -24,6 +24,12 @@ import org.springframework.security.web.SecurityFilterChain;
  * the project compares against. Exposure is limited to {@code health,metrics}, and a deployment
  * restricts actuator at the network edge rather than by widening this chain.
  *
+ * <p>The generated API document and Swagger UI are unauthenticated for a reason that is not the one
+ * above: a token cannot be presented before the page that would take it has loaded, so a protected
+ * Swagger UI is readable only by a client that already knows the contract it exists to publish.
+ * What it exposes is that contract and nothing else — no tenant data, and every operation it
+ * describes still needs a token when it is called.
+ *
  * <p>Everything else needs a token. {@code anyRequest().authenticated()} rather than a path rule
  * plus a catch-all deny: one rule fewer, no dependence on which dispatcher types the authorization
  * filter covers, and a future endpoint is closed until someone opens it.
@@ -51,7 +57,13 @@ class SecurityConfig {
       HttpSecurity http, ProblemDetailAuthenticationHandler authenticationHandler)
       throws Exception {
     return http.authorizeHttpRequests(
-            auth -> auth.requestMatchers("/actuator/**").permitAll().anyRequest().authenticated())
+            auth ->
+                auth.requestMatchers("/actuator/**")
+                    .permitAll()
+                    .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                    .permitAll()
+                    .anyRequest()
+                    .authenticated())
         .oauth2ResourceServer(
             oauth2 ->
                 oauth2
