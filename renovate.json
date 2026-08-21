@@ -4,10 +4,11 @@
   "packageRules": [
     {
       "groupName": "Spring Boot",
-      "description": "Land the whole Spring Boot family in one PR.",
+      "description": "Land the whole Spring Boot family in one PR. springdoc belongs to it because its own major line tracks Boot's minor — springdoc 3.1 wants Boot 4.1 — so bumping it alone breaks the build.",
       "matchPackageNames": [
         "/^org\\.springframework\\.boot/",
-        "/^io\\.spring\\.dependency-management/"
+        "/^io\\.spring\\.dependency-management/",
+        "/^org\\.springdoc/"
       ]
     },
     {
