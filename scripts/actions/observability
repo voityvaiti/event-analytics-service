@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Bring up the metrics stack — Prometheus today, and whatever reads it later.
+# Bring up the metrics stack — Prometheus, and the Grafana that reads it.
 #
 # These live in compose.yaml behind an `observability` profile rather than in a
 # compose file of their own, so the single source of truth stays single. The
@@ -13,6 +13,7 @@
 # scripts/actions/start, in either order.
 #
 #   Prometheus  http://localhost:9090
+#   Grafana     http://localhost:3000
 #
 # Pass `down` to stop the stack again, leaving Postgres running.
 
@@ -20,7 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
 if [[ "${1:-}" == "down" ]]; then
-  exec docker compose stop prometheus
+  exec docker compose stop grafana prometheus
 fi
 
 docker compose --profile observability up -d --wait "$@"

@@ -1,0 +1,14 @@
+# The uid is pinned rather than generated. A dashboard checked into this
+# repository has to name its datasource, and a uid Grafana invents at first
+# start would differ per machine — every panel would load as "datasource not
+# found" on the second developer's laptop.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
