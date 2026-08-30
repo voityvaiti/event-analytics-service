@@ -1,17 +1,24 @@
 package dev.rymarovych.event_analytics.web;
 
 import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Arrays;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -28,6 +35,13 @@ class PrometheusScrapeIntegrationTest {
   private static final String TENANT = "web";
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private MeterRegistry meterRegistry;
+  @Autowired private JdbcClient jdbcClient;
+
+  @AfterEach
+  void cleanUp() {
+    jdbcClient.sql("DELETE FROM events").update();
+  }
 
   /**
    * A collector presents no credentials, and the reason actuator is open at all is the same one
@@ -70,6 +84,49 @@ class PrometheusScrapeIntegrationTest {
     scrape()
         .andExpect(content().string(containsString("http_server_requests_seconds_bucket")))
         .andExpect(content().string(containsString("/api/v1/stats/event-counts")));
+  }
+
+  /**
+   * The panel this feeds would otherwise describe the batch path by request rate, which understates
+   * the same load by up to a thousandfold — the run journalled as 1,205 requests/s is 120,523
+   * events/s. Measured as a delta because the registry is shared across every test in this context.
+   */
+  @Test
+  void batchedEventsAreCountedPerEventNotPerRequest() throws Exception {
+    var before = ingestedCount("batch");
+
+    mockMvc
+        .perform(
+            post("/api/v1/events/batch")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(batchOf("scrape_1", "scrape_2", "scrape_3")))
+        .andExpect(status().isAccepted());
+
+    assertThat(ingestedCount("batch") - before).isEqualTo(3.0);
+    scrape().andExpect(content().string(containsString("events_ingested_total")));
+  }
+
+  private double ingestedCount(String path) {
+    return meterRegistry.get("events.ingested").tag("path", path).counter().count();
+  }
+
+  private static String batchOf(String... eventIds) {
+    var events =
+        Arrays.stream(eventIds)
+            .map(
+                id ->
+                    """
+                    {
+                      "event_id": "%s",
+                      "user_id": "user_42",
+                      "event_type": "page_view",
+                      "timestamp": "2026-05-24T10:15:30Z"
+                    }
+                    """
+                        .formatted(id))
+            .toList();
+    return "{\"events\": [" + String.join(",", events) + "]}";
   }
 
   private ResultActions scrape() throws Exception {
