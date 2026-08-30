@@ -15,5 +15,32 @@ services:
       timeout: 3s
       retries: 5
 
+  # Not started by `docker compose up`, and not by bootRun either: an
+  # `observability` profile keeps them out of the default set, so the one path
+  # every measurement starts through — scripts/actions/dependencies — brings up
+  # Postgres and nothing else, exactly as before. scripts/actions/observability
+  # names the profile when the stack is actually wanted.
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    profiles: [observability]
+    # Loopback only. Nothing outside this machine has a reason to read the
+    # metrics of a development instance, and the scrape itself never uses the
+    # published port — it leaves the container the other way, to the host.
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # The application runs on the host, so the scrape has to leave the compose
+    # network to reach it. On Linux that gateway has no name until this maps one.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   postgres-data:
+  prometheus-data:

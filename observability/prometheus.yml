@@ -1,0 +1,16 @@
+# Scrape configuration for the local development stack. The application runs on
+# the host (bootRun, or the bootJar the perf suite measures), not in a container,
+# so the target is reached through the host gateway compose.yaml maps in.
+
+global:
+  # Deliberately far below the 15s default: the k6 cells this has to make
+  # legible run for 30s, which a default interval would reduce to two points.
+  # One scrape costs ~10ms of a ~55KB endpoint, so the rig barely feels it.
+  scrape_interval: 2s
+  scrape_timeout: 1s
+
+scrape_configs:
+  - job_name: event-analytics
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]

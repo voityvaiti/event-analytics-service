@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Bring up the metrics stack — Prometheus today, and whatever reads it later.
+#
+# These live in compose.yaml behind an `observability` profile rather than in a
+# compose file of their own, so the single source of truth stays single. The
+# profile is what keeps them out of scripts/actions/dependencies, which every
+# measured run starts through: extra containers on the rig would move the
+# numbers the perf journal compares against.
+#
+# The application is NOT started here — it runs on the host, and Prometheus
+# reaches it through the host gateway. Start it separately with
+# scripts/actions/start, in either order.
+#
+#   Prometheus  http://localhost:9090
+#
+# Pass `down` to stop the stack again, leaving Postgres running.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+
+if [[ "${1:-}" == "down" ]]; then
+  exec docker compose stop prometheus
+fi
+
+docker compose --profile observability up -d --wait "$@"
