@@ -93,7 +93,8 @@ needs one. Paste a minted token into Swagger UI's **Authorize** to call them.
 Every `/api/v1` endpoint needs `Authorization: Bearer <token>`. Tokens are
 verified with an RSA **public** key, so the service can check a token but never
 mint one — issuing lives outside it. `/actuator` is left open, because the perf
-suite reads the live connection-pool size from it to stamp every journal row.
+suite reads the live connection-pool size from it to stamp every journal row;
+`/actuator/prometheus` serves the metrics scrape on the same terms.
 
 Mint a token for local use:
 

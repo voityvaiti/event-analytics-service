@@ -479,7 +479,8 @@ case and does nothing for the bad one.
 - `/actuator` is unauthenticated. The perf harness reads the live pool size from
   it to stamp every journal row and gates its runs on health, and CI does the
   same, so requiring a token there would break every measurement the project
-  compares against. Exposure is limited to `health,metrics`; a deployment would
+  compares against. Exposure is limited to `health,metrics,prometheus`, the last
+  of which a metrics collector reads on the same terms; a deployment would
   restrict it at the network edge, which is where that belongs anyway.
 - Single node, single database. There is no horizontal read scaling and no
   replica.
