@@ -171,6 +171,29 @@ from a pinned container, so nothing beyond Docker and a running app is needed. A
 via the `perf` label. See [`perf/README.md`](./perf/README.md) for the details
 and how to add a test.
 
+## Observability
+
+Metrics are exposed as a Prometheus scrape at `/actuator/prometheus`. A local
+stack reads it:
+
+```bash
+scripts/actions/observability        # Prometheus + Grafana, up
+scripts/actions/observability down   # stop them, leaving Postgres running
+```
+
+Grafana opens on <http://localhost:3000> with _Event Analytics — overview_
+already provisioned: ingest rate as both events/s and requests/s, p95/p99, error
+rate, and pool saturation including the depth of the queue waiting for a
+connection. The scrape interval is 2s rather than the usual 15s, because the
+load cells it has to make legible run for 30s.
+
+Two things this deliberately does not do. It does not start the application —
+that runs on the host, and Prometheus reaches it through the host gateway, so
+start it separately in either order. And it does not join the default compose
+set: an `observability` profile keeps both containers out of
+`scripts/actions/dependencies`, the one path every measured run starts through.
+Both publish to loopback only.
+
 ## Known limitations / what breaks at 10x
 
 The read path saturates before the write path does: steady-state ingest holds
