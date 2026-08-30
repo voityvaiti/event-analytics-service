@@ -21,8 +21,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>{@code /actuator/**} stays unauthenticated. The perf suite reads the live pool size from
  * {@code /actuator/metrics/hikaricp.connections.max} to stamp every journal row and gates on {@code
  * /actuator/health}, and CI does the same; requiring a token there would break every measurement
- * the project compares against. Exposure is limited to {@code health,metrics}, and a deployment
- * restricts actuator at the network edge rather than by widening this chain.
+ * the project compares against. Exposure is limited to {@code health,metrics,prometheus} — the
+ * scrape a metrics collector reads is open for the same reason — and a deployment restricts
+ * actuator at the network edge rather than by widening this chain.
  *
  * <p>The generated API document and Swagger UI are unauthenticated for a reason that is not the one
  * above: a token cannot be presented before the page that would take it has loaded, so a protected
