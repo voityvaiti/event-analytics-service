@@ -2,6 +2,8 @@ package dev.rymarovych.event_analytics.service;
 
 import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.persistence.EventRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,14 +19,34 @@ import org.springframework.transaction.annotation.Transactional;
 class SynchronousEventIngestionService implements EventIngestionService {
 
   private final EventRepository repository;
+  private final Counter singleEventsIngested;
+  private final Counter batchedEventsIngested;
 
-  SynchronousEventIngestionService(EventRepository repository) {
+  SynchronousEventIngestionService(EventRepository repository, MeterRegistry meterRegistry) {
     this.repository = repository;
+    this.singleEventsIngested = ingestedCounter(meterRegistry, "single");
+    this.batchedEventsIngested = ingestedCounter(meterRegistry, "batch");
+  }
+
+  /**
+   * Counted per event rather than per request, because on the batch path the two differ by up to a
+   * thousand — a request rate would describe the same load as 1,205/s that the journal records as
+   * 120,523 events/s. Split by path for the same reason the perf suite measures them apart.
+   *
+   * <p>Incremented after the write and before the commit, so a failure to commit overcounts. The
+   * error rate that failure also produces sits on the same dashboard.
+   */
+  private static Counter ingestedCounter(MeterRegistry meterRegistry, String path) {
+    return Counter.builder("events.ingested")
+        .description("Events accepted for storage")
+        .tag("path", path)
+        .register(meterRegistry);
   }
 
   @Override
   public void ingest(NewEvent event) {
     repository.save(event);
+    singleEventsIngested.increment();
   }
 
   /**
@@ -44,5 +66,6 @@ class SynchronousEventIngestionService implements EventIngestionService {
   @Transactional
   public void ingestBatch(List<NewEvent> events) {
     repository.saveAll(events);
+    batchedEventsIngested.increment(events.size());
   }
 }
