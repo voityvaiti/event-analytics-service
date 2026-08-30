@@ -34,4 +34,18 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,metrics
+        include: health,metrics,prometheus
+  prometheus:
+    metrics:
+      export:
+        # Stated rather than left to the default: on Boot 4.0.6 the exporter's
+        # @ConditionalOnEnabledMetricsExport reads the default as false and the
+        # endpoint 404s, which the configuration metadata does not predict.
+        enabled: true
+  metrics:
+    distribution:
+      # A Prometheus quantile is computed from bucket counts, and Micrometer
+      # publishes none by default — without this the scrape carries a count, a
+      # sum and a max, from which no p95 or p99 can be recovered afterwards.
+      percentiles-histogram:
+        http.server.requests: true
