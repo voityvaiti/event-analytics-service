@@ -1,0 +1,14 @@
+# Dashboards come from files under version control, and Grafana is told not to
+# accept edits made in its own UI: a panel changed in the browser and nowhere
+# else is lost on the next `docker compose down`, and worse, disagrees with what
+# the next developer sees.
+
+apiVersion: 1
+
+providers:
+  - name: event-analytics
+    type: file
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards
