@@ -41,6 +41,31 @@ services:
       timeout: 3s
       retries: 5
 
+  grafana:
+    image: grafana/grafana:13.2.0
+    profiles: [observability]
+    ports:
+      - "127.0.0.1:3000:3000"
+    # Anonymous and admin, which is defensible only because of the line above:
+    # a login wall on a loopback-bound development dashboard buys nothing and
+    # costs a password prompt on every restart.
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres-data:
   prometheus-data:
+  grafana-data:
