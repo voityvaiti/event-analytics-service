@@ -2,7 +2,6 @@ package dev.rymarovych.event_analytics.web;
 
 import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -121,9 +120,13 @@ class EventBatchIngestionIntegrationTest {
    *
    * <p>It passes with the service's {@code @Transactional} removed as well, which is recorded
    * there: the batch is already atomic today, and the annotation says so rather than making it so.
+   *
+   * <p>The failure used to escape as a thrown exception, which was how this test detected it. It is
+   * answered as a problem body now, because a failure nothing claims is answered by the advice
+   * rather than by the container; what this test is about — nothing written — is unchanged.
    */
   @Test
-  void midBatchDatabaseFailureLeavesNothingWritten() {
+  void midBatchDatabaseFailureLeavesNothingWritten() throws Exception {
     var withNulByte =
         """
         {
@@ -134,11 +137,10 @@ class EventBatchIngestionIntegrationTest {
         }
         """;
 
-    var thrown =
-        catchThrowable(
-            () -> postBatch(batchOf(eventJson("evt_1"), withNulByte, eventJson("evt_3"))));
+    postBatch(batchOf(eventJson("evt_1"), withNulByte, eventJson("evt_3")))
+        .andExpect(status().isInternalServerError())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
 
-    assertThat(thrown).as("Postgres must refuse a NUL byte in a TEXT column").isNotNull();
     assertThat(countAll()).isZero();
   }
 
