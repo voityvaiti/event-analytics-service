@@ -194,6 +194,26 @@ set: an `observability` profile keeps both containers out of
 `scripts/actions/dependencies`, the one path every measured run starts through.
 Both publish to loopback only.
 
+Every response carries an `X-Request-Id`, and every line the service logs while
+handling that request carries the same value. Send one in and it is echoed back,
+provided it is 8 to 64 characters of `[A-Za-z0-9_-]` — the value is written into
+log lines, so a newline in it would forge one; anything else is replaced by a
+minted id rather than trimmed.
+
+The log is failures only: a rejected token, a malformed request, a query the
+timeout cancelled, a failure nothing claimed. One line each, and a 5xx keeps its
+stack trace. A request that succeeds logs nothing at all, deliberately — its
+rate and latency are on the dashboard above, and a line per request is a cost on
+a path measured in the tens of thousands of events per second.
+
+Those lines are for a person by default. A deployment reading them with a
+collector activates the `json-logging` profile, which renders each one as an ECS
+document with the request id as a member:
+
+```bash
+SPRING_PROFILES_ACTIVE=json-logging scripts/actions/start
+```
+
 ## Known limitations / what breaks at 10x
 
 The read path saturates before the write path does: steady-state ingest holds
