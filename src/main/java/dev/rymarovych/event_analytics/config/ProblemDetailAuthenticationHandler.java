@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -27,9 +29,19 @@ import tools.jackson.databind.ObjectMapper;
  * or wrongly-signed one. All four are the same instruction to the client, and naming which check
  * failed tells an unauthenticated caller more about the token format than it tells a legitimate
  * one.
+ *
+ * <p>The log line under each rejection is the deliberate opposite: it names the check that failed,
+ * because the operator reading it is not the caller. The exception's own message is left out of it
+ * — the type already says which check, and a decoder's message can quote the token it choked on.
+ * Without it a rejected request leaves no trace at all — these failures never reach {@code
+ * ApiExceptionHandler}, which logs every other one — and a caller reporting that its token stopped
+ * working could be answered only by guesswork.
  */
 @Component
 class ProblemDetailAuthenticationHandler implements AuthenticationEntryPoint, AccessDeniedHandler {
+
+  private static final Logger log =
+      LoggerFactory.getLogger(ProblemDetailAuthenticationHandler.class);
 
   private final ObjectMapper objectMapper;
 
@@ -46,6 +58,7 @@ class ProblemDetailAuthenticationHandler implements AuthenticationEntryPoint, Ac
       HttpServletRequest request, HttpServletResponse response, AuthenticationException exception)
       throws IOException {
     response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+    logRejection(request, HttpStatus.UNAUTHORIZED, exception);
     write(
         request,
         response,
@@ -57,11 +70,24 @@ class ProblemDetailAuthenticationHandler implements AuthenticationEntryPoint, Ac
   public void handle(
       HttpServletRequest request, HttpServletResponse response, AccessDeniedException exception)
       throws IOException {
+    logRejection(request, HttpStatus.FORBIDDEN, exception);
     write(
         request,
         response,
         HttpStatus.FORBIDDEN,
         "The presented token is not permitted to access this resource.");
+  }
+
+  private static void logRejection(
+      HttpServletRequest request, HttpStatus status, RuntimeException exception) {
+    var principal = request.getUserPrincipal();
+    log.warn(
+        "{} {} {} tenant={} {}",
+        status.value(),
+        request.getMethod(),
+        request.getRequestURI(),
+        principal == null ? "-" : principal.getName(),
+        exception.getClass().getSimpleName());
   }
 
   private void write(
