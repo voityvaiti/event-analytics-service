@@ -32,6 +32,10 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * problem-detail handler backs off once this advice is present, so no {@code
  * spring.mvc.problemdetails} property is needed.
  *
+ * <p>Nothing escapes it: a handler of last resort answers whatever no typed handler claims, so a
+ * failure is answered inside the servlet rather than by the container after the request's logging
+ * context is gone.
+ *
  * <p>Every failure that lands here is logged once, and the framework's own line for the same
  * exception is silenced in {@code application.yaml} so that one failed request means one entry. A
  * 5xx is logged with the exception, because the fault is this service's and the stack trace is the
@@ -80,6 +84,30 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatus.INTERNAL_SERVER_ERROR,
             "The reporting time zone configured for this tenant, '%s', is not a time zone this service can use."
                 .formatted(ex.zone()));
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR, request);
+  }
+
+  /**
+   * Answers a failure no other handler claims, which is the only way it can be answered while the
+   * request is still inside the servlet. Left to escape, it is logged by the container after this
+   * request's logging context has been cleared and then re-enters through an error dispatch: three
+   * lines, none of them carrying the request id, and the only one naming a path naming {@code
+   * /error}.
+   *
+   * <p>The detail says nothing about the failure. An exception message is the string most likely to
+   * carry internals, the caller can act on none of it, and the line logged beside this already
+   * names the type and keeps the stack trace.
+   *
+   * <p>Spring resolves the most specific handler, so every typed one above still wins. Method
+   * security, if it is ever added, has to be let past this: an {@code AccessDeniedException} caught
+   * here would be answered 500 where the security chain would have answered 403.
+   */
+  @ExceptionHandler(Exception.class)
+  @Nullable ResponseEntity<Object> handleUnclaimedFailure(Exception ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.INTERNAL_SERVER_ERROR, "The service failed to handle this request.");
     return handleExceptionInternal(
         ex, body, new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR, request);
   }
