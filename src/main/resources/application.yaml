@@ -65,3 +65,19 @@ logging:
     # trailing space is load-bearing; the quotes are what keep Spotless from
     # trimming it away.
     correlation: "%correlationId{requestId(36)} "
+
+---
+spring:
+  config:
+    activate:
+      on-profile: json-logging
+
+logging:
+  structured:
+    format:
+      # Off by default: a JSON console is for a collector, and a developer
+      # reading the same lines by eye is not one. A deployment activates this
+      # profile; there is no file counterpart because a deployment reads
+      # stdout. The logging context — the request id among it — becomes
+      # top-level members of the document without further configuration.
+      console: ecs
