@@ -5,7 +5,10 @@ import static java.util.Objects.requireNonNullElse;
 import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
 import java.net.URI;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -29,12 +32,22 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * problem-detail handler backs off once this advice is present, so no {@code
  * spring.mvc.problemdetails} property is needed.
  *
+ * <p>Every failure that lands here is logged once, and the framework's own line for the same
+ * exception is silenced in {@code application.yaml} so that one failed request means one entry. A
+ * 5xx is logged with the exception, because the fault is this service's and the stack trace is the
+ * only place its location is recorded; a 4xx is logged without one, because a caller's mistake is
+ * not a defect and its message already says what was wrong.
+ *
  * <p>Bean-validation failures carry an {@code errors} member listing the offending fields. The
  * field name is the Java property name (e.g. {@code eventId}), not the JSON name the client sent
  * (e.g. {@code event_id}); JSON-name fidelity is intentionally out of scope for now.
  */
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+  private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+  private static final Pattern CONTROL_CHARACTERS = Pattern.compile("\\p{Cntrl}");
 
   /**
    * A query cancelled by the read path's statement timeout is a 503, not a 500: the request was
@@ -122,7 +135,38 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     if (body instanceof ProblemDetail problem && request instanceof ServletWebRequest servlet) {
       problem.setInstance(URI.create(servlet.getRequest().getRequestURI()));
     }
+    logFailure(ex, statusCode, request);
     return super.handleExceptionInternal(ex, body, headers, statusCode, request);
+  }
+
+  private static void logFailure(Exception ex, HttpStatusCode statusCode, WebRequest request) {
+    var principal = request.getUserPrincipal();
+    var tenant = principal == null ? "-" : principal.getName();
+    var target =
+        request instanceof ServletWebRequest servlet
+            ? servlet.getRequest().getMethod() + " " + servlet.getRequest().getRequestURI()
+            : request.getDescription(false);
+    if (statusCode.is5xxServerError()) {
+      log.error("{} {} tenant={}", statusCode.value(), target, tenant, ex);
+    } else {
+      log.warn(
+          "{} {} tenant={} {}: {}",
+          statusCode.value(),
+          target,
+          tenant,
+          ex.getClass().getSimpleName(),
+          singleLine(ex.getMessage()));
+    }
+  }
+
+  /**
+   * A 4xx message frequently quotes the request that caused it — a parse failure names the value it
+   * could not read — so it is caller-controlled text on its way into a log line. A newline in it
+   * would end the line and start one the caller wrote, which is the same forgery the request id is
+   * checked against, arriving by a different door.
+   */
+  private static String singleLine(@Nullable String message) {
+    return message == null ? "" : CONTROL_CHARACTERS.matcher(message).replaceAll(" ");
   }
 
   /** One field-level constraint violation surfaced under the problem's {@code errors} member. */

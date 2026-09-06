@@ -49,3 +49,19 @@ management:
       # sum and a max, from which no p95 or p99 can be recovered afterwards.
       percentiles-histogram:
         http.server.requests: true
+
+logging:
+  level:
+    # Silenced because ApiExceptionHandler now logs the same failure with the
+    # request it belongs to. Left alone, every handled exception costs two
+    # lines, and the framework's names neither the request nor the tenant.
+    org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver: error
+  pattern:
+    # Boot's default console pattern already reserves a slot for this, so the
+    # request id joins every line without restating the rest of the pattern.
+    # Its own converter rather than a bare %X: a line logged outside a request
+    # — startup, migrations, the pool — then leaves the column blank instead of
+    # printing an empty pair of brackets, and every line stays aligned. The
+    # trailing space is load-bearing; the quotes are what keep Spotless from
+    # trimming it away.
+    correlation: "%correlationId{requestId(36)} "
