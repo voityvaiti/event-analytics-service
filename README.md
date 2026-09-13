@@ -55,8 +55,8 @@ Ten-minute tour, in order:
 ## Status
 
 Early development. **Stage 0 (project setup) is complete** — formatting, static
-analysis, coverage, CI, and dependency automation are wired. **Stage 1 (MVP) is
-in progress:** event ingestion is implemented — the synchronous write path
+analysis, coverage, CI, and dependency automation are wired. **Stage 1 (the MVP)
+is complete:** event ingestion is implemented — the synchronous write path
 (`POST /api/v1/events` → PostgreSQL, idempotent on a client-supplied `event_id`)
 on a Flyway-managed schema, with its write throughput tracked over time (see
 [Performance](#performance)). Batch ingestion (`POST /api/v1/events/batch`, up to
@@ -74,6 +74,15 @@ scoped to the caller's own tenant. **The API documents itself** — OpenAPI 3.1 
 **Time buckets follow the tenant's own
 calendar**: a `tenants` settings table holds a zone per tenant, absence means
 UTC, and the two bucketed query shapes report the zone they were computed in.
+
+**Stage 2 (observability) is complete.** Metrics are scraped, a dashboard is
+provisioned over them, and every request log line carries a correlation id — see
+[Observability](#observability). A load run is findable there rather than only in
+its journal: each journal row stamps the window it was measured in, and picking
+that run on the dashboard sets the range to it, where the panels agree with the
+row to 0.2%. What carrying all of it costs was measured rather than assumed, and
+came out below what this rig can resolve — the experiment, its conditions and its
+limits are in [`perf/observability-overhead.md`](./perf/observability-overhead.md).
 
 ## API reference
 
