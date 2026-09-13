@@ -46,6 +46,7 @@ perf_write_spike_cell() {
   local start_rows
   count_events || return 1
   start_rows=$CORPUS_ROWS
+  ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
 
   rm -f "$summary"
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
@@ -63,7 +64,7 @@ perf_write_spike_cell() {
   schema_version=$(read_schema) || return 1
 
   local out
-  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
+  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" "$baseline_max_p95_ms" <<'PY'
 import json, sys

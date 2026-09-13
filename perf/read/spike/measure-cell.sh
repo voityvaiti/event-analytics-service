@@ -32,6 +32,7 @@ perf_read_spike_cell() {
   local start_rows scans_before scans_after
   count_events || return 1
   start_rows=$CORPUS_ROWS
+  ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
   scans_before=$(read_scan_counters) || return 1
 
   # The query and the rate are handed to k6 explicitly rather than left in the
@@ -56,7 +57,7 @@ perf_read_spike_cell() {
   schema_version=$(read_schema) || return 1
 
   local out
-  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
+  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$schema_version" "$start_rows" "$scans_before" "$scans_after" <<'PY'
 import json, sys

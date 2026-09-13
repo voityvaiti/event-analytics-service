@@ -4,9 +4,9 @@
 # cell's measure function (perf/<path>/<workload>/[<endpoint>/]measure.sh) and
 # calls it. It owns the parts that are identical across tests — bringing up
 # backing services, checking the app and the k6 image, resetting the table, and
-# reading the rig/config stamps (pool, schema, CPU) that make a number mean
-# something — so a new test file is only the k6 scenario plus how to summarise
-# it, never this plumbing.
+# reading the stamps that make a number mean something — the pool, the schema, the
+# CPU, and the commit the running jar was built from — so a new test file is only
+# the k6 scenario plus how to summarise it, never this plumbing.
 #
 # Contract for a sourcing script:
 #   - it has already cd'd to the repo root;
@@ -64,6 +64,10 @@ perf_bootstrap() {
 
   require_optimized_jvm || return 1
 
+  # Read here as well as per cell, so an app whose artifact cannot be proved fails
+  # before the first measurement instead of after it.
+  ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+
   # One token per row source, minted once for the whole run and passed to k6 by
   # each cell as `-e TOKEN=...`, the same way a cell passes any other knob. A cell
   # that forgets it is answered 401 on every request, which the summary reports
@@ -72,6 +76,16 @@ perf_bootstrap() {
   WRITE_TOKEN=$(mint_token "$WRITE_BATCH_SOURCE") || return 1
 
   seed_corpus
+}
+
+# The process serving BASE_URL, for the checks that read the running app itself
+# rather than trusting what the shell around it happens to say. Empty when the
+# listening port cannot be traced to a process — which is every remote app, so a
+# caller decides on its own whether that is a note or a failure.
+app_pid() {
+  local port=${BASE_URL##*:}
+  port=${port%%/*}
+  ss -ltnp 2>/dev/null | grep -F ":$port " | grep -oP 'pid=\K[0-9]+' | head -1
 }
 
 # Refuse to measure an app whose JIT is capped at C1. bootRun passes
@@ -88,10 +102,8 @@ require_optimized_jvm() {
       ;;
   esac
 
-  local port pid
-  port=${BASE_URL##*:}
-  port=${port%%/*}
-  pid=$(ss -ltnp 2>/dev/null | grep -F ":$port " | grep -oP 'pid=\K[0-9]+' | head -1)
+  local pid
+  pid=$(app_pid) || pid=""
 
   if [ -z "$pid" ] || [ ! -r "/proc/$pid/cmdline" ]; then
     echo "Note: could not read the app's JVM arguments — make sure it is not bootRun." >&2
@@ -108,6 +120,108 @@ Start the app with: scripts/actions/perf/app
 MESSAGE
     return 1
   fi
+}
+
+# When the process serving BASE_URL started, in epoch seconds, for the checks that
+# have to tell what is running apart from what is on disk beside it.
+#
+# Read from the kernel as the mtime of /proc/<pid>, which is when the process was
+# exec'd. Deriving it from `ps -o etimes=` instead cost a whole launch: elapsed
+# seconds and `date +%s` are both whole, and their difference lands a second
+# either side of the real start — a second early is enough to make the stamp
+# written immediately before `exec java` look newer than the process it describes,
+# which failed the ordinary launch path rather than the one worth catching.
+process_started_at() {
+  local started
+  started=$(stat -c %Y "/proc/$1" 2>/dev/null)
+
+  if [ -z "$started" ]; then
+    echo "Could not read when the process serving $BASE_URL started." >&2
+    return 1
+  fi
+
+  printf '%s' "$started"
+}
+
+# The commit that produced the jar the app is actually running, read from the
+# stamp scripts/actions/perf/app writes beside that jar at build time. `git
+# rev-parse HEAD` cannot answer this: the jar was built at some earlier moment,
+# and a branch switched or a file edited since leaves every row naming a commit
+# that did not produce its number — with nothing in the row to show it.
+#
+# Read again for every cell rather than once for a pass, and left in
+# ARTIFACT_COMMIT the way count_events leaves CORPUS_ROWS. A pass runs for hours;
+# an app restarted from a different jar between two of its cells would otherwise
+# have every row after the restart stamping the SHA the first cell read. A cell
+# asks before its measured run rather than beside the stamps it reads after one,
+# so an app that cannot be traced fails the cell before it spends a measurement.
+#
+# Nothing is inferred. A local app whose jar cannot be traced back to a stamp
+# fails the run the way the bootRun check does, because a SHA that cannot be
+# proved is the exact defect this stamp exists to remove. A stamp newer than the
+# process it is read for fails the same way: the launcher writes it before exec,
+# which is the only moment it can, so a launch that died on an already-taken port
+# leaves a stamp beside the jar naming a build that never took over from the app
+# still serving. A remote app, which cannot be inspected at all, stamps "unknown"
+# — still not a claim about an artifact, just an honest absence of one.
+ARTIFACT_COMMIT=""
+read_artifact_commit() {
+  case "$BASE_URL" in
+    *localhost*|*127.0.0.1*) ;;
+    *)
+      echo "Note: cannot read the build stamp of the app at $BASE_URL — rows say commit 'unknown'." >&2
+      echo unknown
+      return 0
+      ;;
+  esac
+
+  local pid="" jar="" stamp=""
+  pid=$(app_pid) || pid=""
+  if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
+    jar=$(tr '\0' '\n' < "/proc/$pid/cmdline" \
+      | awk 'after_jar { print; exit } $0 == "-jar" { after_jar = 1 }')
+  fi
+
+  # The launcher passes a repo-relative path, so the stamp is found next to the
+  # jar the process opened rather than next to a same-named one under our cwd.
+  case "$jar" in
+    '' | /*) ;;
+    *) jar="$(readlink -f "/proc/$pid/cwd")/$jar" ;;
+  esac
+
+  if [ -n "$jar" ] && [ -r "$jar.commit" ]; then
+    stamp=$(tr -d '[:space:]' < "$jar.commit")
+  fi
+
+  if [ -z "$stamp" ]; then
+    cat >&2 <<'MESSAGE'
+Could not tell which commit the running app was built from: the process it serves
+from was not launched with a jar carrying a build stamp beside it. Every journal
+row would then name whatever this checkout says, which is not what produced the
+number.
+
+Start the app with: scripts/actions/perf/app
+MESSAGE
+    return 1
+  fi
+
+  local process_started
+  process_started=$(process_started_at "$pid") || return 1
+
+  if [ "$(stat -c %Y "$jar")" -gt "$process_started" ] \
+    || [ "$(stat -c %Y "$jar.commit")" -gt "$process_started" ]; then
+    cat >&2 <<'MESSAGE'
+The jar the app is serving from, or the commit stamped beside it, was written
+after that app started — so the stamp describes a build the running process never
+loaded. The usual cause is a second scripts/actions/perf/app: it rebuilt and
+stamped the jar, then died on the port the first one still holds.
+
+Restart the app with: scripts/actions/perf/app
+MESSAGE
+    return 1
+  fi
+
+  printf '%s\n' "$stamp"
 }
 
 # Sign a bearer token asserting one tenant, which is what the app now reads a row's
