@@ -277,7 +277,7 @@
       "id": 10,
       "type": "stat",
       "title": "Events/s",
-      "description": "Both ingest paths, counted per event rather than per request, averaged over the whole window shown.",
+      "description": "Both ingest paths, counted per event rather than per request, averaged over the whole window shown. Events accepted rather than rows written \u2014 a duplicate the unique constraint drops counts here too. The Ingest rate \u2014 events/s panel below carries the detail.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -550,7 +550,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Ingest rate \u2014 events/s",
-      "description": "Counted per event, so the batch path reads at its real scale rather than at its request rate.",
+      "description": "Counted per event rather than per request, so the batch path reads at its real scale rather than at its request rate. Events accepted, though, not rows written: both paths insert with ON CONFLICT (event_id) DO NOTHING and neither reads the affected-row count, so a re-delivered event the unique constraint drops is counted here like any other and a replayed run reads as throughput. The paths also differ on when they count. The single path runs in no transaction, so its counter moves after the insert has already committed; the batch path counts the whole request inside its transaction, before the commit, so a batch that fails to commit is counted anyway.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
