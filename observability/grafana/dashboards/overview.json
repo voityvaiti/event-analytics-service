@@ -20,7 +20,27 @@
           "type": "tags",
           "matchAny": false,
           "tags": [
-            "perf-run"
+            "perf-run",
+            "scrape:on"
+          ],
+          "limit": 1000
+        }
+      },
+      {
+        "name": "Perf runs measured with no scraper",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": false,
+        "hide": false,
+        "iconColor": "#8e8e8e",
+        "target": {
+          "type": "tags",
+          "matchAny": false,
+          "tags": [
+            "perf-run",
+            "scrape:off"
           ],
           "limit": 1000
         }
@@ -355,7 +375,7 @@
       "id": 6,
       "type": "annolist",
       "title": "Perf runs",
-      "description": "Every measured window the perf journals hold, newest first. Pick one and the dashboard moves to it. Not read from Prometheus — these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
+      "description": "Runs measured while this stack was scraping, newest first. Pick one and the dashboard moves to it. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus — these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
       "datasource": {
         "type": "datasource",
         "uid": "grafana"
@@ -370,7 +390,8 @@
         "onlyFromThisDashboard": false,
         "onlyInTimeRange": false,
         "tags": [
-          "perf-run"
+          "perf-run",
+          "scrape:on"
         ],
         "limit": 1000,
         "showTags": true,
