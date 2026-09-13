@@ -846,8 +846,8 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Scrape",
-      "description": "Whether Prometheus got an answer, and what it cost to give one. up is 1 when the target replied to a scrape, 0 when it refused or timed out, and absent when Prometheus itself was not running \u2014 which is how an empty panel elsewhere is told apart from a flat one. Scrape duration is the same target answered, in seconds, on the right axis.",
+      "title": "Scrape duration",
+      "description": "What it cost the application to answer the scrape, for scrapes it actually answered. Masked on up == 1 deliberately: Prometheus records a duration for a failed scrape too, so an unmasked line keeps ticking over while the service is dead and reads livelier than a healthy idle one. A gap here is no successful scrape \u2014 the word for the current state is on the Right now row.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -865,79 +865,28 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "up{job=\"event-analytics\"}",
-          "legendFormat": "up",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "scrape_duration_seconds{job=\"event-analytics\"}",
+          "expr": "scrape_duration_seconds{job=\"event-analytics\"} and on(instance, job) up{job=\"event-analytics\"} == 1",
           "legendFormat": "scrape duration",
           "range": true,
-          "refId": "B"
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "s",
+          "decimals": 3,
           "min": 0,
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "max",
-                "value": 1
-              },
-              {
-                "id": "decimals",
-                "value": 0
-              },
-              {
-                "id": "custom.lineInterpolation",
-                "value": "stepAfter"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 20
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "decimals",
-                "value": 3
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "legend": {
