@@ -5,6 +5,28 @@
   "tags": [
     "event-analytics"
   ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Perf runs",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "semi-dark-purple",
+        "target": {
+          "type": "tags",
+          "matchAny": false,
+          "tags": [
+            "perf-run"
+          ],
+          "limit": 1000
+        }
+      }
+    ]
+  },
   "timezone": "browser",
   "schemaVersion": 39,
   "editable": false,
@@ -327,6 +349,36 @@
           "mode": "multi",
           "sort": "desc"
         }
+      }
+    },
+    {
+      "id": 6,
+      "type": "annolist",
+      "title": "Perf runs",
+      "description": "Every measured window the perf journals hold, newest first. Pick one and the dashboard moves to it. Not read from Prometheus — these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "grafana"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "options": {
+        "onlyFromThisDashboard": false,
+        "onlyInTimeRange": false,
+        "tags": [
+          "perf-run"
+        ],
+        "limit": 1000,
+        "showTags": true,
+        "showTime": true,
+        "showUser": false,
+        "navigateToPanel": false,
+        "navigateBefore": "1m",
+        "navigateAfter": "1m"
       }
     }
   ]
