@@ -68,8 +68,9 @@ push the server harder rather than the client.
 Each cell owns its own series, never merged with a load journal or with another
 cell's — a different `scenario`, measuring a different thing. Every row
 self-stamps the rig (CPU, cores) and the config that makes the numbers mean
-something (pool, schema, rates, `baseline_max_p95_ms`, and the `start_rows` the
-surge hit), because an absolute number is only comparable within a fixed rig. It
+something (pool, schema, rates, `baseline_max_p95_ms`, the `start_rows` the surge
+hit, and the `request_metrics`/`scrape` pair), because an absolute number is only
+comparable within a fixed rig. It
 answers "is the app's resilience to a surge drifting over time?" — e.g. a new
 index drops capacity, so the same surge now sheds more or recovers slower.
 

@@ -5,8 +5,9 @@
 # calls it. It owns the parts that are identical across tests — bringing up
 # backing services, checking the app and the k6 image, resetting the table, and
 # reading the stamps that make a number mean something — the pool, the schema, the
-# CPU, and the commit the running jar was built from — so a new test file is only
-# the k6 scenario plus how to summarise it, never this plumbing.
+# CPU, the commit the running jar was built from, and whether its meters and a
+# scrape were on — so a new test file is only the k6 scenario plus how to
+# summarise it, never this plumbing.
 #
 # Contract for a sourcing script:
 #   - it has already cd'd to the repo root;
@@ -21,6 +22,10 @@ K6_IMAGE=${K6_IMAGE:-grafana/k6:0.50.0}
 # The seeder is JavaScript so it can share the k6 event generator; like k6, node
 # is not installed on the host but pulled as a pinned image.
 NODE_IMAGE=${NODE_IMAGE:-node:22-alpine}
+
+# Where the metrics stack listens, when one is up at all. Only ever asked whether
+# it was scraping during a run (read_scrape); nothing here needs it to be there.
+PROMETHEUS_URL=${PROMETHEUS_URL:-http://localhost:9090}
 
 # The corpus every test measures against. Exported so the seeder reads the same
 # definition the read scenarios will query against.
@@ -410,6 +415,117 @@ read_schema() {
     echo "Could not read the schema version from flyway_schema_history." >&2
     return 1
   }
+}
+
+# Whether the app was publishing request metrics while it ran, asked of the app
+# for the same reason read_pool asks the actuator and read_schema asks the
+# database: an arm that denies `management.metrics.enable.http` produces a row
+# identical to every other row in these journals, and a label passed in on the
+# command line is a label an operator forgets to change.
+#
+# The single-meter endpoint rather than a grep over /actuator/prometheus: a deny
+# filter takes the meter out of both, but fetching the scrape endpoint IS a
+# scrape, so that probe would contaminate the one below.
+#
+# The status code is read rather than curl's verdict, because only 404 means the
+# meter is gone. A refused connection or a 503 fails the same way under `-f` and
+# would have a row claim the meters were denied in an arm where they were not —
+# the same unproven stamp the build commit exists to keep out of a journal.
+read_request_metrics() {
+  local status
+  status=$(curl -s -m 5 -o /dev/null -w '%{http_code}' \
+    "$BASE_URL/actuator/metrics/http.server.requests") || status=000
+
+  case "$status" in
+    200) echo on ;;
+    404) echo off ;;
+    *)
+      echo "Could not tell whether the app was publishing request metrics: $BASE_URL answered '$status'." >&2
+      return 1
+      ;;
+  esac
+}
+
+# The window a run was measured in, as "<started_at> <finished_at>", read from the
+# summary k6 wrote for it. The pair a cell hands to read_scrape is the pair its row
+# carries, so the stamp cannot end up describing a different window than the
+# figures beside it.
+read_run_window() {
+  python3 -c '
+import json, sys
+
+with open(sys.argv[1]) as summary_file:
+    summary = json.load(summary_file)
+
+print(summary["started_at"], summary["finished_at"])
+' "$1" || {
+    echo "Could not read the measured window from $1." >&2
+    return 1
+  }
+}
+
+# Whether anything was pulling those metrics while the run happened. Asked of
+# Prometheus, because the app cannot answer it: its own request counter records
+# scrapes too, but only while request metrics are on — which couples the two facts
+# the experiment exists to tell apart — and a counter cumulative since startup
+# cannot say whether the scraping happened during this run or an hour ago.
+#
+# Asked about the run's own window: the query is evaluated at the instant the run
+# finished and spans a range as long as the run took, so what it counts is the
+# scrapes that fall between those two stamps. Anchored at probe time instead it
+# would answer "is the stack scraping now" — bring the stack up between a run and
+# this probe and a run nothing ever scraped is stamped `on`.
+#
+# count_over_time, not sum_over_time: a sample of `up` exists per scrape attempt
+# and its value only says whether Prometheus liked the answer. What separates the
+# arms is whether the app was paying for being scraped, and a scrape that timed out
+# (the timeout is 1s, against an endpoint a surging app can be slow to render) cost
+# it that work all the same.
+#
+# One sample is enough to read `on`: at a 2s scrape interval a 30s cell holds
+# around fifteen and a run shorter than the interval can hold no more than one, so
+# asking for more would make short runs unanswerable rather than better answered.
+# What a count cannot separate is a window the stack covered from one it covered in
+# part: start the stack inside a run and that run still reads `on`. That is one row
+# for each time the stack is started, where a probe-time anchor mislabelled every
+# run measured in the five minutes before it.
+#
+# A stack that is not up is the ordinary case and the state every row already in
+# these journals was measured in, so it reports `off` and never warns or fails. The
+# job name mirrors the one in observability/prometheus.yml.
+#
+# Usage: read_scrape <started_at> <finished_at>
+read_scrape() {
+  local started_at=$1 finished_at=$2
+
+  local started_millis finished_millis
+  started_millis=$(date -u -d "$started_at" +%s%3N) \
+    && finished_millis=$(date -u -d "$finished_at" +%s%3N) || {
+    echo "Could not read the window '$started_at' to '$finished_at' to ask Prometheus about it." >&2
+    return 1
+  }
+
+  local window_millis=$((finished_millis - started_millis))
+  [ "$window_millis" -gt 0 ] || window_millis=1
+
+  local response
+  response=$(curl -sf -m 2 --get "$PROMETHEUS_URL/api/v1/query" \
+    --data-urlencode "query=count_over_time(up{job=\"event-analytics\"}[${window_millis}ms])" \
+    --data-urlencode "time=$finished_at" 2>/dev/null) || {
+    echo off
+    return 0
+  }
+
+  printf '%s' "$response" | python3 -c '
+import json, sys
+
+try:
+    samples = json.load(sys.stdin)["data"]["result"]
+except Exception:
+    samples = []
+
+print("on" if any(float(sample["value"][1]) > 0 for sample in samples) else "off")
+'
 }
 
 # Record a test's headline result for the end-of-run digest.

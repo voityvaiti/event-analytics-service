@@ -46,6 +46,17 @@ reading it: a second launcher rebuilds and stamps the jar before it finds the
 port taken, leaving the first app serving behind a stamp for a build that never
 started.
 
+Two more stamps say what the app was doing besides serving the load. **`request_metrics`**
+is `on` when it was publishing `http.server.requests`; **`scrape`** is `on` when
+something was pulling those metrics while the run happened — what the
+[local stack](../README.md#observability) does every 2s, and what no row written
+before these fields existed did. Both are read after the measured run, the first
+from the app and the second from Prometheus — asked about the window the row
+carries rather than about the moment of asking, so a stack brought up between the
+two does not stamp a run nothing ever scraped. Neither is a label anyone can
+forget to change. A stack that is down reads `off`; it is the ordinary case, not
+an error.
+
 k6 itself is **not** installed on the host; every test runs it from a pinned
 container image (`K6_IMAGE`, default `grafana/k6:0.50.0`), and the corpus seeder
 likewise runs from a pinned node image (`NODE_IMAGE`). Backing services come up
@@ -314,8 +325,8 @@ in what they send, never in how they are measured or judged.
 - **`lib/harness.sh`** owns everything identical across tests — bringing up
   dependencies, checking the app and the k6 image, seeding the corpus and
   restoring it after a write test, and reading the pool/schema/CPU stamps plus
-  the build commit of the jar the app is running. A test never re-implements
-  this.
+  the build commit of the jar the app is running and whether its meters and a
+  scrape were on. A test never re-implements this.
 - **`lib/k6-ingest.js`** owns both `/api/v1/events` request shapes, so a contract
   change touches one file, not every scenario.
 - **`lib/event-generator.js`** owns what an event *looks like*. Both write
