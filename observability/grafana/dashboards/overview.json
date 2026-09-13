@@ -1115,7 +1115,7 @@
           "id": 6,
           "type": "annolist",
           "title": "Perf runs",
-          "description": "Runs measured while this stack was scraping, newest first. Pick one and the dashboard moves to it, padded by a minute on each side so the run's edges stay visible on the charts \u2014 which also means the tiles on the top row average that padding in. A 60s cell arrives as a 180s window, and whatever sat beside the run, idle time or the next cell, is in the tiles with it. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus \u2014 these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
+          "description": "Runs measured while this stack was scraping, newest first. Picking one sets the range to exactly that run, so the row above summarises it and nothing else: the tiles then agree with the row in the cell's journal. Padding the range would read a neighbouring cell into them \u2014 the read cells run one second apart, and a minute either side turned a 3,683 events/s cell into 36,614. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus \u2014 these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
           "datasource": {
             "type": "datasource",
             "uid": "grafana"
@@ -1138,8 +1138,8 @@
             "showTime": true,
             "showUser": false,
             "navigateToPanel": false,
-            "navigateBefore": "1m",
-            "navigateAfter": "1m"
+            "navigateBefore": "0s",
+            "navigateAfter": "0s"
           }
         }
       ]
