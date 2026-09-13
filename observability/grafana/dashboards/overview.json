@@ -72,7 +72,7 @@
     {
       "id": 8,
       "type": "stat",
-      "title": "Scrape",
+      "title": "Scrape, whole window",
       "description": "Whether the target answered every scrape in this window, not whether it answered the last one: min_over_time reads 1 only if no scrape in the window failed. The conservative reading is the useful one here, because a run measured across a dip is a run whose numbers are suspect, and \"was it ever up\" would hide the dip. Bounded by the window on purpose \u2014 a bare up is an instant selector, and Prometheus carries the last sample forward for five minutes, so it could not say \"not scraped\" until long after the scraper died.",
       "datasource": {
         "type": "prometheus",
