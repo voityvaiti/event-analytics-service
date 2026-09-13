@@ -187,6 +187,15 @@ rate, and pool saturation including the depth of the queue waiting for a
 connection. The scrape interval is 2s rather than the usual 15s, because the
 load cells it has to make legible run for 30s.
 
+The perf runs are on it too. Every journal row that stamps the window it was
+measured in becomes a region over those panels and an entry in _Perf runs_ —
+pick one and the dashboard moves to it. A spike is three regions rather than
+one, so the pool's queue climbing under the surge and draining after it stays
+legible. [`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh) puts them
+there: the harness runs it after a measured run, and the action above runs it
+over every journal on the way up, so a run measured while the stack was down is
+on the dashboard the moment it is back.
+
 Two things this deliberately does not do. It does not start the application —
 that runs on the host, and Prometheus reaches it through the host gateway, so
 start it separately in either order. And it does not join the default compose

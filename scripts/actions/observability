@@ -25,3 +25,16 @@ if [[ "${1:-}" == "down" ]]; then
 fi
 
 docker compose --profile observability up -d --wait "$@"
+
+# Rebuild the run list from the journals, which is the whole answer to "the stack
+# was down when I measured" — annotations live in Grafana's own database, and
+# this stack is down for most measurements. The harness syncs the run it just
+# finished; this syncs every run there has ever been, and because both are
+# idempotent the overlap is read back and skipped rather than doubled.
+#
+# Tolerated failing. Bringing the stack up is what this action was asked for and
+# it has already happened by here, so a sync that could not read a journal — one
+# a pass is appending to as this runs — must not redden the action; under `set
+# -e` it would, and through xargs, which answers a failed command with a 123 of
+# its own.
+find perf -name journal.jsonl -print0 | xargs -0 -r perf/lib/annotate-runs.sh || true
