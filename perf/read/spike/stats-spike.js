@@ -17,7 +17,7 @@ import exec from 'k6/execution';
 import { check } from 'k6';
 import { getStats } from '../../lib/k6-stats.js';
 import { generateQuery } from '../../lib/query-generator.js';
-import { metric, runWindow } from '../../lib/k6-summary.js';
+import { metric, phaseWindows, runWindow } from '../../lib/k6-summary.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
@@ -112,10 +112,12 @@ export default function () {
   check(response, { 'status is 200': (r) => r.status === 200 });
 }
 
-function phase(data, scenario, seconds) {
+function phase(data, scenario, seconds, window) {
   const tag = (name) => `${name}{scenario:${scenario}}`;
   const requests = metric(data, tag('http_reqs'), 'count');
   return {
+    started_at: window.started_at,
+    finished_at: window.finished_at,
     achieved_rps: requests / seconds,
     requests,
     failed_rate: metric(data, tag('http_req_failed'), 'rate'),
@@ -128,9 +130,16 @@ function phase(data, scenario, seconds) {
 
 export function handleSummary(data) {
   const run = runWindow(data);
-  const baseline = phase(data, 'baseline', BASELINE_SECONDS);
-  const spike = phase(data, 'spike', SPIKE_SECONDS);
-  const recovery = phase(data, 'recovery', RECOVERY_SECONDS);
+  const seconds = {
+    baseline: BASELINE_SECONDS,
+    spike: SPIKE_SECONDS,
+    recovery: RECOVERY_SECONDS,
+  };
+  const windows = phaseWindows(run, seconds);
+
+  const baseline = phase(data, 'baseline', BASELINE_SECONDS, windows.baseline);
+  const spike = phase(data, 'spike', SPIKE_SECONDS, windows.spike);
+  const recovery = phase(data, 'recovery', RECOVERY_SECONDS, windows.recovery);
 
   const summary = {
     scenario: SCENARIO,
@@ -145,7 +154,7 @@ export function handleSummary(data) {
     baseline_rate: BASELINE_RATE,
     spike_rate: SPIKE_RATE,
     max_vus: MAX_VUS,
-    seconds: { baseline: BASELINE_SECONDS, spike: SPIKE_SECONDS, recovery: RECOVERY_SECONDS },
+    seconds,
     phases: { baseline, spike, recovery },
   };
 
