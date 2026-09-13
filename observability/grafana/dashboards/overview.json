@@ -1,7 +1,7 @@
 {
   "uid": "event-analytics-overview",
   "title": "Event Analytics \u2014 overview",
-  "description": "The four quantities a k6 run has to be reconstructable from, without opening the journal.",
+  "description": "The quantities a k6 run has to be reconstructable from without opening the journal, and whether the scrape that recorded them happened.",
   "tags": [
     "event-analytics"
   ],
@@ -227,7 +227,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Error rate",
-      "description": "Split by who failed: a rejected request is not a broken service. Both series fall to zero rather than disappearing when nothing fails, so a healthy run and a broken scrape do not look alike.",
+      "description": "Split by who failed: a rejected request is not a broken service. The numerator is guarded, so a service that has yet to serve a 5xx reads as zero rather than as No data. The denominator is not, so a window with no requests leaves the ratio undefined and the line breaks. A gap therefore means nothing was served, not that nothing failed \u2014 and the Scrape panel tells those cases apart: up at 1 beside the gap is an idle service, up at 0 is a service that was down, no up at all is a stack that was not running.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -372,6 +372,114 @@
       }
     },
     {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Scrape",
+      "description": "Whether Prometheus got an answer, and what it cost to give one. up is 1 when the target replied to a scrape, 0 when it refused or timed out, and absent when Prometheus itself was not running \u2014 which is how an empty panel elsewhere is told apart from a flat one. Scrape duration is the same target answered, in seconds, on the right axis.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "up{job=\"event-analytics\"}",
+          "legendFormat": "up",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "scrape_duration_seconds{job=\"event-analytics\"}",
+          "legendFormat": "scrape duration",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "max",
+                "value": 1
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.lineInterpolation",
+                "value": "stepAfter"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 20
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 6,
       "type": "annolist",
       "title": "Perf runs",
@@ -384,7 +492,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "options": {
         "onlyFromThisDashboard": false,
