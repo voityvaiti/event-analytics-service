@@ -59,7 +59,7 @@
     {
       "id": 100,
       "type": "row",
-      "title": "Right now",
+      "title": "The window shown",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -73,7 +73,7 @@
       "id": 8,
       "type": "stat",
       "title": "Scrape",
-      "description": "up as a word. Not scraped means Prometheus holds nothing for this moment at all, which is the state an empty panel below cannot distinguish from an idle one.",
+      "description": "Whether the target answered every scrape in this window, not whether it answered the last one: min_over_time reads 1 only if no scrape in the window failed. The conservative reading is the useful one here, because a run measured across a dip is a run whose numbers are suspect, and \"was it ever up\" would hide the dip. Bounded by the window on purpose \u2014 a bare up is an instant selector, and Prometheus carries the last sample forward for five minutes, so it could not say \"not scraped\" until long after the scraper died.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -91,9 +91,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "max(up{job=\"event-analytics\"})",
-          "range": true,
-          "refId": "A"
+          "expr": "min(min_over_time(up{job=\"event-analytics\"}[$__range]))",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -105,12 +106,12 @@
               "type": "value",
               "options": {
                 "1": {
-                  "text": "serving",
+                  "text": "up throughout",
                   "color": "green",
                   "index": 0
                 },
                 "0": {
-                  "text": "down",
+                  "text": "dropped out",
                   "color": "red",
                   "index": 1
                 }
@@ -152,7 +153,7 @@
       "id": 9,
       "type": "stat",
       "title": "Requests/s",
-      "description": "Every /api/v1 route, ingest and read together.",
+      "description": "Every /api/v1 route, ingest and read together, averaged over the whole window shown. Guarded with or vector(0) so an application that has served nothing yet reads 0 rather than No data: Micrometer registers a URI timer on the first request, while the ingest counters beside it exist from startup.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -170,15 +171,15 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\"}[$__rate_interval]))",
-          "range": true,
-          "refId": "A"
+          "expr": "sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\"}[$__range])) or vector(0)",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
-          "decimals": 0,
           "mappings": [],
           "color": {
             "mode": "thresholds"
@@ -204,7 +205,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -214,7 +215,7 @@
       "id": 14,
       "type": "stat",
       "title": "Rejected/s",
-      "description": "Requests a security filter turned away before handler mapping, which Spring tags uri=\"UNKNOWN\" \u2014 so they are in none of the /api/v1 panels, neither as traffic nor as errors. A k6 run against an expired token otherwise reads as no traffic at all. Counted here rather than folded into the tiles beside it: widening their uri filter would let actuator traffic into the error-rate denominator and dilute it.",
+      "description": "Requests a security filter turned away before handler mapping, averaged over the whole window shown. Spring tags them uri=\"UNKNOWN\", so they are in none of the /api/v1 panels, neither as traffic nor as errors, and a k6 run against an expired token otherwise reads as no traffic at all. Counted here rather than folded into the tiles beside it: widening their uri filter would let actuator traffic into the error-rate denominator and dilute it.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -232,9 +233,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{status=~\"401|403\"}[$__rate_interval])) or vector(0)",
-          "range": true,
-          "refId": "A"
+          "expr": "sum(rate(http_server_requests_seconds_count{status=~\"401|403\"}[$__range])) or vector(0)",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -265,7 +267,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -275,7 +277,7 @@
       "id": 10,
       "type": "stat",
       "title": "Events/s",
-      "description": "Both ingest paths, counted per event rather than per request.",
+      "description": "Both ingest paths, counted per event rather than per request, averaged over the whole window shown.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -293,9 +295,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(events_ingested_total[$__rate_interval]))",
-          "range": true,
-          "refId": "A"
+          "expr": "sum(rate(events_ingested_total[$__range])) or vector(0)",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -327,7 +330,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -337,7 +340,7 @@
       "id": 11,
       "type": "stat",
       "title": "p95 latency",
-      "description": "Pooled across routes, so it is not the same number as any single line on the latency panel below. Undefined while nothing is being served, so it holds its last real value \u2014 read it against the Requests/s tile.",
+      "description": "Pooled across routes over the whole window shown, so it is not the same number as any single line on the latency panel below. A window that served nothing has no p95 in it at all and the tile reads No data \u2014 it no longer revives a value measured before the window and presents it as the current one.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -355,9 +358,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~\"/api/v1/.*\"}[$__rate_interval])))",
-          "range": true,
-          "refId": "A"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri=~\"/api/v1/.*\"}[$__range])))",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -389,7 +393,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -399,7 +403,7 @@
       "id": 12,
       "type": "stat",
       "title": "Server error rate",
-      "description": "Red above 0.01%, one server error in ten thousand requests. Undefined while nothing is being served, so it holds its last real value; with nothing in the window at all it reads No data, and the Scrape tile says whether that was an outage or a stack that was not running.",
+      "description": "Red above 0.01%, one server error in ten thousand requests, over the whole window shown. The numerator is guarded, so a service that has yet to serve a 5xx reads zero rather than No data. The denominator is not, so a window with no requests in it leaves the ratio undefined and the tile reads No data; the Scrape tile says whether that was an idle service or a stack that was not running.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -417,9 +421,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "100 * (sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\", outcome=\"SERVER_ERROR\"}[$__rate_interval])) or vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\"}[$__rate_interval]))",
-          "range": true,
-          "refId": "A"
+          "expr": "100 * (sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\", outcome=\"SERVER_ERROR\"}[$__range])) or vector(0)) / sum(rate(http_server_requests_seconds_count{uri=~\"/api/v1/.*\"}[$__range]))",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -455,7 +460,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -464,8 +469,8 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Pool pending",
-      "description": "Requests waiting for a connection. Red at one: the pool is the first thing to saturate under a spike.",
+      "title": "Peak pool pending",
+      "description": "The deepest queue for a connection anywhere in the window, not the queue at its last sample. Red at one: the pool is the first thing to saturate under a spike, and a spike that queued in the middle of a run should not be erased by a calm end to it.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -483,9 +488,10 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(hikaricp_connections_pending)",
-          "range": true,
-          "refId": "A"
+          "expr": "max(max_over_time(hikaricp_connections_pending{job=\"event-analytics\"}[$__range]))",
+          "range": false,
+          "refId": "A",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -521,7 +527,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "auto",
         "orientation": "auto"
@@ -981,7 +987,7 @@
           "id": 6,
           "type": "annolist",
           "title": "Perf runs",
-          "description": "Runs measured while this stack was scraping, newest first. Pick one and the dashboard moves to it. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus \u2014 these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
+          "description": "Runs measured while this stack was scraping, newest first. Pick one and the dashboard moves to it, padded by a minute on each side so the run's edges stay visible on the charts \u2014 which also means the tiles on the top row average that padding in. A 60s cell arrives as a 180s window, and whatever sat beside the run, idle time or the next cell, is in the tiles with it. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus \u2014 these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
           "datasource": {
             "type": "datasource",
             "uid": "grafana"
