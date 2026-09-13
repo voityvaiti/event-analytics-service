@@ -12,3 +12,10 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    # The only place Grafana can learn how often the target is scraped:
+    # $__rate_interval is derived from this value, never from Prometheus itself.
+    # Left unset it assumes 15s and averages every rate() on the dashboard over a
+    # minute, which smears a 30s cell into a ramp that never reaches its plateau
+    # — the opposite of what the 2s scrape in observability/prometheus.yml buys.
+    jsonData:
+      timeInterval: 2s
