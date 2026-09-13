@@ -187,12 +187,13 @@ show — scrape state, requests/s, requests security turned away, events/s, p95,
 server error rate, and the deepest queue that waited for a connection. Pick a
 run in _Perf runs_ and the row becomes that run's summary. The charts under them
 are grouped in reading order: throughput as ingest events/s, ingest requests/s
-and read requests/s, then latency and errors, then pool saturation beside the
-scrape itself. The scrape interval is 2s rather than the usual 15s, because the
-load cells it has to make legible run for 30s. Answering it costs the app 2.8 ms
-at the median and 3.4 ms at p95 — 1035 lines, 135 KB, measured on the fixed rig
-against the seeded corpus — so scraping eight times more often than usual still
-asks about 0.15% of a second from it.
+and read requests/s, then latency and errors, then what saturates — the
+connection pool, the CPU the whole rig shares, and what the scrape cost for the
+scrapes that were answered. The scrape interval is 2s rather
+than the usual 15s, because the load cells it has to make legible run for 30s.
+Answering it costs the app 2.8 ms at the median and 3.4 ms at p95 — 1035 lines,
+135 KB, measured on the fixed rig against the seeded corpus — so scraping eight
+times more often than usual still asks about 0.15% of a second from it.
 
 The perf runs are on it too. Every journal row that stamps the window it was
 measured in becomes a region over those panels and an entry in _Perf runs_,
