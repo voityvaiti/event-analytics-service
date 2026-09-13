@@ -182,22 +182,26 @@ scripts/actions/observability down   # stop them, leaving Postgres running
 ```
 
 Grafana opens on <http://localhost:3000> with _Event Analytics — overview_
-already provisioned: ingest rate as both events/s and requests/s, p95/p99, error
-rate, and pool saturation including the depth of the queue waiting for a
-connection. The scrape interval is 2s rather than the usual 15s, because the
-load cells it has to make legible run for 30s. Answering it costs the app 2.8 ms
-at the median and 3.4 ms at p95 — 1035 lines, 135 KB, measured on the fixed rig
-against the seeded corpus — so scraping eight times more often than usual still
-asks about 0.15% of a second from it.
+already provisioned. The first row is six tiles answering whether the service is
+healthy right now — scrape state, requests/s, events/s, p95, server error rate,
+and the depth of the queue waiting for a connection. The charts under them are
+grouped in reading order: ingest as both events/s and requests/s, then latency
+and errors, then pool saturation beside the scrape itself. The scrape interval
+is 2s rather than the usual 15s, because the load cells it has to make legible
+run for 30s. Answering it costs the app 2.8 ms at the median and 3.4 ms at p95
+— 1035 lines, 135 KB, measured on the fixed rig against the seeded corpus — so
+scraping eight times more often than usual still asks about 0.15% of a second
+from it.
 
 The perf runs are on it too. Every journal row that stamps the window it was
-measured in becomes a region over those panels and an entry in _Perf runs_ —
-pick one and the dashboard moves to it. A spike is three regions rather than
-one, so the pool's queue climbing under the surge and draining after it stays
-legible. [`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh) puts them
-there: the harness runs it after a measured run, and the action above runs it
-over every journal on the way up, so a run measured while the stack was down is
-on the dashboard the moment it is back.
+measured in becomes a region over those panels and an entry in _Perf runs_,
+the collapsed row at the bottom — pick one and the dashboard moves to it. A
+spike is three regions rather than one, so the pool's queue climbing under the
+surge and draining after it stays legible.
+[`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh) puts them there: the
+harness runs it after a measured run, and the action above runs it over every
+journal on the way up, so a run measured while the stack was down is on the
+dashboard the moment it is back.
 
 A run measured while it was down keeps its region behind the _Perf runs measured
 with no scraper_ toggle, and stays out of the list. Prometheus holds nothing for
