@@ -75,6 +75,9 @@ index_scans_by_index = {
 row = {
     "date": date,
     "commit": commit,
+    "run_id": s["run_id"],
+    "started_at": s["started_at"],
+    "finished_at": s["finished_at"],
     "scenario": s["scenario"],
     "endpoint": s["endpoint"],
     "group_by": s["group_by"],

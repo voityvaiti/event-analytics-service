@@ -90,6 +90,9 @@ throughput_rps = round(s["throughput_rps"], 1)
 row = {
     "date": date,
     "commit": commit,
+    "run_id": s["run_id"],
+    "started_at": s["started_at"],
+    "finished_at": s["finished_at"],
     "scenario": s["scenario"],
     "ingest_path": ingest_path,
     "schema_version": schema_version,

@@ -11,7 +11,7 @@
 import exec from 'k6/execution';
 import { check } from 'k6';
 import { postEventBatch } from '../../lib/k6-ingest.js';
-import { metric } from '../../lib/k6-summary.js';
+import { metric, runWindow } from '../../lib/k6-summary.js';
 import { BATCH_SPIKE_PHASE_SEQ_BASE } from '../../lib/seq-space.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
@@ -104,6 +104,7 @@ function phase(data, scenario, seconds) {
 }
 
 export function handleSummary(data) {
+  const run = runWindow(data);
   const baseline = phase(data, 'baseline', BASELINE_SECONDS);
   const spike = phase(data, 'spike', SPIKE_SECONDS);
   const recovery = phase(data, 'recovery', RECOVERY_SECONDS);
@@ -111,6 +112,8 @@ export function handleSummary(data) {
   const summary = {
     scenario: SCENARIO,
     run_id: RUN_ID,
+    started_at: run.started_at,
+    finished_at: run.finished_at,
     base_url: BASE_URL,
     batch_size: BATCH_SIZE,
     baseline_rate: BASELINE_RATE,
