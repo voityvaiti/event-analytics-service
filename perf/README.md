@@ -286,6 +286,7 @@ perf/
     k6-stats.js         shared /api/v1/stats request shape
     k6-summary.js       shared k6 summary reader
     compare-runs.mjs    the main-vs-PR comparison CI renders, over every load cell
+    annotate-runs.sh    puts the window each row was measured in on the dashboard
   write/
     tests.sh            the write cell list, per workload and combined
     load/

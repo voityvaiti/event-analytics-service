@@ -49,6 +49,11 @@ WRITE_BATCH_SOURCE=perf-test
 # multi-test pipeline run leaves a single readable digest, not a scroll-back.
 PERF_RESULTS=()
 
+# The journals a run appended to, put on the dashboard together by perf_report.
+# Accumulated rather than rediscovered so the sync offers the rows just measured
+# instead of re-reading every journal in the suite on every run.
+PERF_JOURNALS=()
+
 # Bring up dependencies and verify the app and k6 image are usable, failing here
 # with a clear cause rather than as a swallowed error mid-measurement. Safe to
 # call once per process; the pipeline calls it once and then runs every test.
@@ -533,6 +538,11 @@ perf_result() {
   PERF_RESULTS+=("$1")
 }
 
+# Record a journal a test appended a row to, for the end-of-run dashboard sync.
+perf_journalled() {
+  PERF_JOURNALS+=("$1")
+}
+
 # The spread across the rows a repeated cell just appended — jitter alone, since
 # nothing changed between rounds. Shared by every cell that reports one, so the
 # statistics and their wording are defined once; a cell only says which journal,
@@ -667,7 +677,18 @@ perf_run_tests() {
   fi
 }
 
-# Print the collected headline results together. Called once at the end of a run.
+# Print the collected headline results together, and put the runs behind them on
+# the dashboard. Called once at the end of a run.
+#
+# The sync belongs here and not in a measure function: it is HTTP traffic to a
+# container on the same rig, and the experiment these stamps exist for measures
+# what work happening around the app costs it — so the harness must not add any
+# of its own between a k6 run and the row it produces. By the time this runs,
+# every row is written and printed.
+#
+# Tolerated failing for the reason a stopped metrics stack reads `off` instead of
+# stopping a cell. The journals are the record; a dashboard is a view of them, and
+# never worth a measurement.
 perf_report() {
   echo
   echo "=== perf results ==="
@@ -676,4 +697,8 @@ perf_report() {
     echo "  $line"
   done
   echo
+
+  if [ "${#PERF_JOURNALS[@]}" -gt 0 ]; then
+    perf/lib/annotate-runs.sh "${PERF_JOURNALS[@]}" || true
+  fi
 }

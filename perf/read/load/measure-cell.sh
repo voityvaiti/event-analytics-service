@@ -142,4 +142,5 @@ PY
   ) || return 1
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
+  perf_journalled "$journal"
 }
