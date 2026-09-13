@@ -26,3 +26,29 @@ export function runWindow(data) {
     finished_at: isoMillis(finishedMillis),
   };
 }
+
+// Where each phase of a run that steps through its phases back to back begins
+// and ends, from the run window and the seconds each phase was given — named in
+// the order they run. A spike's verdict (recovered = served and drained) is
+// corroborated by watching the pool's wait queue climb during the surge and
+// drain after it, and one window spanning all three phases averages them into a
+// single band that cannot show either.
+//
+// The bounds are the nominal ones k6 was handed, not a partition of the measured
+// window: what they mark is where the offered rate changed. A request still in
+// flight across a boundary is attributed to the phase that issued it by k6's
+// scenario tags, where a dashboard panel cut at the same instant counts it in the
+// phase it lands in.
+export function phaseWindows(run, secondsByPhase) {
+  let startMillis = Date.parse(run.started_at);
+  const windows = {};
+  for (const [phase, seconds] of Object.entries(secondsByPhase)) {
+    const endMillis = startMillis + seconds * 1000;
+    windows[phase] = {
+      started_at: isoMillis(startMillis),
+      finished_at: isoMillis(endMillis),
+    };
+    startMillis = endMillis;
+  }
+  return windows;
+}
