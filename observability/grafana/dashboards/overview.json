@@ -890,7 +890,7 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 26
       },
@@ -901,7 +901,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_active",
+          "expr": "hikaricp_connections_active{job=\"event-analytics\"}",
           "legendFormat": "active",
           "range": true,
           "refId": "A"
@@ -912,7 +912,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_idle",
+          "expr": "hikaricp_connections_idle{job=\"event-analytics\"}",
           "legendFormat": "idle",
           "range": true,
           "refId": "B"
@@ -923,7 +923,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_pending",
+          "expr": "hikaricp_connections_pending{job=\"event-analytics\"}",
           "legendFormat": "pending",
           "range": true,
           "refId": "C"
@@ -934,7 +934,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_max",
+          "expr": "hikaricp_connections_max{job=\"event-analytics\"}",
           "legendFormat": "max",
           "range": true,
           "refId": "D"
@@ -970,6 +970,75 @@
       }
     },
     {
+      "id": 16,
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "Both meters are already in the scrape and were drawn nowhere. system_cpu_usage is the whole host \u2014 16 cores on this rig, Postgres and every unrelated container stack included \u2014 and process_cpu_usage is this application's share of it. Host CPU is the first confounder of any before/after comparison measured here: over today's write window the application peaked at 10.2% of the host while the host itself peaked at 55.5%, so most of the machine was busy with something the experiment does not control.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "system_cpu_usage{job=\"event-analytics\"}",
+          "legendFormat": "host, all cores",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "process_cpu_usage{job=\"event-analytics\"}",
+          "legendFormat": "this application",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 7,
       "type": "timeseries",
       "title": "Scrape duration",
@@ -980,8 +1049,8 @@
       },
       "gridPos": {
         "h": 9,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 16,
         "y": 26
       },
       "targets": [
