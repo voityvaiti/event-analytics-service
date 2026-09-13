@@ -199,6 +199,11 @@ there: the harness runs it after a measured run, and the action above runs it
 over every journal on the way up, so a run measured while the stack was down is
 on the dashboard the moment it is back.
 
+A run measured while it was down keeps its region behind the _Perf runs measured
+with no scraper_ toggle, and stays out of the list. Prometheus holds nothing for
+those windows, and a band drawn over an empty panel reads as a gap in the data
+rather than as an absent scraper.
+
 Two things this deliberately does not do. It does not start the application —
 that runs on the host, and Prometheus reaches it through the host gateway, so
 start it separately in either order. And it does not join the default compose
