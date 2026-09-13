@@ -22,6 +22,27 @@ if [ -z "$jar" ]; then
   exit 1
 fi
 
+# The commit this jar was built from, recorded beside it so a perf row can stamp
+# the artifact it measured rather than whatever the checkout happened to say while
+# measuring — switch a branch or edit a file after starting the app and the two
+# disagree with nothing to show for it.
+#
+# `-dirty` in the sense `git describe --dirty` means it: the pathspec is gradle's
+# input set for bootJar, so a change inside it is a change this jar carries, while
+# one outside it — an uncommitted journal row, a README edit — leaves the stamp
+# alone and keeps the marker worth reading.
+#
+# It has to be written before the exec below, which is also what keeps it from
+# being the last word: a launch that dies on a port something else already holds
+# leaves this stamp behind, describing a build that never started, beside a jar
+# the app still serving was not built from. The harness reads it back against the
+# age of that process rather than trusting it.
+build_commit=$(git rev-parse --short HEAD)
+if [ -n "$(git status --porcelain -- src/main build.gradle settings.gradle gradle)" ]; then
+  build_commit="$build_commit-dirty"
+fi
+printf '%s\n' "$build_commit" > "$jar.commit"
+
 exec java -jar "$jar" \
   --spring.datasource.url=jdbc:postgresql://localhost:5432/event_analytics \
   --spring.datasource.username=event_analytics \

@@ -42,6 +42,7 @@ perf_write_load_cell() {
   local start_rows
   count_events || return 1
   start_rows=$CORPUS_ROWS
+  ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
 
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
@@ -61,7 +62,7 @@ perf_write_load_cell() {
   # Capture so the trailing `PERF_RESULT ` line can be lifted into the digest;
   # everything before it is echoed straight through to eyeball before committing.
   local out
-  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$(git rev-parse --short HEAD)" \
+  out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
 import json, sys

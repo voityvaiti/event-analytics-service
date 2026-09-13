@@ -34,6 +34,18 @@ commit here: **126.0k events/s packaged, 107k under bootRun**, with the read cel
 unmoved because a Postgres query dominates them. Half the suite therefore reads as a
 regression, and no journal field records how the app was launched.
 
+That launcher also records the commit it built the jar from, in a file beside the
+jar, and a row's `commit` is read back from there through the running process.
+`git rev-parse` at measuring time would name the checkout instead, which stops
+being the artifact the moment a branch is switched or a file edited after the app
+started. A jar built from a tree that differs in what `bootJar` reads is stamped
+`<sha>-dirty`; an app the harness cannot inspect at all — a non-local `BASE_URL` —
+stamps `unknown` rather than a SHA it cannot prove. A local app whose jar carries
+no stamp fails the run, and so does one whose stamp is newer than the process
+reading it: a second launcher rebuilds and stamps the jar before it finds the
+port taken, leaving the first app serving behind a stamp for a build that never
+started.
+
 k6 itself is **not** installed on the host; every test runs it from a pinned
 container image (`K6_IMAGE`, default `grafana/k6:0.50.0`), and the corpus seeder
 likewise runs from a pinned node image (`NODE_IMAGE`). Backing services come up
@@ -301,8 +313,9 @@ in what they send, never in how they are measured or judged.
 
 - **`lib/harness.sh`** owns everything identical across tests — bringing up
   dependencies, checking the app and the k6 image, seeding the corpus and
-  restoring it after a write test, and reading the pool/schema/CPU stamps. A
-  test never re-implements this.
+  restoring it after a write test, and reading the pool/schema/CPU stamps plus
+  the build commit of the jar the app is running. A test never re-implements
+  this.
 - **`lib/k6-ingest.js`** owns both `/api/v1/events` request shapes, so a contract
   change touches one file, not every scenario.
 - **`lib/event-generator.js`** owns what an event *looks like*. Both write
