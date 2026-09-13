@@ -185,7 +185,10 @@ Grafana opens on <http://localhost:3000> with _Event Analytics — overview_
 already provisioned: ingest rate as both events/s and requests/s, p95/p99, error
 rate, and pool saturation including the depth of the queue waiting for a
 connection. The scrape interval is 2s rather than the usual 15s, because the
-load cells it has to make legible run for 30s.
+load cells it has to make legible run for 30s. Answering it costs the app 2.8 ms
+at the median and 3.4 ms at p95 — 1035 lines, 135 KB, measured on the fixed rig
+against the seeded corpus — so scraping eight times more often than usual still
+asks about 0.15% of a second from it.
 
 The perf runs are on it too. Every journal row that stamps the window it was
 measured in becomes a region over those panels and an entry in _Perf runs_ —
