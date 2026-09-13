@@ -675,7 +675,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Latency p95 / p99",
-      "description": "Computed from bucket counts at query time, so the window is whatever this dashboard shows.",
+      "description": "Computed from bucket counts at query time, so the window is whatever this dashboard shows. Log scale, because the routes are three orders apart: over today's measurement pass p95 runs from 2.5 ms on /api/v1/events to 3.4 s on /api/v1/stats/active-users, and on a linear axis every write series lies flat on zero. Two quantiles across the five routes is ten legend rows, more than a table legend gets under a panel this tall, so it sits beside the plot instead \u2014 which also gives the log axis the full panel height.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -713,11 +713,14 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "min": 0,
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            }
           },
           "decimals": 2
         },
@@ -726,7 +729,7 @@
       "options": {
         "legend": {
           "displayMode": "table",
-          "placement": "bottom",
+          "placement": "right",
           "showLegend": true,
           "calcs": [
             "lastNotNull",
