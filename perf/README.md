@@ -114,6 +114,12 @@ Rounds run back to back within a cell, so nothing but chance separates them, and
 each round journals its own row because each is a real measurement. The spread is
 derived and never stored — it only ever describes the rows it was computed from.
 
+The [observability overhead experiment](./observability-overhead.md) is the
+worked example of a delta landing under the floor, and of how much of an
+apparent effect the floor can manufacture: its pooled medians ordered themselves
+exactly as the hypothesis predicted, and pairing arms measured minutes apart
+turned every one of those differences over.
+
 ### The measured floor
 
 Established by the [index experiment](./index-experiment.md), which ran ten
