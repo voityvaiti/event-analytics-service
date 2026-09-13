@@ -55,22 +55,25 @@ perf_write_load_cell() {
     return 1
   }
 
-  local pool schema_version
+  local pool schema_version request_metrics scrape started_at finished_at
+  read -r started_at finished_at < <(read_run_window "$summary") || return 1
   pool=$(read_pool) || return 1
   schema_version=$(read_schema) || return 1
+  request_metrics=$(read_request_metrics) || return 1
+  scrape=$(read_scrape "$started_at" "$finished_at") || return 1
 
   # Capture so the trailing `PERF_RESULT ` line can be lifted into the digest;
   # everything before it is echoed straight through to eyeball before committing.
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
+    "$request_metrics" "$scrape" "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
 import json, sys
 
 (
-    summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path,
-    schema_version, start_rows,
-) = sys.argv[1:11]
+    summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
+    scrape, ingest_path, schema_version, start_rows,
+) = sys.argv[1:13]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -100,6 +103,8 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    "request_metrics": request_metrics,
+    "scrape": scrape,
     "vus": s["vus"],
     "duration": s["duration"],
     "batch_size": batch_size,

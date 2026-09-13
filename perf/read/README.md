@@ -62,9 +62,9 @@ one. The spike cells repeat but report no spread, for the reason given there.
 ## Reading a load journal row
 
 Rows carry the usual rig and config stamps (CPU, cores, pool, schema,
-`start_rows`), plus two things specific to reads. The spike cells journal a
-different set of fields around a recovery verdict; their shared
-[README](./spike) covers those.
+`start_rows`, `request_metrics`, `scrape`), plus two things specific to reads.
+The spike cells journal a different set of fields around a recovery verdict;
+their shared [README](./spike) covers those.
 
 - **`windows`** — latency split by window size. The split is the point: those
   sizes differ by more than an order of magnitude in the rows they touch, so a

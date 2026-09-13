@@ -79,6 +79,10 @@ Five more columns keep distinct series from being read as one trend:
   INSERT costlier, so throughput steps down when they land; this column marks
   that step as a migration, not a regression.
 
+Every cell in the suite also stamps `request_metrics` and `scrape`, which split
+rows by what the app was doing besides serving the load — see the
+[suite README](../../README.md#running).
+
 ## Throughput, and which throughput
 
 A write comparison turns on throughput, not latency: the write cost of a secondary

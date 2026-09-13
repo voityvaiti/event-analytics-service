@@ -59,20 +59,24 @@ perf_write_spike_cell() {
     return 1
   }
 
-  local pool schema_version
+  local pool schema_version request_metrics scrape started_at finished_at
+  read -r started_at finished_at < <(read_run_window "$summary") || return 1
   pool=$(read_pool) || return 1
   schema_version=$(read_schema) || return 1
+  request_metrics=$(read_request_metrics) || return 1
+  scrape=$(read_scrape "$started_at" "$finished_at") || return 1
 
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" "$baseline_max_p95_ms" <<'PY'
+    "$request_metrics" "$scrape" "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" \
+    "$baseline_max_p95_ms" <<'PY'
 import json, sys
 
 (
-    summary_path, journal_path, date, commit, cpu, cores, pool, ingest_path,
-    schema_version, start_rows, baseline_max_p95_ms,
-) = sys.argv[1:12]
+    summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
+    scrape, ingest_path, schema_version, start_rows, baseline_max_p95_ms,
+) = sys.argv[1:14]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -134,6 +138,8 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    "request_metrics": request_metrics,
+    "scrape": scrape,
     "start_rows": int(start_rows),
     "batch_size": batch_size,
     "baseline_rate": s["baseline_rate"],
