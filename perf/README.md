@@ -148,9 +148,13 @@ desktop. Two machines, two numbers; they must not be swapped for each other.
 ### What CI compares
 
 The `perf` label runs every **load** cell — both write shapes and all five read
-shapes — against `main` and the PR back to back on one runner, alternating sides
-each round. Spike cells stay out: their result is a compound verdict, and a
-shared runner cannot hold an offered rate steady enough for one to mean anything.
+shapes — against `main` and the PR back to back on one runner, three rounds by
+default with the median reported, alternating which side goes first each round so
+ordering and thermal drift land on both evenly. Every round rebuilds both sides
+from scratch — fresh schema, freshly seeded corpus, a throwaway warm-up before
+each measured run — and takes the read cells before the write cells, because a
+write cell's inserts and deletes bloat the index by several percent and a read
+cell behind them would measure that as well.
 
 Its corpus is 2M rows over the same 180-day span the fixed rig uses, so the
 window mix keeps its shape at a tenth the density. That makes a CI read number
@@ -161,6 +165,9 @@ Only throughput and the overall p95 carry a verdict there. p99 and the
 per-window figures are printed with their delta and no judgement: measured across
 two runs of an identical jar, batch p99 moved 45% and the narrowest read window
 10%, so a band that trusted them would announce improvements that are not there.
+
+CI drives the k6 scenarios directly rather than through the harness, which is
+part of why they sit at the workload level rather than inside a cell.
 
 ### The floor between runs
 
@@ -338,18 +345,13 @@ function name spells the same route out — `perf_read_load_top_pages` sits in
 
 ## What runs in CI
 
-Only the **`write/load/single`** cell feeds the per-PR comparison
-(`.github/workflows/perf.yml`): steady-state throughput is a single, stable
-number that survives a relative main-vs-PR comparison on a noisy shared runner.
-CI runs its k6 scenario directly rather than through the harness, which is why
-that scenario stays at the workload level.
+Every **load** cell feeds the per-PR comparison (`.github/workflows/perf.yml`) —
+both write shapes and all five read shapes.
+[What CI compares](#what-ci-compares) covers how that run is built and which
+of its numbers carry a verdict.
 
-Everything else is deliberately **local / journalled only**. The spike cells'
-overload metrics are too high-variance to reduce to a trustworthy per-PR delta,
-and the read cells would each need the corpus seeded on the runner — minutes of
-setup per side for a comparison that a shared runner cannot make precise anyway.
-Regressions in those are caught by their journals on a fixed rig instead.
-
-CI also stays on an empty table rather than seeding: it measures main against
-the PR branch on the same runner, so the comparison is relative, and an empty
-start is as valid a fixed point there as a seeded one — without the minutes.
+The **spike** cells stay out. Their result is a compound verdict rather than a
+single number, and a shared runner cannot hold an offered rate steady enough for
+one to mean anything, so regressions there are caught by their journals on a
+fixed rig instead. The journals stay the fixed-rig record throughout: CI
+appends no row for any cell; it only compares two sides of one run.
