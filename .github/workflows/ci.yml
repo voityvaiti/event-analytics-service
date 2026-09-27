@@ -31,6 +31,22 @@ jobs:
       - name: Spotless + Error Prone + NullAway
         run: ./gradlew spotlessCheck compileJava compileTestJava --no-daemon
 
+  # Every commit a perf journal row stamps must stay fetchable once the merge
+  # rewrites it. Runs on every PR rather than behind a path filter: a required
+  # check that a filter skips stays pending and blocks the merge. Full history,
+  # because a shallow clone cuts the ancestry the check walks.
+  journal-commits:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Stamped commits are on GitHub
+        run: scripts/actions/perf/check-journal-commits
+
   # Tests + JaCoCo, with the coverage summary posted as a PR comment.
   # Docker is available on ubuntu-latest, so Testcontainers tests run here.
   coverage:
