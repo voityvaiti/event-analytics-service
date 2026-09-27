@@ -17,6 +17,7 @@ production.
 | Read | [`read/spike/event-counts/`](./read/spike/event-counts) | Does the cheapest read shape absorb a burst of dashboard traffic, or does queue depth beat query cost? |
 | Read | [`read/spike/active-users/`](./read/spike/active-users) | Does the heaviest read shape survive a burst, and does its queue drain afterwards? |
 | Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Does a JSONB ranking survive a burst, with the index able to narrow the window and no more? |
+| Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Is steady ingest still accepted while a read surge holds every connection, and how do the writes that are not accepted fail? |
 
 Each cell owns its own `journal.jsonl` (an absolute series, self-stamped with
 the rig and config so a number is only ever compared within a fixed rig). Read
@@ -92,6 +93,8 @@ scripts/actions/perf/read/load/all            # every read load cell
 scripts/actions/perf/read/spike/<endpoint>    # one read surge
 scripts/actions/perf/read/spike/all           # every read spike cell
 scripts/actions/perf/read/all                 # every read cell, both workloads
+scripts/actions/perf/mixed/spike/<endpoint>   # steady ingest under one read surge
+scripts/actions/perf/mixed/all                # every mixed cell
 scripts/actions/perf/all                      # everything, one combined digest
 ```
 
@@ -327,12 +330,19 @@ perf/
       stats-spike.js    the surge scenario, endpoint and rate via env
       measure-cell.sh   the measuring routine the spike cells share
       event-counts/  active-users/  top-pages/
+  mixed/
+    tests.sh            the mixed cell list, per workload and combined
+    spike/
+      ingest-under-read-spike.js  steady writes beside the read surge
+      measure-cell.sh   the measuring routine the mixed spike cells share
+      active-users/
 ```
 
 Both paths split by workload first, because `load` and `spike` are measured
 differently and judged differently, then again by what varies within the path:
-the write side by request shape, the read side by endpoint. Either way the leaf is
-a cell — a directory holding `measure.sh`, `journal.jsonl` and `README.md`, and
+the write side by request shape, the read side by endpoint. Mixed cells run both
+paths at once, so they have a path of their own, split by the endpoint they
+surge. Either way the leaf is a cell — a directory holding `measure.sh`, `journal.jsonl` and `README.md`, and
 nothing else.
 
 A k6 scenario and a measuring routine both live at the workload level. The read
@@ -396,5 +406,6 @@ of its numbers carry a verdict.
 The **spike** cells stay out. Their result is a compound verdict rather than a
 single number, and a shared runner cannot hold an offered rate steady enough for
 one to mean anything, so regressions there are caught by their journals on a
-fixed rig instead. The journals stay the fixed-rig record throughout: CI
-appends no row for any cell; it only compares two sides of one run.
+fixed rig instead. The mixed cell stays out for the second of those reasons.
+The journals stay the fixed-rig record throughout: CI appends no row for any
+cell; it only compares two sides of one run.
