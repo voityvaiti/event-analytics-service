@@ -74,7 +74,7 @@ export default function () {
     params.limit = LIMIT;
   }
 
-  const response = getStats(BASE_URL, ENDPOINT, params, { window: query.window });
+  const response = getStats(BASE_URL, ENDPOINT, params, { tags: { window: query.window } });
   check(response, { 'status is 200': (r) => r.status === 200 });
 }
 
