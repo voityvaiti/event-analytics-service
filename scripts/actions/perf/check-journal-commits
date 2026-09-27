@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Fail unless GitHub still holds every commit a perf journal row stamps.
+#
+# A rebase merge re-creates every commit it lands, so no stamp ever names a
+# commit on main. GitHub keeps the originals as the head of the pull request
+# that carried them, and that survives the merge and the branch's deletion —
+# but only for commits the final head still contains. One measured and then
+# rewritten, or never pushed, exists on this machine alone, which is why only
+# refs fetched from origin count here and local objects never do.
+#
+# A `-dirty` stamp fails too: it names a commit the measured jar did not match.
+# `unknown` is skipped, since it names no commit to keep.
+#
+# When it fails: push the branch if the commit is new; if it was rewritten,
+# tag the original commit and push the tag. Never swap a stamp for another SHA.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../.." || exit 1
+
+namespace=refs/journal-check
+
+clear_namespace() {
+  git for-each-ref --format='delete %(refname)' "$namespace" | git update-ref --stdin
+}
+
+clear_namespace
+trap clear_namespace EXIT
+
+git fetch --quiet --no-tags origin \
+  "+refs/heads/*:$namespace/heads/*" \
+  "+refs/tags/*:$namespace/tags/*" \
+  "+refs/pull/*/head:$namespace/pull/*"
+
+stamps=$(find perf -name journal.jsonl -print0 | sort -z \
+  | xargs -0 -I{} jq -r --arg file {} '"\(.commit // "")\t\($file)"' {})
+
+rows_stamped() {
+  awk -F'\t' -v stamp="$1" '$1 == stamp { print $2 }' <<<"$stamps"
+}
+
+held=0
+skipped=$(rows_stamped unknown | wc -l)
+failures=()
+
+while IFS= read -r stamp; do
+  reason=""
+  if [ "$stamp" = "unknown" ]; then
+    continue
+  elif [ -z "$stamp" ]; then
+    reason="rows carry no commit stamp"
+  elif [[ "$stamp" == *-dirty ]]; then
+    reason="measured a jar built from uncommitted changes"
+  elif ! commit=$(git rev-parse --verify --quiet "$stamp^{commit}"); then
+    reason="no such commit on GitHub"
+  elif [ -z "$(git for-each-ref --count=1 --contains "$commit" "$namespace")" ]; then
+    reason="no branch, tag or pull request head on GitHub contains it"
+  fi
+
+  if [ -n "$reason" ]; then
+    rows=$(rows_stamped "$stamp" | sort | uniq -c | awk '{ printf "    %s (%s rows)\n", $2, $1 }')
+    failures+=("${stamp:-<none>}: $reason"$'\n'"$rows")
+  else
+    held=$((held + 1))
+  fi
+done < <(cut -f1 <<<"$stamps" | sort -u)
+
+if [ "${#failures[@]}" -gt 0 ]; then
+  echo "Journal rows stamp commits GitHub does not hold:" >&2
+  printf '  %s\n' "${failures[@]}" >&2
+  echo "Push the branch if the commit is new; if it was rewritten, tag the original and push the tag." >&2
+  exit 1
+fi
+
+echo "GitHub holds all $held commits the journals stamp ($skipped rows stamped unknown, skipped)."
