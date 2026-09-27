@@ -244,6 +244,29 @@ Each decision states what was chosen, why, and what was rejected.
   *Rejected:* starting with the broker — it front-loads operational complexity
   onto a system whose limits were never established, and leaves no baseline to
   compare the async version against.
+- **Kafka as the broker, for the shape the system grows into.** An event is a
+  fact, not a task: once accepted, any number of readers may want it, at their
+  own pace, now or later. A log keeps one retained stream and gives each
+  consumer group its own position in it, so each direction a system like this
+  grows in is a new group rather than a change to ingest: the downstream
+  columnar store the non-goals leave outside the service, per-user stream
+  processing ("did X within Y minutes", which is what makes `user_id` the
+  partition key), a replay once a processing bug is fixed. The tools that
+  direction needs — OLAP ingestion, connectors, stream processors — are built
+  around the Kafka protocol.
+  None of it is Stage 3's own need. Its one reader is the `persistence`
+  consumer, raw events stay in Postgres so nothing replays from the broker, and
+  at the single-event rates measured so far throughput does not separate the
+  candidates. "Sync before async" still governs when a broker arrives; this
+  decides only which.
+  *Rejected:* a RabbitMQ quorum queue — for the one consumer Stage 3 has it is
+  the natural fit, with per-message acknowledgement and dead-lettering built in,
+  where Kafka commits offsets by position and one unprocessable record stalls
+  its partition until a dead-letter topic takes it. It loses on direction: an
+  acknowledged message is gone, so a reader added later starts from the day its
+  queue was bound. RabbitMQ Streams add a retained log, which makes the real
+  choice log versus queue; with a log chosen, Kafka is the one that ecosystem is
+  built on.
 - **Aggregation escalates with measured pain.** On-the-fly SQL first, then
   cache and rollups, then pre-computation via consumers. Each rung is climbed
   only when the current one hurts and the hurt is in a journal.
