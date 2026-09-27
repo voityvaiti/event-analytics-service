@@ -409,6 +409,19 @@ read_pool() {
   }
 }
 
+# How many times the pool has failed to hand out a connection within Hikari's
+# connectionTimeout since the app started. A cell journals the delta over its
+# run, which is what tells a 500 that waited out the pool from one that failed
+# some other way — the status code alone cannot, since the write path maps both
+# to the same catch-all.
+read_connection_timeouts() {
+  curl -sf "$BASE_URL/actuator/metrics/hikaricp.connections.timeout" \
+    | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["measurements"][0]["value"]))' || {
+    echo "Could not read the pool's connection timeouts from the app's actuator metrics." >&2
+    return 1
+  }
+}
+
 # The schema the run actually hit, read from the migrated DB rather than assumed:
 # secondary indexes (a GIN on properties especially) make every INSERT costlier,
 # so throughput drops when they land — this stamp says "that drop is a new
