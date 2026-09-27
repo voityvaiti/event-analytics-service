@@ -10,6 +10,11 @@
 
 export const CORPUS_SEQ_LIMIT = 30000000;
 
+// Shared by the single-event load cell and the writes of a mixed cell. A band
+// only has to differ from the rows in the table at the same time, and a mixed
+// run's writes sit beside the corpus alone: every write cell deletes what it
+// posted before the next one starts. The bands below already end at the
+// aliasing ceiling, so a new one would not fit.
 export const LOAD_SEQ_BASE = 30000000;
 
 export const SPIKE_PHASE_SEQ_BASE = {
