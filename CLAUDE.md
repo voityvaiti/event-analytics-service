@@ -16,6 +16,10 @@
   versioned migration, never edit one that has already been applied.
 - **DB tests use Testcontainers, never H2** — tests run against the same
   Postgres production uses.
+- **Measured commits must outlive the merge** — rebase onto `origin/main`
+  before a perf run; until the merge only add commits on top (nothing else lands
+  on `main`, no fixup reaches a measured commit). If CI's `journal-commits`
+  fails, push a tag on the original commit; never change the stamp.
 - **Logging via SLF4J only** — no `System.out`, no concrete logger imports.
 - **SQL keywords UPPERCASE** — keywords and type names in caps (`CREATE TABLE`,
   `INSERT INTO`, `ON CONFLICT`, `TEXT`, `JSONB`); identifiers, columns, and named

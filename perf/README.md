@@ -46,6 +46,18 @@ reading it: a second launcher rebuilds and stamps the jar before it finds the
 port taken, leaving the first app serving behind a stamp for a build that never
 started.
 
+No stamp names a commit on `main`, because a rebase merge re-creates every commit
+it lands. GitHub keeps the originals as the head of the pull request that carried
+them, past the merge and the branch's deletion, but only the commits that final
+head still contains. So measure after the branch's last rebase onto `main`, and
+until the merge only add commits on top, with nothing else landing on `main`: the
+ruleset will not merge a PR that is behind `main` until it is updated, and
+updating by rebase rewrites the measured commits. CI runs
+`scripts/actions/perf/check-journal-commits` on every PR, and it fails on a
+`-dirty` stamp or one that no branch, tag or pull request head on GitHub
+contains. Push the branch if the commit is new; if it was rewritten, tag the
+original and push the tag. Never change the stamp.
+
 Two more stamps say what the app was doing besides serving the load. **`request_metrics`**
 is `on` when it was publishing `http.server.requests`; **`scrape`** is `on` when
 something was pulling those metrics while the run happened — what the
