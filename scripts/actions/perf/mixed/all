@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# PERF - Mixed All: run every mixed cell back to back against the seeded corpus
+# and print one combined digest at the end. The cell list lives in
+# perf/mixed/tests.sh, shared with the whole-suite action. Each cell appends to
+# its own journal — eyeball and commit those yourself.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/mixed/tests.sh
+
+perf_bootstrap
+perf_run_tests "${MIXED_TESTS[@]}"

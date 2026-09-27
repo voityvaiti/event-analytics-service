@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# PERF: run the whole suite — every write cell and every read cell — back to
-# back against the running app, and print one combined digest at the end. The
-# cell lists live next to the cells themselves, in perf/write/tests.sh and
-# perf/read/tests.sh, so this action never drifts out of step with the per-path
-# ones. Each cell appends to its own journal — eyeball and commit those
-# yourself.
+# PERF: run the whole suite — every write, read and mixed cell — back to back
+# against the running app, and print one combined digest at the end. The cell
+# lists live next to the cells themselves, in perf/write/tests.sh,
+# perf/read/tests.sh and perf/mixed/tests.sh, so this action never drifts out of
+# step with the per-path ones. Each cell appends to its own journal — eyeball
+# and commit those yourself.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
@@ -13,6 +13,7 @@ cd "$(dirname "$0")/../../.." || exit 1
 source perf/lib/harness.sh
 source perf/write/tests.sh
 source perf/read/tests.sh
+source perf/mixed/tests.sh
 
 perf_bootstrap
-perf_run_tests "${WRITE_TESTS[@]}" "${READ_TESTS[@]}"
+perf_run_tests "${WRITE_TESTS[@]}" "${READ_TESTS[@]}" "${MIXED_TESTS[@]}"
