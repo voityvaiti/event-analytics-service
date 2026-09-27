@@ -5,17 +5,20 @@
 // The endpoints differ only in path and query parameters, so they share one
 // request builder instead of one file each; which endpoint a cell measures is
 // the caller's choice, not a separate copy of the same code.
+//
+// `request` carries the request's `tags` and its `token`, which is __ENV.TOKEN
+// unless given, for the reason k6-ingest.js gives.
 
 import http from 'k6/http';
 
-export function getStats(baseUrl, endpoint, params, tags) {
+export function getStats(baseUrl, endpoint, params, { tags, token = __ENV.TOKEN } = {}) {
   const query = Object.keys(params)
     .map((key) => `${key}=${encodeURIComponent(params[key])}`)
     .join('&');
 
   return http.get(`${baseUrl}/api/v1/stats/${endpoint}?${query}`, {
     headers: {
-      Authorization: `Bearer ${__ENV.TOKEN}`,
+      Authorization: `Bearer ${token}`,
     },
     tags,
   });
