@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# PERF - Mixed Spike active-users: post single events at a steady rate while
+# /api/v1/stats/active-users surges far above what the pool can serve, then
+# back down, and record how much of that ingest was not accepted in each phase.
+# Appends one row per round to perf/mixed/spike/active-users/journal.jsonl.
+# Journal-only, never a gate, so this exits non-zero only when a run could not
+# be measured at all. The app must already be running on the host. Tunables:
+# WRITE_RATE, WRITE_MAX_VUS, READ_SPIKE_RATE, READ_BASELINE_RATE, READ_MAX_VUS,
+# GROUP_BY, SPIKE_WINDOW, *_SECONDS, ROUNDS (default 1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/mixed/spike/measure-cell.sh
+source perf/mixed/spike/active-users/measure.sh
+
+perf_bootstrap
+perf_run_tests "mixed spike active-users:perf_mixed_spike_active_users"
