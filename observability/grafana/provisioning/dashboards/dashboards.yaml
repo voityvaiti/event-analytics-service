@@ -1,7 +1,5 @@
-# Dashboards come from files under version control, and Grafana is told not to
-# accept edits made in its own UI: a panel changed in the browser and nowhere
-# else is lost on the next `docker compose down`, and worse, disagrees with what
-# the next developer sees.
+# Provision dashboards from versioned files and disable UI edits, which would diverge
+# from the repository and may be lost with the container.
 
 apiVersion: 1
 

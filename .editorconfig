@@ -1,6 +1,4 @@
-# Baseline editor settings for IDEs that don't run the Gradle build.
-# Spotless (google-java-format) remains the source of truth — these values
-# are chosen to match it so the IDE and the formatter never disagree.
+# Editor defaults aligned with Spotless; the Gradle formatter remains authoritative.
 root = true
 
 [*]
