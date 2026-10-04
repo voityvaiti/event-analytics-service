@@ -1,18 +1,12 @@
 # Design
 
-Design rationale for the Event Analytics Service: what the system is, the
-decisions behind it, the alternatives that were rejected, and what breaks
-first. For build instructions and current status see [README](./README.md).
+Architecture, design decisions, and measured limits. For setup and current status, see [README](./README.md).
 
 ## What the system is
 
-A backend service that ingests user-generated events (page views, clicks,
-purchases, signups), persists them as an append-only log, and answers
-aggregate questions over that log through a second API — the same shape of
-problem as Google Analytics, Mixpanel, or Amplitude, at a smaller scope.
+The service stores user events as an append-only log and exposes aggregate queries over them.
 
-An event is a single immutable fact — **who did what, when** — plus arbitrary
-context:
+An event is a single immutable fact — **who did what, when** — plus arbitrary context:
 
 ```json
 {
@@ -25,100 +19,43 @@ context:
 }
 ```
 
-The loop is **accept → store → aggregate → query**, and it is the entire
-product.
+The flow is **accept → store → aggregate → query**.
 
 ## Engineering focus
 
-The system exists to work on five specific problems. Everything else in it is
-scaffolding around these.
-
-- **Two-shape workload.** Writes are frequent, small, and independent; reads
-  are infrequent and scan large ranges. The two sides contend for the same
-  table and the same connection pool, and they want opposite things from
-  indexing, batching, and caching.
-- **Idempotent ingest under retries.** A client that times out will retry.
-  Accepting the same event twice inflates every downstream count, and the
-  inflation is invisible — there is no error to notice, only wrong numbers.
-- **Correctness of time bucketing across tenants.** See below; this is the
-  problem the system is most opinionated about.
-- **Eventual consistency, once the pipeline is async.** "Accepted" and
-  "visible in stats" become separate moments with a measurable gap between
-  them. That gap has to be an observable number, not a surprise.
-- **Behaviour under surge.** What the service does when demand exceeds
-  capacity, and whether it returns to baseline afterwards, is measured rather
-  than assumed. See [`perf/`](./perf).
+- **Mixed workload:** frequent small writes and large aggregate reads share a table and connection pool, with competing indexing and batching needs.
+- **Idempotent ingestion:** retries must not inflate downstream counts.
+- **Time bucketing:** reports must respect each tenant's calendar.
+- **Future async consistency:** measure the delay between acceptance and visibility in stats.
+- **Surge recovery:** measure overload and recovery with the [perf suite](./perf).
 
 ## Time bucketing across tenants
 
-A daily count is not a property of the data. It is a property of the data plus
-a time zone, and the same events produce different numbers under different
-zones.
+Daily and hourly counts depend on the reporting zone:
 
-- **Day and hour boundaries shift.** An event at `2026-05-24T23:30Z` belongs to
-  the 24th in UTC and to the 25th in Tokyo. Rebucket a tenant's stream from UTC
-  to their local zone and every daily figure changes — usually by a few
-  percent, which is small enough to look like a bug in the aggregation rather
-  than a zone mismatch.
-- **DST breaks fixed-offset arithmetic.** A zone's offset is not constant. On a
-  DST transition a local day is 23 or 25 hours long, so `floor(epoch / 86400)`
-  and "UTC day plus offset" are both wrong twice a year.
-- **Sub-hour offsets break hourly rollups.** India is `+05:30`, Nepal `+05:45`,
-  Chatham `+12:45`. An hourly rollup in UTC cannot be re-bucketed into a local
-  day for any of them, because their day boundaries do not fall on a UTC hour.
+- An event at `2026-05-24T23:30Z` falls on May 24 in UTC and May 25 in Tokyo.
+- DST makes local days 23 or 25 hours long; fixed-offset arithmetic is insufficient.
+- Offsets such as India's `+05:30`, Nepal's `+05:45`, and Chatham's `+12:45` prevent UTC hourly rollups from being combined into exact local days.
 
-The system stores every timestamp in UTC and applies a zone only at read, via
-the three-argument `date_trunc(unit, ts, zone)`, so bucket boundaries follow
-the requested zone's actual calendar — DST included — rather than a fixed
-offset. The zone resolves **per tenant**, not per request, because a tenant's
-reported numbers must not change depending on where the person opening the
-dashboard happens to be; this is what GA4, Amplitude, and Mixpanel all do.
+Timestamps are stored in UTC. Queries apply `date_trunc(unit, ts, zone)` using one zone per tenant, so every viewer gets the same calendar boundaries.
 
-**Current state:** the zone comes from a `tenants` settings table, read by the
-service on the two query shapes that bucket by time. A tenant with no row is
-bucketed in UTC, so holding a token is all it takes to get correct figures and
-`set-tenant-zone` is only for tenants that report elsewhere. A stored value
-that cannot be read as a zone fails the request instead: bucketing in UTC
-behind the caller's back would produce figures that are plausible and wrong,
-which is the failure this section exists to prevent.
+The service reads the zone from `tenants` for time-bucketed queries. A missing row means UTC; an invalid stored zone fails the request rather than silently changing its calendar. Use `set-tenant-zone` to configure other zones.
 
-The zone is resolved per read and not cached, and the lookup costs about
-**0.15 ms** per bucketed request. The estimator is not the raw gap between
-`groupBy=type`, which resolves nothing, and a bucketed shape, which does: that gap
-is 0.94 ms at the one-hour window and was already 0.81 ms before this branch
-existed, because the two shapes differ by their aggregation as much as by the
-lookup. It is how much that gap *grew* — 0.14 ms for `groupBy=hour`, 0.13 ms for
-`groupBy=day`, across a 0.04–0.25 ms spread over every round pairing. Both sides of
-each gap sit in the same pass, so the between-run term cancels.
+The uncached lookup is estimated at **~0.15 ms** per bucketed request. This uses the change in the latency gap between `groupBy=type` and time groupings: the 1h gap grew from 0.81 ms to 0.94 ms, giving 0.14 ms for `hour` and 0.13 ms for `day` (0.04–0.25 ms across round pairings). Pairing shapes within each pass removes drift between runs; the raw gap also includes aggregation cost.
 
-Only the narrowest window can say even that. The estimator spreads ±0.5 ms at one
-day and ±4 ms at thirty, wider than the thing it is measuring, so the lookup is
-worth ~7% of the one-hour `event-counts` cell, ~0.5% of the one-day one, and
-nothing measurable past that. The control that would settle it — one bucketed
-shape against a tenant with a stored zone and one without — has not been run.
+The estimate is useful only at 1h: it spreads ±0.5 ms at 1d and ±4 ms at 30d. The lookup represents ~7% of the 1h cell, ~0.5% at 1d, and no measurable share beyond that. A direct control using the same bucketed query with and without a stored tenant zone has not been run.
 
-What neither estimator can separate is the transaction. `groupBy=type` opens one
-it never uses, and there is no shape without it to compare against inside a
-run, so its cost stays open — see [the perf notes](./perf/README.md#the-floor-between-runs)
-for why comparing two whole-suite runs will not settle it either.
+Transaction cost remains unmeasured: `groupBy=type` opens an unused transaction, and no equivalent query runs without one as a control. Comparing whole-suite passes cannot isolate it either; see [the perf notes](./perf/README.md#the-floor-between-runs).
 
 ## Architecture
 
-Layered, with dependencies pointing one way: `controller → service →
-repository`. Each layer is consumed through an interface; implementations are
-package-private and wired by Spring, so a layer's internals are not reachable
-from outside it even by accident.
+Dependencies run `controller → service → repository` through interfaces. Implementations are package-private and wired by Spring.
 
-- **Web** — REST endpoints, request validation, DTO mapping. Errors are
-  RFC 9457 `application/problem+json`.
-- **Service** — ingestion and aggregation logic; owns the bucketing-zone
-  policy.
-- **Persistence** — JDBC data access. No JPA on the write path; one
-  parameterised `INSERT` serves both ingest endpoints, batched when a request
-  carries more than one event.
+- **Web** — REST endpoints, request validation, DTO mapping. Errors are RFC 9457 `application/problem+json`.
+- **Service** — ingestion and aggregation logic; owns the bucketing-zone policy.
+- **Persistence** — JDBC data access. No JPA on the write path; one parameterised `INSERT` serves both ingest endpoints, batched when a request carries more than one event.
 
-The web layer runs on virtual threads, so request handling is plain blocking
-code.
+The web layer runs on virtual threads, so request handling is plain blocking code.
 
 ### Data model
 
@@ -139,13 +76,7 @@ CREATE INDEX idx_events_tenant_name_occurred_at_event_type_user_id
     ON events (tenant_name, occurred_at, event_type, user_id);
 ```
 
-`event_id` is client-supplied and the primary key — the idempotency mechanism,
-not a surrogate. `tenant_name` is written from the authenticated token's tenant
-claim rather than from the request, so a client cannot attribute events to anyone
-else. It was called `source` until it was renamed to say what it holds; the perf
-cells' own notes keep the old name where they describe a measurement taken
-against it. Rows are never updated or deleted; every
-aggregate is derived data that can be rebuilt from this table.
+`event_id` is client-supplied and the primary key — the idempotency mechanism, not a surrogate. `tenant_name` is written from the authenticated token's tenant claim rather than from the request, so a client cannot attribute events to anyone else. It was called `source` until it was renamed to say what it holds; the perf cells' own notes keep the old name where they describe a measurement taken against it. Rows are never updated or deleted; every aggregate is derived data that can be rebuilt from this table.
 
 Beside it sits one settings side-table, read only on the analytics path:
 
@@ -156,358 +87,85 @@ CREATE TABLE tenants (
 );
 ```
 
-It holds how a tenant reports, never whether it exists — that is the token's
-job — so it has no foreign key to `events` and a tenant with no row is bucketed
-in UTC. Which is why it stays empty for most tenants, and why ingest never
-touches it.
+This table holds reporting settings; authentication establishes tenant validity. It has no foreign key to `events`, ingestion never reads it, and a missing row means UTC.
 
-The index is led by `tenant_name` because every analytics query filters on the
-token's tenant before its time range: an equality ahead of the range makes the
-scan one contiguous slice per tenant, and prunes by tenant as soon as more than
-one exists. `occurred_at` carries the range, and the trailing columns keep the
-aggregates on the index: `event_type` answers `groupBy=type`, `user_id` the
-distinct count of `active-users`. Only `top-pages` still visits the heap, for
-`properties`.
+The index is led by `tenant_name` because every analytics query filters on the token's tenant before its time range: an equality ahead of the range makes the scan one contiguous slice per tenant, and prunes by tenant as soon as more than one exists. `occurred_at` carries the range, and the trailing columns keep the aggregates on the index: `event_type` answers `groupBy=type`, `user_id` the distinct count of `active-users`. Only `top-pages` still visits the heap, for `properties`.
 
-It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was
-not in it, so checking it sent every candidate row to the heap, taking a 1-hour
-`event-counts` from ~2 ms to ~38 ms by type, while `active-users` and
-`top-pages` — heap-bound already — moved 12–23%. Of the two candidate fixes,
-`(occurred_at, event_type) INCLUDE (tenant_name)` would have restored covering
-without pruning — it still walks every tenant's entries inside the window — so
-the tenant-led key won. The old index went with the migration rather than
-staying beside the new one: no query filters on a time range without a tenant
-any more, so it would only tax writes and disk. What the replacement is worth
-is in the read cells' journals, either side of the V3 migration.
+It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was not in it, so checking it sent every candidate row to the heap, taking a 1-hour `event-counts` from ~2 ms to ~38 ms by type, while `active-users` and `top-pages` — heap-bound already — moved 12–23%. Of the two candidate fixes, `(occurred_at, event_type) INCLUDE (tenant_name)` would have restored covering without pruning — it still walks every tenant's entries inside the window — so the tenant-led key won. The old index went with the migration rather than staying beside the new one: no query filters on a time range without a tenant any more, so it would only tax writes and disk. What the replacement is worth is in the read cells' journals, either side of the V3 migration.
 
-`user_id` joined the entry the same way, and against the same rejected shape: a
-separate `(tenant_name, occurred_at, user_id)` tree beside this one serves
-`active-users` identically to within 0.4% on every window, but costs batch
-ingest 5.2% where widening costs 3.0%, and carries 894 MB more disk. Widening
-pays in entry width — ~3% back on `event-counts`' widest windows, nothing past
-the noise floor on the 1-hour and 1-day windows that dominate traffic. Both
-shapes were measured, three rounds of every cell each; the matrix is in
-[the experiment write-up](./perf/active-users-index-experiment.md).
+`user_id` joined the entry the same way, and against the same rejected shape: a separate `(tenant_name, occurred_at, user_id)` tree beside this one serves `active-users` identically to within 0.4% on every window, but costs batch ingest 5.2% where widening costs 3.0%, and carries 894 MB more disk. Widening pays in entry width — ~3% back on `event-counts`' widest windows, nothing past the noise floor on the 1-hour and 1-day windows that dominate traffic. Both shapes were measured, three rounds of every cell each; the matrix is in [the experiment write-up](./perf/active-users-index-experiment.md).
 
 ## Key design decisions
 
-Each decision states what was chosen, why, and what was rejected.
-
-- **Idempotency at the database unique constraint.** Clients supply
-  `event_id`; a duplicate is rejected by the primary key. The constraint is the
-  only place in the system that can enforce this correctly, because it is the
-  only place that sees concurrent writers serialised.
-  *Rejected:* an application-level seen-ID cache — fast, but it is a second
-  source of truth that goes stale on restart, is not shared across instances,
-  and gives a false negative exactly when the system is under the load that
-  causes retries. *Also rejected:* broker-level deduplication once Kafka lands
-  — it deduplicates a producer session, not a client retrying an HTTP request
-  hours later, which is the actual failure mode.
-- **A batch is all or nothing.** `POST /api/v1/events/batch` takes up to 1000
-  events, and one invalid event rejects the whole request — a `400` whose
-  `errors[]` names the offender by position (`events[3].eventId`). So the batch
-  is the client's retry unit, which costs nothing to retry because every event
-  in it is idempotent. The events go down as one batched statement inside one
-  transaction, so a database failure part-way through leaves no rows behind.
-  *Rejected:* accepting the valid events and reporting the rest. It reads as the
-  friendlier contract, but it buys a client nothing here — a retry of the whole
-  batch cannot double-write — and it costs a second response shape, a second
-  write path, and a client that must diff two lists to learn what happened.
-  *Also rejected:* a multi-row `INSERT ... VALUES (...),(...)` built per request.
-  It is atomic without a transaction, but its SQL text varies with the batch
-  size, which scatters a driver's statement cache and `pg_stat_statements` across
-  one entry per size a client happens to send.
-- **A cap on batch size, not on request body size.** 1000 events is what bounds
-  the work one request can ask for. Nothing bounds the bytes yet — that is the
-  same missing guardrail the read path has, and it belongs with that one.
-- **At-least-once delivery, not exactly-once.** The pipeline will accept that
-  a consumer may see the same event twice, and relies on the unique constraint
-  to make reprocessing harmless.
-  *Rejected:* exactly-once semantics via Kafka transactions — it costs
-  throughput and a large amount of operational complexity to buy a guarantee
-  that an idempotent write already provides. Exactly-once is worth paying for
-  when the sink cannot be made idempotent; here it can.
-- **Append-only events.** Raw events are immutable. Aggregations are derived
-  and can always be recomputed.
-  *Rejected:* mutable per-user counters updated in place — cheaper reads, but
-  a corrupted counter is unrecoverable, and any new question about historical
-  data becomes unanswerable.
-- **Virtual threads over reactive.** Java 21 virtual threads give a blocking
-  request handler the concurrency profile of a reactive one, with ordinary
-  stack traces, ordinary debugging, and ordinary blocking JDBC.
-  *Rejected:* Spring WebFlux — its concurrency advantage over virtual threads
-  has largely evaporated for this workload, while the costs remain: reactive
-  types leak through every layer, the driver stack is narrower, and stack
-  traces stop being useful at the moment they are most needed.
-- **Sync before async.** The write path is synchronous today. Kafka arrives
-  when the synchronous path is measured to be the bottleneck, not before.
-  *Rejected:* starting with the broker — it front-loads operational complexity
-  onto a system whose limits were never established, and leaves no baseline to
-  compare the async version against.
-- **Kafka as the broker, for the shape the system grows into.** An event is a
-  fact, not a task: once accepted, any number of readers may want it, at their
-  own pace, now or later. A log keeps one retained stream and gives each
-  consumer group its own position in it, so each direction a system like this
-  grows in is a new group rather than a change to ingest: the downstream
-  columnar store the non-goals leave outside the service, per-user stream
-  processing ("did X within Y minutes", which is what makes `user_id` the
-  partition key), a replay once a processing bug is fixed. The tools that
-  direction needs — OLAP ingestion, connectors, stream processors — are built
-  around the Kafka protocol.
-  None of it is Stage 3's own need. Its one reader is the `persistence`
-  consumer, raw events stay in Postgres so nothing replays from the broker, and
-  at the single-event rates measured so far throughput does not separate the
-  candidates. "Sync before async" still governs when a broker arrives; this
-  decides only which.
-  *Rejected:* a RabbitMQ quorum queue — for the one consumer Stage 3 has it is
-  the natural fit, with per-message acknowledgement and dead-lettering built in,
-  where Kafka commits offsets by position and one unprocessable record stalls
-  its partition until a dead-letter topic takes it. It loses on direction: an
-  acknowledged message is gone, so a reader added later starts from the day its
-  queue was bound. RabbitMQ Streams add a retained log, which makes the real
-  choice log versus queue; with a log chosen, Kafka is the one that ecosystem is
-  built on.
-- **Aggregation escalates with measured pain.** On-the-fly SQL first, then
-  cache and rollups, then pre-computation via consumers. Each rung is climbed
-  only when the current one hurts and the hurt is in a journal.
-  *Rejected:* pre-computing rollups from the start — it fixes the set of
-  answerable questions before anyone knows which questions get asked.
-- **Asymmetric token signatures, not a shared secret.** Bearer tokens are
-  verified with an RSA public key, keeping the ability to check a token separate
-  from the ability to mint one. Issuing is already outside the service: it holds
-  the public half and nothing else, and tokens are signed by a separate script.
-  Verification therefore costs no key exchange, no lookup and no shared state —
-  which is what lets the ingest path treat a valid signature as proof of a valid
-  tenant on its hottest code path.
-  *Rejected:* HS256 — one secret both signs and verifies, so every party that
-  can validate a token can also forge one, and the secret has to reach each of
-  them over a channel that is already secure. *Also rejected:* ES256 — ECDSA
-  signs faster and verifies slower, the wrong side of that trade for a service
-  that verifies on every request and signs rarely.
-- **The tenant is never a request parameter.** Both paths take it from the
-  verified token: ingest writes `tenant_name` from the tenant claim, and every
-  `/stats` query is scoped to it, with no parameter through which a caller could
-  name a different one. A tenant named in a request body is ignored rather than
-  rejected, since it carries no authority and failing over it would only break
-  clients.
-  *Rejected:* a tenant query parameter or header validated against the token —
-  it is the same guarantee expressed twice, and the two can disagree, at which
-  point isolation depends on a check being remembered at every call site.
-  *Also rejected:* leaving reads unscoped until the tenant table lands. It would
-  have made ingest attribution trustworthy while `/stats` still answered every
-  caller about everyone, which is not a smaller contract but an incoherent one.
-- **No foreign key from `events.tenant_name` to the tenant table.** Tenant validity
-  is proven at the auth layer, before the write; the tenant table is read on
-  the analytics path only.
-  *Rejected:* enforcing referential integrity on ingest — a foreign key puts a
-  lookup and a shared lock on every insert in the hottest path in the system,
-  to re-verify something the request was already authenticated against.
-- **Tenant as a data dimension, not an instance.** Pooled multitenancy: one
-  app, one database, one `events` table, with `tenant_name` as the tenant key.
-  *Rejected:* database- or instance-per-tenant — stronger isolation, but the
-  operational cost per tenant becomes non-trivial and cross-tenant queries stop
-  being possible.
-- **Per-tenant zone resolution, not per-request.** A tenant's daily figures are
-  computed in the tenant's zone regardless of who is asking.
-  *Rejected:* a per-request `?tz=` parameter as the primary mechanism — the
-  same dashboard would then report different totals to two people in different
-  offices, which turns a reporting system into an argument. It survives as an
-  explicit override, not as the default.
-- **`tenants` is a settings table, and a missing row means UTC.** A tenant
-  exists because it holds a token, so the table answers "how does this tenant
-  report", never "does this tenant exist". Ingest never reads it.
-  *Rejected:* treating an unknown tenant as an error — it would make minting a
-  token insufficient to use the service, and put an administrative step in
-  front of the thing authentication already settled.
-- **An unreadable stored zone fails the read.** A value that is not a zone
-  gets a 500 in `problem+json`, naming the value.
-  *Rejected:* falling back to UTC — the caller would receive figures that look
-  right and are computed against a calendar their settings say is wrong, which
-  is the one failure this system is least willing to hide. Validation on the
-  write path makes this unreachable through `set-tenant-zone`; the check is for
-  rows that arrive another way.
-- **The response states a zone only where there are buckets.** `groupBy=type`
-  resolves nothing and reports nothing, as `top-pages` always has.
-  *Rejected:* reporting UTC there — it names a zone nothing was computed in,
-  and a tenant would see its own zone under one grouping and UTC under
-  another, which reads as a bug in the resolution.
-- **Store UTC, bucket on read.** Timestamps are stored in UTC; the zone is
-  applied at query time.
-  *Rejected:* storing local time, or storing a materialised local-day column —
-  both freeze a zone decision into immutable data, so a tenant changing their
-  reporting zone means rewriting history.
-- **Flyway over `ddl-auto`.** Migrations are versioned, reviewable, and run
-  identically in dev, CI, and production.
-  *Rejected:* Hibernate `ddl-auto=update` — it infers a migration from a diff,
-  silently declines the destructive half, and has no notion of a rollback or a
-  review.
-- **Testcontainers over H2.** Tests run against the same PostgreSQL version
-  production uses, in Docker.
-  *Rejected:* H2 in PostgreSQL-compatibility mode — faster tests, but it
-  disagrees with PostgreSQL on `jsonb`, on `date_trunc` with a zone argument,
-  and on `ON CONFLICT` semantics. Every one of those is load-bearing here, so
-  H2 would make the test suite green on the exact behaviour most likely to
-  break.
-- **`limit` is for top-N, not for time series.** `top-pages` returns a bounded
-  top-N with a truncation flag; `event-counts` returns every bucket in the
-  window.
-  *Rejected:* a uniform `limit` on all endpoints — it would silently drop
-  legitimate buckets from a time series, and it saves nothing anyway, since a
-  `GROUP BY` computes every group before `LIMIT` discards any.
-- **The API reference is generated, not written.** springdoc derives OpenAPI
-  3.1 from the request mappings and the Bean Validation constraints, so an
-  endpoint or a bound cannot exist without appearing in the document. Only what
-  the code cannot carry is stated by hand: the bearer scheme, the `[from, to)`
-  window, and the response codes each endpoint answers with.
-  *Rejected:* a hand-written endpoint reference — correct the day it is written
-  and silently wrong afterwards, and wrong is worse than absent here: a caller
-  who follows a stale field name sends a request the API rejects.
-- **Two test tiers split by source set.** Unit tests in `src/test/java` run
-  with no Docker; integration tests live in a separate `integrationTest` source
-  set with Testcontainers on its classpath only.
-  *Rejected:* one source set with tag-based filtering — a misplaced
-  Testcontainers import would then compile and quietly slow the fast suite. The
-  structural split makes it a compile error.
-- **Dev runs on the host, infrastructure runs in Docker.** Postgres lives in
-  Compose; the application runs from the IDE.
-  *Rejected:* containerising the app in dev too — Java has no free file-watch
-  reload to gain from a bind mount, and the container costs a classes mount and
-  a remote-debug port for nothing. The app is containerised for smoke tests and
-  for deployment, where the container is the artifact.
+- **Database idempotency.** The client supplies `event_id`; its primary-key constraint prevents duplicates across concurrent writers. *Rejected:* a seen-ID cache can become stale or disagree across instances. Broker deduplication covers producer sessions, not later HTTP retries.
+- **Atomic batches.** Up to 1,000 events are validated together; one invalid event returns `400` with its position in `errors[]`, e.g. `events[3].eventId`. A batched statement in one transaction rolls back on database failure. The whole batch is safe to retry because each event is idempotent. *Rejected:* partial acceptance adds response and retry complexity without improving retry safety. Dynamic multi-row `INSERT ... VALUES (...),(...)` fragments the driver statement cache and `pg_stat_statements` by batch size.
+- **Batch count limit.** The 1,000-event cap bounds work per request. Request bytes remain unbounded and need a separate guardrail.
+- **At-least-once delivery.** The planned pipeline relies on database idempotency for harmless reprocessing. *Rejected:* Kafka transactions add throughput and operational costs for an exactly-once guarantee the idempotent sink does not need.
+- **Append-only events.** Immutable raw data lets aggregates be rebuilt. *Rejected:* mutable counters alone cannot recover from corruption or answer new questions about historical events.
+- **Virtual threads.** Java 21 supports concurrent blocking handlers with JDBC and ordinary stack traces. *Rejected:* WebFlux adds reactive types across layers and a narrower driver choice without enough benefit for this workload.
+- **Sync before async.** Add Kafka when measurements establish a synchronous bottleneck. Starting with a broker would add operations work before a baseline exists.
+- **Kafka for future consumers.** A retained log supports independent consumer groups, replay, OLAP ingestion, and stream processing. Per-user processing motivates `user_id` as the partition key; the Kafka ecosystem supports these uses. This selects the broker, not when to introduce it. Stage 3 needs only a `persistence` consumer, keeps raw events in Postgres, and has no broker replay requirement. Measured single-event rates do not distinguish the candidates. *Rejected:* RabbitMQ quorum queues fit that single consumer and provide per-message acknowledgement and dead-lettering, but acknowledged messages are unavailable to future readers. RabbitMQ Streams provide retention; Kafka is preferred for its log ecosystem. Kafka's positional offsets require a dead-letter topic to keep an unprocessable record from blocking a partition.
+- **Aggregation follows measurements.** Start with SQL, then add caching, rollups, and consumer pre-computation as measured bottlenecks require. *Rejected:* early rollups fix the available questions before usage is known.
+- **RSA token signatures.** The service holds a public key for verification; an external script signs tokens. Verification requires no lookup or shared state on the ingest path. *Rejected:* HS256 lets every verifier forge tokens and requires distributing a shared secret. ES256 trades faster signing for slower verification, whereas this service verifies every request.
+- **Tenant from the token.** Ingestion and stats use the verified tenant claim. A tenant field in a request body is ignored to preserve client compatibility. *Rejected:* a separate tenant parameter duplicates authority and requires a consistency check at every call site. Unscoped reads would violate isolation.
+- **No tenant foreign key.** Authentication establishes tenant validity before insertion; `tenants` is read only for analytics settings. *Rejected:* a foreign key adds a lookup and shared lock to every insert.
+- **Pooled multitenancy.** One app, database, and `events` table use `tenant_name` as a dimension. *Rejected:* a database or instance per tenant increases operational cost and complicates queries across tenants, despite stronger isolation.
+- **Tenant reporting zone.** All viewers get figures in the tenant's zone. *Rejected:* a per-request `?tz=` default could give viewers different totals. An explicit override is a future option, not currently implemented.
+- **Missing settings mean UTC.** A valid token is enough to use the service; ingestion never reads `tenants`. *Rejected:* requiring a settings row adds an administrative prerequisite.
+- **Invalid stored zones fail the read.** Return `500` in `problem+json`, naming the value. `set-tenant-zone` validates writes; this guards changes made elsewhere. *Rejected:* a UTC fallback would silently report against the wrong calendar.
+- **Zone metadata only for time buckets.** `groupBy=type` and `top-pages` neither resolve nor report a zone. *Rejected:* reporting UTC would imply a calendar was used when none was.
+- **UTC storage, bucketing on read.** Changing a reporting zone requires no data rewrite. *Rejected:* local timestamps or materialised local-day columns freeze a zone into immutable data.
+- **Flyway migrations.** Versioned, reviewable schema changes run consistently in development, CI, and production. *Rejected:* `ddl-auto=update` infers changes, skips destructive ones, and offers no migration review or rollback model.
+- **Testcontainers.** Integration tests use the production PostgreSQL version. *Rejected:* H2's compatibility mode differs on `jsonb`, zone-aware `date_trunc`, and `ON CONFLICT`, all essential to this service.
+- **Top-N limits only.** `top-pages` returns a bounded result and truncation flag; `event-counts` returns every bucket. *Rejected:* time-series limits silently omit buckets and do not save the aggregation work performed before `LIMIT`.
+- **Generated API reference.** springdoc derives OpenAPI 3.1 from mappings and validation constraints. The bearer scheme, `[from, to)` window, and response codes are supplied manually. *Rejected:* a separate handwritten reference can drift from the implementation.
+- **Separate test source sets.** `src/test/java` runs without Docker; `integrationTest` alone has Testcontainers on its classpath. *Rejected:* tag filtering still lets accidental Testcontainers imports compile in unit tests; separate classpaths catch them at compilation.
+- **Host app, Docker infrastructure in development.** Run the app from the IDE and Postgres through Compose. Containerise the app for smoke tests and deployment. *Rejected:* a development app container adds class mounts and remote debugging without automatic Java reload from a bind mount.
 
 ## Non-goals
 
-- **Exactly-once delivery.** At-least-once plus an idempotent sink is the
-  cheaper correct answer. See above.
-- **Multi-region.** No cross-region replication, no conflict resolution, no
-  regional data residency.
-- **A columnar or dedicated analytics store.** ClickHouse or BigQuery would be
-  the right answer at a data volume this system explicitly does not target;
-  exporting to one is a downstream concern, not part of this service.
-- **A user interface.** The read API is the product surface. Dashboards are
-  Grafana or the consumer's own.
-- **Instance-per-tenant isolation.** Pooled multitenancy only.
-- **Rich authentication or authorisation.** JWT bearer tokens carrying a tenant
-  claim, and nothing beyond that — no user management, no roles, no OAuth
-  flows.
-- **Event schema management.** `properties` is schemaless `jsonb` by design;
-  there is no registry, no per-tenant schema validation, no evolution tooling.
+- Exactly-once delivery; use at-least-once delivery and an idempotent sink.
+- Multi-region replication, conflict resolution, or regional data residency.
+- A dedicated analytics store such as ClickHouse or BigQuery; exports belong downstream.
+- A product UI; consumers use the read API, and operational dashboards use Grafana.
+- An instance per tenant; use pooled multitenancy.
+- User management, roles, or OAuth flows beyond JWT tenant claims.
+- Event schema registries, per-tenant validation, or evolution tooling; `properties` remains schemaless `jsonb`.
 
 ## Known limitations and what breaks at 10x
 
-Measured on the current single-node setup against a 20M-row corpus spanning 180
-days (AMD Ryzen 7 7700, 16 cores, connection pool 10). Full series in
-[`perf/`](./perf).
+Measured on the current single-node setup against a 20M-row corpus spanning 180 days (AMD Ryzen 7 7700, 16 cores, connection pool 10). Full series in [`perf/`](./perf).
 
-**Where it is today.** Steady-state single-event ingest holds ~3,800-4,100 req/s
-with p99 under 5 ms and no failures, and the batch endpoint holds ~125,000 events/s
-at 100 events per request — 0.078 ms of latency per event against 4.2 ms, which is
-what the per-request overhead was worth. Verifying a token per request cost neither
-figure anything measurable: 127.5k to 126.0k events/s on the batch cell, inside its
-0.8% spread.
+**Where it is today.** Steady-state single-event ingest holds ~3,800-4,100 req/s with p99 under 5 ms and no failures, and the batch endpoint holds ~125,000 events/s at 100 events per request — 0.078 ms of latency per event against 4.2 ms, which is what the per-request overhead was worth. Verifying a token per request cost neither figure anything measurable: 127.5k to 126.0k events/s on the batch cell, inside its 0.8% spread.
 
-Reads are within a few percent of where they were before tenancy, because the
-index leads with the tenant it is filtered by (see [the data
-model](#data-model)). A 1-hour `event-counts` answers in 0.9 ms by type and
-1.7 ms by hour, a 1-day in 11.6 ms and 27.4 ms. What residue there is belongs to
-the wider index entry — the tenant, and since V7 `user_id`, is stored in every
-one of them — and shows up where a scan reads many entries: `event-counts` by
-type loses 6–8% on its 7- and 30-day windows to the first widening and ~3% to
-the second. Both are past their spreads, and the first is the crossover the
-[index experiment](./perf/index-experiment.md) predicted, where a window stops
-being selective and a larger index only costs. What tenancy cost *without* the
-tenant-led index is the arm in between: 32x on the narrowest window.
+Reads are within a few percent of where they were before tenancy, because the index leads with the tenant it is filtered by (see [the data model](#data-model)). A 1-hour `event-counts` answers in 0.9 ms by type and 1.7 ms by hour, a 1-day in 11.6 ms and 27.4 ms. What residue there is belongs to the wider index entry — the tenant, and since V7 `user_id`, is stored in every one of them — and shows up where a scan reads many entries: `event-counts` by type loses 6–8% on its 7- and 30-day windows to the first widening and ~3% to the second. Both are past their spreads, and the first is the crossover the [index experiment](./perf/index-experiment.md) predicted, where a window stops being selective and a larger index only costs. What tenancy cost *without* the tenant-led index is the arm in between: 32x on the narrowest window.
 
-`active-users` stopped being heap-bound when `user_id` entered the index: its
-1-hour window nearly halved (9.6 to 5.0 ms p95), 1-day dropped 14% to ~110 ms —
-and its 30-day window only 10%, to ~3.4 s, because the scan was 0.9 s of it and
-the rest is the `COUNT(DISTINCT)` sort spilling to disk, which no index removes.
-That 3.4 s is the measured number Stage 4's rollups now own; the shape of the
-trade, and the write and disk price of the index that bought it, is in
-[the second experiment](./perf/active-users-index-experiment.md). Batch ingest
-paid 3.0% for the wider entry — the first write tax the suite has resolved —
-and single-event ingest measurably nothing.
+`active-users` stopped being heap-bound when `user_id` entered the index: its 1-hour window nearly halved (9.6 to 5.0 ms p95), 1-day dropped 14% to ~110 ms — and its 30-day window only 10%, to ~3.4 s, because the scan was 0.9 s of it and the rest is the `COUNT(DISTINCT)` sort spilling to disk, which no index removes. That 3.4 s is the measured number Stage 4's rollups now own; the shape of the trade, and the write and disk price of the index that bought it, is in [the second experiment](./perf/active-users-index-experiment.md). Batch ingest paid 3.0% for the wider entry — the first write tax the suite has resolved — and single-event ingest measurably nothing.
 
-**What saturates first: the read path, not the write path.** A read spike
-demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering
-400 req/s was served at 31.8 req/s — the load generator could not issue 9,454
-of the intended requests at all — and p95 on what did get through reached
-7.4 s. In the recovery window after the surge ended, p95 was still 6.3 s.
-Nothing that was served returned an error; it queued, and stayed queued.
+**What saturates first: the read path, not the write path.** A read spike demonstrates it. Against a baseline p95 of 124 ms, a 30-second surge offering 400 req/s was served at 31.8 req/s — the load generator could not issue 9,454 of the intended requests at all — and p95 on what did get through reached 7.4 s. In the recovery window after the surge ended, p95 was still 6.3 s. Nothing that was served returned an error; it queued, and stayed queued.
 
-Those numbers predate the statement timeout. Every pooled connection now
-carries a 10 s bound, and a query cancelled for exceeding it is answered 503,
-so a connection can no longer be held for minutes. Nine rounds across the three
-spike cells then established what that is worth here: it never fires under this
-surge, and every verdict is unchanged. The tail is time spent waiting for a
-connection, not time spent running a query, and a bound on the second does not
-touch the first.
+Those numbers predate the statement timeout. Every pooled connection now carries a 10 s bound, and a query cancelled for exceeding it is answered 503, so a connection can no longer be held for minutes. Nine rounds across the three spike cells then established what that is worth here: it never fires under this surge, and every verdict is unchanged. The tail is time spent waiting for a connection, not time spent running a query, and a bound on the second does not touch the first.
 
-Scoping reads to a tenant then cost the one cell that used to pass, and the
-tenant-led index bought it back. `event-counts` absorbed a surge and drained
-afterwards: offered 4,000 req/s it served ~717 and recovered to a p95 of ~15 ms.
-With a heap fetch per row it served ~260 and recovered to ~655 ms — no recovery at
-all. Over the new index it serves ~693 and recovers to 15.2 ms, in all three
-rounds. `active-users` and `top-pages` did not move on any field in either
-direction, which pins the swing to the query rather than to the rig — and leaves
-them draining, as they were before tenancy. A few milliseconds per query is not a
-latency detail when ten connections are the only place a request waits; it sets how
-deep the queue goes and how long it drains, which is why a query plan decided a
-surge verdict here while the statement timeout above could not.
+Scoping reads to a tenant then cost the one cell that used to pass, and the tenant-led index bought it back. `event-counts` absorbed a surge and drained afterwards: offered 4,000 req/s it served ~717 and recovered to a p95 of ~15 ms. With a heap fetch per row it served ~260 and recovered to ~655 ms — no recovery at all. Over the new index it serves ~693 and recovers to 15.2 ms, in all three rounds. `active-users` and `top-pages` did not move on any field in either direction, which pins the swing to the query rather than to the rig — and leaves them draining, as they were before tenancy. A few milliseconds per query is not a latency detail when ten connections are the only place a request waits; it sets how deep the queue goes and how long it drains, which is why a query plan decided a surge verdict here while the statement timeout above could not.
 
-**What would have to change.** The first item has landed: a bound on how long
-any single statement may run, so nothing occupies a connection indefinitely.
+**Next changes.** The statement timeout is in place; the next priority is reserving connection capacity for writes. Reads and writes share ten connections, so cheap inserts wait behind expensive queries.
 
-**The next one is separating reads from writes at the connection pool, and it
-matters more than the timeout did.** Both paths draw from one pool of ten
-connections, first-come-first-served, and virtual threads mean that pool is the
-only place a request ever waits. Throughout the surge above, all ten were held
-by reads continuously, so an insert worth 2 ms of work queues behind them.
-[The mixed cell](perf/mixed/spike/README.md) measured how far: during the surge a
-write waits 7.3–7.7 s on average for a connection, a producer that gives up after
-5 s has 94% of its writes go unaccepted, and a fifth still miss in the 30 s
-after. None reaches Hikari's connection timeout, because the client gives up
-first, and its abandoned request keeps its place in the queue. The healthy half
-of the system degrades because of the half that is not, and no query plan or
-timeout prevents it: the timeout bounds how long one connection is held, never
-how many of them reads may hold at once.
+[The mixed cell](perf/mixed/spike/README.md) measured a 7.3–7.7 s mean wait for writes during a read surge. With a 5 s client deadline, ~94% were unaccepted during the surge and ~20% in the following 30 s. No request reached Hikari's connection timeout. Abandoned requests appear to remain queued; a statement timeout cannot limit how many connections reads occupy.
 
-Two shapes answer it. A second pool reserves connections for writes outright,
-at the cost of leaving Boot's datasource auto-configuration and of sizing two
-pools where one was measured. A concurrency limit on reads reserves the same
-capacity from a single pool and bounds the queue as well, which the split does
-not. Neither is built. The mixed cell is the baseline either would be judged
-against, and Stage 3's broker answers the write half without a second pool by
-taking ingest off this pool altogether; the read queue it leaves alone.
+Two options remain unbuilt:
 
-Then rollup tables to remove the linear scan for wide windows. Only after that
-does caching pay — a TTL cache in front of an unbounded query shortens the good
-case and does nothing for the bad one.
+- Separate pools reserve write connections but require manual datasource configuration and sizing; they do not bound the read queue.
+- A read concurrency limit reserves capacity within one pool and bounds queueing.
+
+The mixed cell provides the baseline. Stage 3's broker would remove ingest from this pool without addressing the read queue. Next, rollups should remove wide linear scans; caching alone only improves hits and leaves expensive misses.
 
 **Other known gaps.**
 
-- The bucketing zone is read on every bucketed request with no cache, at about
-  0.15 ms — ~7% of the narrowest `event-counts` cell, and too small to measure at
-  the widest. That is the number a Stage 4 TTL cache would have to beat.
-- `event-counts` grouped by type opens a read-only transaction it never uses, so
-  it pays a `COMMIT` round trip for nothing. The cost is unmeasured: no shape
-  runs the same query without the transaction, so there is nothing to control
-  against.
-- A per-request `?tz=` override is not implemented; the tenant's stored zone is
-  the only one a query can be answered in.
-- `properties` has no GIN index, so any future filter on a JSON field is a
-  sequential scan.
-- `active-users` sorts on disk past a wide enough window: a month of one
-  tenant spills ~94 MB against the default 4 MB `work_mem`, ~2.6 s of the
-  ~3.4 s total. `work_mem`, a hash-friendly query shape, and Stage 4's rollups
-  attack that in ascending order of cost; none is measured yet.
-- One `events` table, unpartitioned. At 10x the corpus, time-range partitioning
-  becomes the difference between pruning and scanning.
-- `/actuator` is unauthenticated. The perf harness reads the live pool size from
-  it to stamp every journal row and gates its runs on health, and CI does the
-  same, so requiring a token there would break every measurement the project
-  compares against. Exposure is limited to `health,metrics,prometheus`, the last
-  of which a metrics collector reads on the same terms; a deployment would
-  restrict it at the network edge, which is where that belongs anyway.
-- Single node, single database. There is no horizontal read scaling and no
-  replica.
+- The bucketing zone is read on every bucketed request with no cache, at about 0.15 ms — ~7% of the narrowest `event-counts` cell, and too small to measure at the widest. That is the number a Stage 4 TTL cache would have to beat.
+- `event-counts` grouped by type opens a read-only transaction it never uses, so it pays a `COMMIT` round trip for nothing. The cost is unmeasured: no shape runs the same query without the transaction, so there is nothing to control against.
+- A per-request `?tz=` override is not implemented; the tenant's stored zone is the only one a query can be answered in.
+- `properties` has no GIN index, so any future filter on a JSON field is a sequential scan.
+- `active-users` sorts on disk past a wide enough window: a month of one tenant spills ~94 MB against the default 4 MB `work_mem`, ~2.6 s of the ~3.4 s total. `work_mem`, a hash-friendly query shape, and Stage 4's rollups attack that in ascending order of cost; none is measured yet.
+- One `events` table, unpartitioned. At 10x the corpus, time-range partitioning becomes the difference between pruning and scanning.
+- `/actuator` is unauthenticated. The perf harness reads the live pool size from it to stamp every journal row and gates its runs on health, and CI does the same, so requiring a token there would break every measurement the project compares against. Exposure is limited to `health,metrics,prometheus`, the last of which a metrics collector reads on the same terms; a deployment would restrict it at the network edge, which is where that belongs anyway.
+- Single node, single database. There is no horizontal read scaling and no replica.
