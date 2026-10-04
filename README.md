@@ -1,47 +1,16 @@
 # Event Analytics Service
 
-A backend service built to ingest **high-frequency** user events (page views,
-clicks, purchases, signups) — accepting them fast, without loss or duplication
-— then aggregate and store them efficiently to power analytics. The output is
-dashboard-style insight over the raw event stream: a small, self-built take on
-Google Analytics / Mixpanel / Amplitude.
+A backend service that ingests user events over REST, stores them in PostgreSQL as an append-only log, and provides analytics for event counts, active users, and top pages. Ingestion is idempotent on a client-supplied `event_id`. Timestamps are stored in UTC; hourly and daily reports use each tenant's time zone.
 
-The engineering focus is the **two-shape workload** — writes are frequent and
-small, reads are aggregate-heavy — and each side gets its own optimizations.
-The flow is **accept → store → aggregate → query**: events arrive over REST,
-land in PostgreSQL as an append-only log (idempotent on a client-supplied
-`event_id`), and a read API answers questions like top pages, active users, and
-event counts over time.
-
-Time bucketing is treated as a correctness problem, not formatting. A daily
-count is a property of the data *and* a time zone: the same events produce
-different numbers depending on where the day boundary falls, DST makes a local
-day 23 or 25 hours long, and sub-hour offsets like `+05:30` break any rollup
-that assumes whole-hour buckets. Timestamps are therefore stored in UTC and the
-zone is applied only at read, via `date_trunc(unit, ts, zone)`, resolved per
-tenant rather than per request.
-
-📐 **[DESIGN.md](./DESIGN.md)** — design rationale, trade-offs, and the
-alternatives that were rejected.
+See [DESIGN.md](./DESIGN.md) for architecture, trade-offs, and rejected alternatives.
 
 ## Where to look first
 
-Ten-minute tour, in order:
-
-1. **[DESIGN.md → Key design decisions](./DESIGN.md#key-design-decisions)** —
-   every decision with the alternative it beat and why.
-2. **[DESIGN.md → Time bucketing across tenants](./DESIGN.md#time-bucketing-across-tenants)**
-   — the correctness problem the system is most opinionated about;
-   [`JdbcEventStatsRepository`](./src/main/java/dev/rymarovych/event_analytics/persistence/JdbcEventStatsRepository.java)
-   is the implementation.
-3. **[`perf/`](./perf)** — k6 suite with a per-test journal; each run appends a
-   rig-stamped line, so a regression is a number rather than a surprise.
-4. **Test tiering** — `src/test/java` (no Docker) versus
-   `src/integrationTest/java` (Testcontainers on its classpath only); the split
-   is structural, so a misplaced import is a compile error.
-5. **[`.github/workflows`](./.github/workflows)** and
-   [`build.gradle`](./build.gradle) — the same commands locally and in CI, plus
-   an opt-in per-PR throughput comparison behind the `perf` label.
+- [Key design decisions](./DESIGN.md#key-design-decisions)
+- [Time bucketing across tenants](./DESIGN.md#time-bucketing-across-tenants), implemented in [`JdbcEventStatsRepository`](./src/main/java/dev/rymarovych/event_analytics/persistence/JdbcEventStatsRepository.java)
+- [`perf/`](./perf) — k6 scenarios and per-test measurement journals
+- Tests: `src/test/java` requires no Docker; `src/integrationTest/java` has Testcontainers on its classpath
+- [CI workflows](./.github/workflows) and [build configuration](./build.gradle)
 
 ## Tech stack
 
@@ -49,61 +18,30 @@ Ten-minute tour, in order:
 - **PostgreSQL** with **Flyway** migrations
 - **Gradle** (wrapper committed)
 - **JUnit 5** + **Testcontainers** (real Postgres in tests, no H2)
-- **springdoc-openapi** (OpenAPI 3.1 and Swagger UI generated from the
-  controllers)
+- **springdoc-openapi** (OpenAPI 3.1 and Swagger UI generated from the controllers)
 
 ## Status
 
-Early development. **Stage 0 (project setup) is complete** — formatting, static
-analysis, coverage, CI, and dependency automation are wired. **Stage 1 (the MVP)
-is complete:** event ingestion is implemented — the synchronous write path
-(`POST /api/v1/events` → PostgreSQL, idempotent on a client-supplied `event_id`)
-on a Flyway-managed schema, with its write throughput tracked over time (see
-[Performance](#performance)). Batch ingestion (`POST /api/v1/events/batch`, up to
-1000 events per request, all-or-nothing on validation) shares that path and its
-idempotency. The MVP read side is in place: `GET
-/api/v1/stats/event-counts` (event counts over a time window, grouped by type,
-hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day
-bucket), and `GET /api/v1/stats/top-pages` (top-N pages by event count, with a
-truncation flag). **JWT authentication is in place**, which makes the service
-multi-tenant in practice rather than only in the schema: every `/api/v1`
-endpoint requires an RS256 bearer token, a row's `tenant_name` comes from the
-token's tenant claim instead of the request body, and every `/stats` query is
-scoped to the caller's own tenant. **The API documents itself** — OpenAPI 3.1 at
-`/v3/api-docs`, generated from the controllers, with Swagger UI over it.
-**Time buckets follow the tenant's own
-calendar**: a `tenants` settings table holds a zone per tenant, absence means
-UTC, and the two bucketed query shapes report the zone they were computed in.
+Early development. Stages 0–2 (setup, MVP, and observability) are complete:
 
-**Stage 2 (observability) is complete.** Metrics are scraped, a dashboard is
-provisioned over them, and every request log line carries a correlation id — see
-[Observability](#observability). A load run is findable there rather than only in
-its journal: each journal row stamps the window it was measured in, and picking
-that run on the dashboard sets the range to it, where the panels agree with the
-row to 0.2%. What carrying all of it costs was measured rather than assumed, and
-came out below what this rig can resolve — the experiment, its conditions and its
-limits are in [`perf/observability-overhead.md`](./perf/observability-overhead.md).
+- Formatting, static analysis, coverage, CI, and dependency automation.
+- Synchronous ingestion into a Flyway-managed schema: `POST /api/v1/events` and `POST /api/v1/events/batch`. Batches accept up to 1,000 events, with all-or-nothing validation and the same idempotency as single events.
+- Analytics: `GET /api/v1/stats/event-counts` (grouped by type, hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day), and `GET /api/v1/stats/top-pages` (top-N pages with a truncation flag).
+- JWT tenant isolation and tenant-specific reporting zones.
+- Generated OpenAPI documentation and Swagger UI.
+- Prometheus metrics, a Grafana dashboard with perf-run annotations, and request IDs in responses and logs. See [Observability](#observability).
 
 ## API reference
 
-`/swagger-ui.html` for the browsable reference, `/v3/api-docs` for the OpenAPI
-3.1 document behind it. Paths, schemas, required fields and bounds are derived
-from the request mappings and the Bean Validation constraints, so an endpoint
-cannot exist without appearing there and a bound cannot change without the
-document changing with it. Only what the code cannot carry is written by hand:
-the bearer scheme, the `[from, to)` window, and the response codes.
+Swagger UI is at `/swagger-ui.html`; the OpenAPI 3.1 document is at `/v3/api-docs`. Paths, schemas, required fields, and bounds are generated from controllers and Bean Validation constraints. The bearer scheme, `[from, to)` window, and response codes are documented manually.
 
-Both are reachable without a token — a token cannot be presented before the
-page that would take it has loaded — and every operation they describe still
-needs one. Paste a minted token into Swagger UI's **Authorize** to call them.
+Both documentation endpoints are public. API operations require a token; paste one into Swagger UI's **Authorize** to try them.
 
 ## Authentication
 
-Every `/api/v1` endpoint needs `Authorization: Bearer <token>`. Tokens are
-verified with an RSA **public** key, so the service can check a token but never
-mint one — issuing lives outside it. `/actuator` is left open, because the perf
-suite reads the live connection-pool size from it to stamp every journal row;
-`/actuator/prometheus` serves the metrics scrape on the same terms.
+Every `/api/v1` endpoint requires an RS256 token in `Authorization: Bearer <token>`. The service verifies tokens with an RSA public key; tokens are issued externally. The token's tenant claim supplies `tenant_name` for writes and scopes all stats queries to that tenant.
+
+`/actuator` is public: the perf suite reads the connection-pool size there, and Prometheus scrapes `/actuator/prometheus`.
 
 Mint a token for local use:
 
@@ -113,31 +51,19 @@ curl -H "Authorization: Bearer $TOKEN" \
   'localhost:8080/api/v1/stats/event-counts?from=2026-05-24T00:00:00Z&to=2026-05-25T00:00:00Z'
 ```
 
-The tenant passed there is the `tenant_name` the caller's events are written under
-and the only rows its queries can see. The committed key pair is a throwaway for
-local runs and the perf suite — see [`dev-keys/`](./dev-keys). **A deployment
-must override
-`spring.security.oauth2.resourceserver.jwt.public-key-location`**, or it will
-trust tokens anyone with this repository can sign.
+The committed key pair is for local runs and perf tests; see [`dev-keys/`](./dev-keys). **Deployments must override `spring.security.oauth2.resourceserver.jwt.public-key-location`**, or anyone with this repository can sign tokens the service trusts.
 
 ## Reporting zone
 
-A tenant's daily and hourly figures are bucketed in the zone stored for it, so
-the same events give different numbers to a tenant in Tokyo and a tenant in
-UTC — which is the point, not a discrepancy. A tenant with no stored zone is
-bucketed in UTC, so most tenants need no setup:
+Hourly and daily reports use the zone in the tenant's `tenants` settings row, defaulting to UTC when no row exists. Set it with:
 
 ```bash
 scripts/actions/set-tenant-zone acme Asia/Tokyo
 ```
 
-Idempotent, and validated against `pg_timezone_names`, so a misspelled zone
-writes nothing and exits non-zero rather than looking like it worked.
+The command is idempotent and validates against `pg_timezone_names`; an invalid zone writes nothing and exits non-zero.
 
-`event-counts` grouped by hour or day and `active-users` state the zone in a
-`timezone` field. `event-counts` grouped by type does not — it has no time
-buckets, so there is no zone it was computed in — and neither does `top-pages`.
-Read the field as optional.
+`event-counts` grouped by hour/day and `active-users` include a `timezone` field. It is absent from `event-counts` grouped by type and from `top-pages`. See [Time bucketing across tenants](./DESIGN.md#time-bucketing-across-tenants) for DST and sub-hour offset handling.
 
 ## Build & checks
 
@@ -146,9 +72,7 @@ Read the field as optional.
 ./gradlew test     # tests only
 ```
 
-IntelliJ users get the same actions as run configs under `.run/` (_CHECK -
-Full_, _LINT - …_, _TEST - Coverage Report_, _PERF - …_); the underlying shell
-wrappers live in `scripts/actions/`.
+IntelliJ users get the same actions as run configs under `.run/` (_CHECK - Full_, _LINT - …_, _TEST - Coverage Report_, _PERF - …_); the underlying shell wrappers live in `scripts/actions/`.
 
 Optionally install the git pre-commit hook once after cloning:
 
@@ -158,89 +82,38 @@ Optionally install the git pre-commit hook once after cloning:
 
 ## Performance
 
-The write path is load-tested and its throughput tracked over time, matching the
-high-frequency-ingest focus above. The suite lives in [`perf/`](./perf):
+The [k6 suite](./perf) tracks throughput, latency, and recovery:
 
-- **Load** — steady-state ingest write throughput, one cell per request shape
-  (`POST /api/v1/events` and `POST /api/v1/events/batch`). Events per second is
-  the field the two are compared over; their request rates differ by the batch
-  size and mean nothing side by side. At 20M rows the single-event path holds
-  ~3,800 events/s and a 100-event batch holds ~125,000 — a factor of 33, which is
-  what the per-request overhead was worth.
-- **Spike** — behaviour under a sudden surge far above capacity, and whether the
-  service recovers afterwards, again per request shape.
+- **Write load:** single-event and batch ingestion. Compare events/s because request rates depend on batch size. At 20M rows, measured throughput was ~3,800 events/s for single events and ~125,000 for 100-event batches (~33×).
+- **Read load:** analytics query latency by endpoint and time window.
+- **Spikes:** write and read surges, recovery, and ingest during a read surge.
 
-Each test appends to its own journal — a self-stamped, rig-aware series — so a
-regression shows up as a number, not a surprise. The journal is meant to be kept
-on **one machine under roughly the same conditions** each run: there is some
-measurement noise, but it is acceptable at this stage of the project, so the
-journal is read for **significant shifts, not small deltas**. Run the tests with
-the actions under `scripts/actions/perf/` or the _PERF - …_ run configs; k6 runs
-from a pinned container, so nothing beyond Docker and a running app is needed. A per-PR throughput comparison also runs in CI, opt-in
-via the `perf` label. See [`perf/README.md`](./perf/README.md) for the details
-and how to add a test.
+Each test appends a journal row with its machine and configuration. Compare runs on the same machine under similar conditions, looking for significant shifts rather than small deltas.
+
+Start the app with `scripts/actions/perf/app`, then run actions under `scripts/actions/perf/` or the _PERF - …_ IDE configurations. k6 runs in a pinned Docker container. CI also offers a per-PR throughput comparison via the `perf` label. See [perf/README.md](./perf/README.md) for setup, interpretation, and adding tests.
 
 ## Observability
 
-Metrics are exposed as a Prometheus scrape at `/actuator/prometheus`. A local
-stack reads it:
+Metrics are exposed at `/actuator/prometheus`. Start the local stack with:
 
 ```bash
 scripts/actions/observability        # Prometheus + Grafana, up
 scripts/actions/observability down   # stop them, leaving Postgres running
 ```
 
-Grafana opens on <http://localhost:3000> with _Event Analytics — overview_
-already provisioned. The first row is seven tiles summarising the time range on
-show — scrape state, requests/s, requests security turned away, events/s, p95,
-server error rate, and the deepest queue that waited for a connection. Pick a
-run in _Perf runs_ and the row becomes that run's summary. The charts under them
-are grouped in reading order: throughput as ingest events/s, ingest requests/s
-and read requests/s, then latency and errors, then what saturates — the
-connection pool, the CPU the whole rig shares, and what the scrape cost for the
-scrapes that were answered. The scrape interval is 2s rather
-than the usual 15s, because the load cells it has to make legible run for 30s.
-Answering it costs the app 2.8 ms at the median and 3.4 ms at p95 — 1035 lines,
-135 KB, measured on the fixed rig against the seeded corpus — so scraping eight
-times more often than usual still asks about 0.15% of a second from it.
+Start the application separately; Prometheus reaches it through the host gateway. The stack uses an opt-in `observability` Compose profile, stays outside `scripts/actions/dependencies`, and publishes both services to loopback only.
 
-The perf runs are on it too. Every journal row that stamps the window it was
-measured in becomes a region over those panels and an entry in _Perf runs_,
-the collapsed row at the bottom — pick one and the dashboard moves to it. A
-spike is three regions rather than one, so the pool's queue climbing under the
-surge and draining after it stays legible.
-[`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh) puts them there: the
-harness runs it after a measured run, and the action above runs it over every
-journal on the way up, so a run measured while the stack was down is on the
-dashboard the moment it is back.
+Grafana at <http://localhost:3000> includes the _Event Analytics — overview_ dashboard. Summary tiles show scrape state, requests/s, security rejections, events/s, p95 latency, server error rate, and peak connection queue depth. Charts cover throughput, latency, errors, pool usage, host CPU, and scrape cost.
 
-A run measured while it was down keeps its region behind the _Perf runs measured
-with no scraper_ toggle, and stays out of the list. Prometheus holds nothing for
-those windows, and a band drawn over an empty panel reads as a gap in the data
-rather than as an absent scraper.
+Select a run in _Perf runs_ to view its time range. Journal rows with measurement timestamps appear as regions; spikes have separate baseline, surge, and recovery regions. The harness adds annotations through [`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh), and stack startup imports existing journals. Runs recorded without scraping are hidden from the list; show their regions with _Perf runs measured with no scraper_. Prometheus has no metrics for those windows.
 
-Two things this deliberately does not do. It does not start the application —
-that runs on the host, and Prometheus reaches it through the host gateway, so
-start it separately in either order. And it does not join the default compose
-set: an `observability` profile keeps both containers out of
-`scripts/actions/dependencies`, the one path every measured run starts through.
-Both publish to loopback only.
+The 2s scrape interval captures 30s load runs. On the reference rig with a seeded corpus, scrapes took 2.8 ms median / 3.4 ms p95 for 1,035 lines (135 KB), about 0.15% of a second per interval. Dashboard panels matched journal figures within 0.2%; measured observability overhead was below the rig's resolution. See [the experiment](./perf/observability-overhead.md) for conditions and limitations.
 
-Every response carries an `X-Request-Id`, and every line the service logs while
-handling that request carries the same value. Send one in and it is echoed back,
-provided it is 8 to 64 characters of `[A-Za-z0-9_-]` — the value is written into
-log lines, so a newline in it would forge one; anything else is replaced by a
-minted id rather than trimmed.
+Every response includes `X-Request-Id`, also attached to logs for that request. An incoming ID is echoed if it contains 8–64 characters from `[A-Za-z0-9_-]`; otherwise a new ID is generated. Validation prevents log injection.
 
-The log is failures only: a rejected token, a malformed request, a query the
-timeout cancelled, a failure nothing claimed. One line each, and a 5xx keeps its
-stack trace. A request that succeeds logs nothing at all, deliberately — its
-rate and latency are on the dashboard above, and a line per request is a cost on
-a path measured in the tens of thousands of events per second.
+Only failures are logged: rejected tokens, malformed requests, query timeouts, and unhandled errors. Each produces one entry; 5xx entries include stack traces. Successful requests are tracked through metrics, avoiding per-request logging cost on the ingest path.
 
-Those lines are for a person by default. A deployment reading them with a
-collector activates the `json-logging` profile, which renders each one as an ECS
-document with the request id as a member:
+Logs are human-readable by default. For ECS JSON logs with request IDs, enable `json-logging`:
 
 ```bash
 SPRING_PROFILES_ACTIVE=json-logging scripts/actions/start
@@ -248,24 +121,11 @@ SPRING_PROFILES_ACTIVE=json-logging scripts/actions/start
 
 ## Known limitations / what breaks at 10x
 
-The read path saturates before the write path does: steady-state ingest holds
-~4,100 req/s at p99 under 5 ms, while a 30-second read surge offering 400 req/s
-was served at 31.8 req/s, pushing p95 from 124 ms to 7.4 s — still 6.3 s in the
-recovery window afterwards. That surge predates the 10 s statement timeout every
-pooled connection now carries, which was then measured against it and does not
-move the tail: the wait is for a connection, not for a query. The queue is still
-unbounded, and the pool is shared with ingest, so a read burst can hold every
-connection the write path needs.
+The read path saturates first. Steady ingest measured ~4,100 req/s at p99 under 5 ms, while a 30s read surge at 400 req/s served 31.8 req/s and raised p95 from 124 ms to 7.4s (6.3s during recovery). These results predate the 10s statement timeout; subsequent measurements found it did not improve the tail because requests wait for a connection. The queue remains unbounded, and reads share the pool with ingest.
 
-Scoping reads to a tenant briefly made it worse: the tenant was not in the
-`(occurred_at, event_type)` index, so `event-counts` lost its index-only scan — a
-1-hour count by type went from ~2 ms to ~38 ms and the cell stopped recovering from
-a surge. Leading the index with the tenant bought both back, to 0.9 ms and to ~693 of
-4,000 req/s served with a 15 ms recovery. The wider index entry leaves a residue
-where a scan reads many of them — 6–8% on the widest `event-counts` windows, ~3%
-on `top-pages` — and token verification cost the write path nothing measurable.
-Full numbers and the ordered fix list are in
-[DESIGN.md → Known limitations](./DESIGN.md#known-limitations-and-what-breaks-at-10x).
+Tenant filtering initially removed the `event-counts` index-only scan: a 1h count by type rose from ~2 ms to ~38 ms. Leading the index with the tenant restored it to 0.9 ms and restored surge recovery (~693 of 4,000 req/s served, 15 ms recovery). Wider entries added 6–8% on the widest `event-counts` windows and ~3% on `top-pages`; token verification added no measurable write cost.
+
+See [DESIGN.md → Known limitations](./DESIGN.md#known-limitations-and-what-breaks-at-10x) for the full results and ordered fixes.
 
 ## Quality tooling
 
