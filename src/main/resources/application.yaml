@@ -10,11 +10,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          # The public half only, so the service can verify a token but never mint
-          # one — that separation is the whole point of signing asymmetrically.
-          # The committed key is a throwaway dev pair (see dev-keys/README.md), so
-          # a deployment MUST override this location or it would trust tokens
-          # anyone with the repository can sign.
+          # Development verification key only; deployments MUST override this location
+          # or trust tokens anyone with the repository can sign. See dev-keys/README.md.
           public-key-location: classpath:keys/dev-public-key.pem
           jws-algorithm: RS256
   docker:
@@ -22,12 +19,9 @@ spring:
       lifecycle-management: start-only
   datasource:
     hikari:
-      # Runs once per physical connection, so no request pays for its own bound.
-      # Postgres defaults to 0 — no bound at all — which is what this replaces.
-      # 10s clears the widest read the corpus can even produce: active-users
-      # over its whole 180-day span costs 5.9s, and 30 days costs 3.6s under
-      # the load profile's concurrency. So it fires on work no window explains
-      # — a stuck statement, a lock, a plan gone wrong — on either path.
+      # Set statement_timeout once per physical connection. The 10s bound exceeds
+      # measured reads (5.9s over 180 days, 3.6s over 30 days) while limiting stuck
+      # queries and lock waits on both paths.
       connection-init-sql: SET statement_timeout = '10s'
 
 management:
@@ -38,32 +32,25 @@ management:
   prometheus:
     metrics:
       export:
-        # Stated rather than left to the default: on Boot 4.0.6 the exporter's
-        # @ConditionalOnEnabledMetricsExport reads the default as false and the
-        # endpoint 404s, which the configuration metadata does not predict.
+        # Enable explicitly: on Boot 4.0.6 the export condition defaults to false and
+        # the endpoint otherwise returns 404.
         enabled: true
   metrics:
     distribution:
-      # A Prometheus quantile is computed from bucket counts, and Micrometer
-      # publishes none by default — without this the scrape carries a count, a
-      # sum and a max, from which no p95 or p99 can be recovered afterwards.
+      # Publish histogram buckets so Prometheus can compute p95/p99; count, sum, and max
+      # alone are insufficient.
       percentiles-histogram:
         http.server.requests: true
 
 logging:
   level:
-    # Silenced because ApiExceptionHandler now logs the same failure with the
-    # request it belongs to. Left alone, every handled exception costs two
-    # lines, and the framework's names neither the request nor the tenant.
+    # ApiExceptionHandler logs these failures with request context; suppress duplicate
+    # framework entries.
     org.springframework.web.servlet.mvc.method.annotation.ExceptionHandlerExceptionResolver: error
   pattern:
-    # Boot's default console pattern already reserves a slot for this, so the
-    # request id joins every line without restating the rest of the pattern.
-    # Its own converter rather than a bare %X: a line logged outside a request
-    # — startup, migrations, the pool — then leaves the column blank instead of
-    # printing an empty pair of brackets, and every line stays aligned. The
-    # trailing space is load-bearing; the quotes are what keep Spotless from
-    # trimming it away.
+    # Use Boot's correlation slot. The converter leaves non-request lines blank.
+    # Preserve the quoted trailing space; otherwise formatting would remove the
+    # separator.
     correlation: "%correlationId{requestId(36)} "
 
 ---
@@ -75,9 +62,6 @@ spring:
 logging:
   structured:
     format:
-      # Off by default: a JSON console is for a collector, and a developer
-      # reading the same lines by eye is not one. A deployment activates this
-      # profile; there is no file counterpart because a deployment reads
-      # stdout. The logging context — the request id among it — becomes
-      # top-level members of the document without further configuration.
+      # Enable JSON stdout for deployment collectors. Logging context, including request
+      # ID, becomes top-level ECS fields.
       console: ecs

@@ -1,8 +1,7 @@
 name: Performance comparison
 
-# Opt-in per PR, not every PR: doubles build + load time, so it runs only for
-# PRs that carry the `perf` label. Add the label to opt a PR in — the run then
-# repeats on every push to that PR — or trigger manually from a branch.
+# Opt in with the perf PR label; rerun on each push while labelled. Manual branch runs
+# are also supported.
 on:
   pull_request:
     types: [labeled, synchronize, reopened]
@@ -18,9 +17,7 @@ concurrency:
 
 jobs:
   compare:
-    # Manual run, or the PR carries the `perf` label. Because the check is
-    # "label present" (not "label just added"), it also fires on every push to
-    # an already-labelled PR (the synchronize event), which is what we want.
+    # Run manually or on any update to a PR carrying the perf label.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'perf')
@@ -29,29 +26,20 @@ jobs:
       contents: read
       pull-requests: write
 
-    # Backing services come from compose.yaml (the single source of truth), not
-    # an inline service container — so adding a dependency is a one-line
-    # compose.yaml edit and this workflow needs no change. Postgres is started
-    # via scripts/actions/dependencies below.
+    # Start shared Compose dependencies through scripts/actions/dependencies.
     env:
       ROUNDS: ${{ github.event.inputs.rounds || '3' }}
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/event_analytics
       SPRING_DATASOURCE_USERNAME: event_analytics
       SPRING_DATASOURCE_PASSWORD: event_analytics
-      # The read cells need a corpus to read. 20M rows is the fixed rig's figure
-      # and out of reach here, so this is 2M over the same 180-day span: the
-      # window mix keeps its shape — every window stays a small fraction of the
-      # corpus, so the index is still the access path — at a tenth the density.
-      # That makes CI read numbers comparable between the two sides and to
-      # nothing else, which the rendered comment says outright. Measured cost:
-      # ~16s to generate and COPY, ~625MB on disk, per side per round.
+      # Seed 2M rows over 180 days: one tenth of the reference density with the same
+      # window proportions. Compare only main and PR within this run. Seeding costs ~16s
+      # and ~625MB per side per round.
       SEED_ROWS: '2000000'
       SEED_SPREAD_DAYS: '180'
       SEED_ANCHOR: '2026-01-01T00:00:00Z'
-      # Per cell. Seven measured runs per side per round, so the whole matrix is
-      # ROUNDS x 2 x 7 x (warmup + measured) of k6 — around 25 minutes at the
-      # default of three rounds. Lower `rounds` on a manual run if that is too
-      # long; the median just gets less to work with.
+      # Seven cells per side per round, each warmed and measured: ~25 minutes for three
+      # rounds. Manual runs can lower rounds at the cost of fewer samples.
       WARMUP_DURATION: 5s
       MEASURED_DURATION: 20s
 
@@ -70,8 +58,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Pin Node like the JDK above, instead of running on whatever the runner
-      # image ships — compare-runs.mjs and the corpus seeder both need it.
+      # Pin Node for the comparison renderer and corpus seeder.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -86,26 +73,17 @@ jobs:
       - name: Start backing services
         run: scripts/actions/dependencies
 
-      # The k6 scenarios authenticate, and the two paths speak for different
-      # tenants — reads ask about the seeded corpus, writes post their own rows —
-      # so this mints the same pair the local harness does. Keeping them apart is
-      # what lets a write cell delete its own batch without touching the corpus
-      # the read cells just measured against.
-      #
-      # One token serves both sides only while they agree on the request contract. A
-      # PR that changes the ingest payload itself cannot be compared this way — the
-      # single k6 script would speak the PR's contract to a main jar that rejects it,
-      # and the summaries would report a broken side rather than a slower one. Such a
-      # PR is measured against its journal on a fixed rig instead, so leave the perf
-      # label off it.
+      # Separate read and write tokens let cleanup remove test writes without touching
+      # the corpus. Both branches use the PR's k6 scripts, so incompatible API contracts
+      # invalidate the comparison. Leave the perf label off such PRs and use fixed-rig
+      # journals.
       - name: Mint the perf tokens
         run: |
           echo "SEED_TOKEN=$(node perf/lib/mint-token.mjs perf-seed)" >> "$GITHUB_ENV"
           echo "WRITE_TOKEN=$(node perf/lib/mint-token.mjs perf-test)" >> "$GITHUB_ENV"
 
-      # Build both jars up front so the measured rounds run back-to-back with no
-      # Gradle work in between. main is built in a worktree to leave the PR
-      # working tree (and its fixed k6 script) untouched.
+      # Build both jars before measuring to avoid interleaved Gradle work. Build main in
+      # a worktree so the PR's k6 scripts stay fixed.
       - name: Build PR jar
         run: |
           ./gradlew bootJar --no-daemon
@@ -123,17 +101,12 @@ jobs:
           [ -n "$jar" ] || { echo "::error::no main boot jar found in build/libs"; exit 1; }
           cp "$jar" /tmp/perf/main-app.jar
 
-      # Alternate main/PR each round so ordering and thermal drift hit both sides
-      # evenly. Per side: recreate the schema (so each app's Flyway migrates from
-      # scratch in isolation — main and PR may carry different migrations, and a
-      # shared history would fail Flyway validation), start the app, seed the
-      # corpus, then run every load cell: a throwaway warmup first (JIT, pool,
-      # and for a read cell its query plan), then the measured run.
+      # Alternate main/PR to distribute ordering and thermal drift. Recreate each side's
+      # schema to isolate Flyway histories, then start, seed, warm up, and measure every
+      # load cell.
       #
-      # A failed measured run is tolerated here (|| true) so both sides still
-      # emit a summary; compare-runs.mjs reads the real failure rate from those
-      # summaries, checks both sides ran the same cells, and fails the build if
-      # either side is broken.
+      # Allow k6 failures so both sides emit summaries. compare-runs.mjs checks failure
+      # rates and matching cell sets, failing the workflow for invalid comparisons.
       - name: Run load comparison
         run: |
           set -euo pipefail
@@ -143,11 +116,8 @@ jobs:
             docker compose exec -T postgres psql -U event_analytics -d event_analytics -qc "$1"
           }
 
-          # main and PR need not name the tenant column the same way — a rename
-          # lands on one side before the other — so the seed and the write-cell
-          # teardown ask the schema instead of assuming. Hardcoding either name
-          # would fail on the side that does not have it and silently cost the
-          # comparison every read cell.
+          # Detect the tenant column from each schema: main and PR may straddle its
+          # rename. Use it for both seeding and write cleanup.
           tenant_column() {
             docker compose exec -T postgres psql -U event_analytics -d event_analytics -tAc \
               "SELECT column_name FROM information_schema.columns
@@ -218,9 +188,8 @@ jobs:
             }
             seed_corpus
 
-            # Reads before writes. A write cell's inserts and deletes bloat the
-            # index by several percent, and a read cell running after them would
-            # be measuring that as well as the branch.
+            # Read before write cells; inserts and cleanup bloat indexes and would bias
+            # later read measurements.
             run_read_cell "$side" "$round" event-counts type
             run_read_cell "$side" "$round" event-counts hour
             run_read_cell "$side" "$round" event-counts day
@@ -243,9 +212,7 @@ jobs:
             fi
           done
 
-      # compare-runs.mjs exits non-zero when a side failed too many requests, so
-      # an invalid run turns this step (and the workflow) red rather than posting
-      # a misleading "better". The comment still posts — see the step below.
+      # Invalid comparisons fail the workflow; the next step still posts their verdict.
       - name: Render comparison
         run: node perf/lib/compare-runs.mjs results/main results/pr | tee comparison.md >> "$GITHUB_STEP_SUMMARY"
 

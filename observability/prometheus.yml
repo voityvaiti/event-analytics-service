@@ -1,11 +1,8 @@
-# Scrape configuration for the local development stack. The application runs on
-# the host (bootRun, or the bootJar the perf suite measures), not in a container,
-# so the target is reached through the host gateway compose.yaml maps in.
+# Scrape the host app through the gateway mapped in compose.yaml.
 
 global:
-  # Deliberately far below the 15s default: the k6 cells this has to make
-  # legible run for 30s, which a default interval would reduce to two points.
-  # One scrape costs ~10ms of a ~55KB endpoint, so the rig barely feels it.
+  # Use 2s scrapes for 30s load runs; the 15s default would provide only two points. See
+  # perf/observability-overhead.md for measured cost.
   scrape_interval: 2s
   scrape_timeout: 1s
 

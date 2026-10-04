@@ -11,9 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Fast feedback: formatting + Error Prone + NullAway. No tests, so this
-  # finishes long before the coverage job and surfaces style/bug-pattern
-  # failures quickly. Error Prone runs during compile (NullAway too, on main).
+  # Fast formatting and compile-time checks, including Error Prone and main-source
+  # NullAway. Tests run in the coverage job.
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +30,8 @@ jobs:
       - name: Spotless + Error Prone + NullAway
         run: ./gradlew spotlessCheck compileJava compileTestJava --no-daemon
 
-  # Every commit a perf journal row stamps must stay fetchable once the merge
-  # rewrites it. Runs on every PR rather than behind a path filter: a required
-  # check that a filter skips stays pending and blocks the merge. Full history,
-  # because a shallow clone cuts the ancestry the check walks.
+  # Check journal commit reachability on every PR. Path filters would leave this
+  # required check pending; full history is needed to walk ancestry.
   journal-commits:
     runs-on: ubuntu-latest
     permissions:
@@ -69,11 +66,8 @@ jobs:
       - name: Test + coverage report
         run: ./gradlew test jacocoTestReport --no-daemon
 
-      # jacoco-report posts a fresh comment each run but never deletes the
-      # previous one, so old coverage comments pile up on the PR. Delete the
-      # prior ones first, leaving only the comment posted by the next step.
-      # Scoped to github-actions[bot] comments carrying the report title, so a
-      # human comment that happens to mention it is never touched.
+      # Remove prior github-actions[bot] coverage reports before posting a new one.
+      # Match author and report title to preserve human comments.
       - name: Remove previous coverage comments
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
