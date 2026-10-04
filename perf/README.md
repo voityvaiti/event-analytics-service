@@ -1,86 +1,45 @@
 # Performance suite
 
-Performance tests for the service, split first by the path they exercise and
-then by the workload they apply to it. Each cell tracks a different question so
-a regression shows up as a number (or a failed recovery), not a surprise in
-production.
+Tests are grouped by path, workload, and request shape or endpoint. Each leaf is a measurement cell.
 
 | Path | Cell | Question it answers |
 |------|------|---------------------|
-| Write | [`write/load/single/`](./write/load/single) | Steady-state ingest throughput one event at a time — how many events/s can we persist, and is it drifting over time? |
-| Write | [`write/load/batch/`](./write/load/batch) | How many events/s does a batch request persist, and how much of the single-event cost was per-request overhead? |
-| Write | [`write/spike/single/`](./write/spike/single) | Does the ingest path survive a sudden surge far above steady-state capacity, and recover afterwards? |
-| Write | [`write/spike/batch/`](./write/spike/batch) | Does the batch path survive a surge, when each request holds a connection for a hundred inserts? |
-| Read | [`read/load/event-counts/`](./read/load/event-counts) | How long does counting events in a window take, per grouping? |
-| Read | [`read/load/active-users/`](./read/load/active-users) | How long does `COUNT(DISTINCT user_id)` over a window take — the read the index can help least? |
-| Read | [`read/load/top-pages/`](./read/load/top-pages) | How long does ranking pages out of JSONB take? |
-| Read | [`read/spike/event-counts/`](./read/spike/event-counts) | Does the cheapest read shape absorb a burst of dashboard traffic, or does queue depth beat query cost? |
-| Read | [`read/spike/active-users/`](./read/spike/active-users) | Does the heaviest read shape survive a burst, and does its queue drain afterwards? |
-| Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Does a JSONB ranking survive a burst, with the index able to narrow the window and no more? |
-| Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Is steady ingest still accepted while a read surge holds every connection, and how do the writes that are not accepted fail? |
+| Write | [`write/load/single/`](./write/load/single) | Single-event ingest throughput |
+| Write | [`write/load/batch/`](./write/load/batch) | Batch ingest throughput and per-request overhead |
+| Write | [`write/spike/single/`](./write/spike/single) | Single-event surge and recovery |
+| Write | [`write/spike/batch/`](./write/spike/batch) | Batch surge and recovery |
+| Read | [`read/load/event-counts/`](./read/load/event-counts) | Event-count latency by grouping |
+| Read | [`read/load/active-users/`](./read/load/active-users) | Distinct-user count latency |
+| Read | [`read/load/top-pages/`](./read/load/top-pages) | JSONB page-ranking latency |
+| Read | [`read/spike/event-counts/`](./read/spike/event-counts) | Event-count surge and queue recovery |
+| Read | [`read/spike/active-users/`](./read/spike/active-users) | Active-user surge and queue recovery |
+| Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Page-ranking surge and queue recovery |
+| Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Write acceptance and failures during a read surge |
 
-Each cell owns its own `journal.jsonl` (an absolute series, self-stamped with
-the rig and config so a number is only ever compared within a fixed rig). Read
-each cell's README for what its numbers mean and why, and its workload's README
-one level up for the parts common to every cell measured that way —
-[`write/load`](./write/load), [`write/spike`](./write/spike),
-[`read`](./read) and [`read/spike`](./read/spike).
+Each cell owns a `journal.jsonl` stamped with its machine and configuration; compare only compatible runs. Cell READMEs explain individual results. Shared methodology lives in [`write/load`](./write/load), [`write/spike`](./write/spike), [`read`](./read), and [`read/spike`](./read/spike).
 
 ## Running
 
-Prerequisites: Docker, and the app started with **`scripts/actions/perf/app`** — not
-`scripts/actions/start`. The harness refuses the latter: it is `./gradlew bootRun`,
-which passes `-XX:TieredStopAtLevel=1` so C2 never compiles the request path. Same
-commit here: **126.0k events/s packaged, 107k under bootRun**, with the read cells
-unmoved because a Postgres query dominates them. Half the suite therefore reads as a
-regression, and no journal field records how the app was launched.
+Prerequisites: Docker and the app started with **`scripts/actions/perf/app`**. The harness rejects `scripts/actions/start` and `./gradlew bootRun` because `-XX:TieredStopAtLevel=1` disables C2 compilation. On the same commit, packaged throughput was **126.0k events/s versus 107k under bootRun**; reads were unchanged because query cost dominates them.
 
-That launcher also records the commit it built the jar from, in a file beside the
-jar, and a row's `commit` is read back from there through the running process.
-`git rev-parse` at measuring time would name the checkout instead, which stops
-being the artifact the moment a branch is switched or a file edited after the app
-started. A jar built from a tree that differs in what `bootJar` reads is stamped
-`<sha>-dirty`; an app the harness cannot inspect at all — a non-local `BASE_URL` —
-stamps `unknown` rather than a SHA it cannot prove. A local app whose jar carries
-no stamp fails the run, and so does one whose stamp is newer than the process
-reading it: a second launcher rebuilds and stamps the jar before it finds the
-port taken, leaving the first app serving behind a stamp for a build that never
-started.
+The launcher stamps the build commit beside the jar. The harness reads that stamp through the running process, so switching the checkout cannot mislabel a measurement:
 
-No stamp names a commit on `main`, because a rebase merge re-creates every commit
-it lands. GitHub keeps the originals as the head of the pull request that carried
-them, past the merge and the branch's deletion, but only the commits that final
-head still contains. So measure after the branch's last rebase onto `main`, and
-until the merge only add commits on top, with nothing else landing on `main`: the
-ruleset will not merge a PR that is behind `main` until it is updated, and
-updating by rebase rewrites the measured commits. CI runs
-`scripts/actions/perf/check-journal-commits` on every PR, and it fails on a
-`-dirty` stamp or one that no branch, tag or pull request head on GitHub
-contains. Push the branch if the commit is new; if it was rewritten, tag the
-original and push the tag. Never change the stamp.
+- Changes to inputs read by `bootJar` produce `<sha>-dirty`.
+- A non-local `BASE_URL`, whose process cannot be inspected, produces `unknown`.
+- A local jar without a stamp fails the run, as does a stamp newer than the process. The latter can occur if a second launcher rebuilds before finding the port occupied.
 
-Two more stamps say what the app was doing besides serving the load. **`request_metrics`**
-is `on` when it was publishing `http.server.requests`; **`scrape`** is `on` when
-something was pulling those metrics while the run happened — what the
-[local stack](../README.md#observability) does every 2s, and what no row written
-before these fields existed did. Both are read after the measured run, the first
-from the app and the second from Prometheus — asked about the window the row
-carries rather than about the moment of asking, so a stack brought up between the
-two does not stamp a run nothing ever scraped. Neither is a label anyone can
-forget to change. A stack that is down reads `off`; it is the ordinary case, not
-an error.
+Measure after the final rebase onto `main`, then only add commits until merge. Changes landing on `main` can force another rebase and rewrite measured commits. GitHub retains original commits through PR heads only if the final head still contains them. CI's `scripts/actions/perf/check-journal-commits` rejects dirty stamps and commits unreachable from a GitHub branch, tag, or PR head. Push new commits; if rewritten, tag and push the original. **Never change a journal stamp.**
 
-k6 itself is **not** installed on the host; every test runs it from a pinned
-container image (`K6_IMAGE`, default `grafana/k6:0.50.0`), and the corpus seeder
-likewise runs from a pinned node image (`NODE_IMAGE`). Backing services come up
-from `compose.yaml` via the shared startup script, so a new dependency is a
-one-line compose edit and nothing here changes.
+Two fields record instrumentation automatically after each run:
 
-Every request carries a bearer token — see [Tenants and tokens](#tenants-and-tokens).
+- `request_metrics`: whether the app publishes `http.server.requests`.
+- `scrape`: whether Prometheus scraped during the measured window. Starting the stack later does not change that window's status; a stopped stack means `off`.
 
-The IDE run configs (`.run/`) wrap the actions below, plus _PERF - App_ for the
-launcher above — note that _APP - Start_ is the development one and the harness
-will refuse it:
+The [local stack](../README.md#observability) scrapes every 2s. Rows predating these fields were measured without it.
+
+k6 and the seeder run in pinned containers (`K6_IMAGE`, default `grafana/k6:0.50.0`, and `NODE_IMAGE`). The shared startup script brings up Compose dependencies. Requests use bearer tokens; see [Tenants and tokens](#tenants-and-tokens).
+
+IDE configurations in `.run/` wrap the actions below. Use _PERF - App_ to start the app; _APP - Start_ is for development.
 
 ```bash
 scripts/actions/perf/write/load/<shape>       # one request shape's throughput
@@ -98,48 +57,22 @@ scripts/actions/perf/mixed/all                # every mixed cell
 scripts/actions/perf/all                      # everything, one combined digest
 ```
 
-Each cell appends its rows and prints them. Eyeball them, then commit the
-journals yourself — the tasks never commit for you.
+Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you.
 
 ## Rounds and the noise floor
 
-Every action repeats each cell `ROUNDS` times, **default 1**, and reports the
-spread across those rounds whenever there is more than one. An ordinary run is
-therefore the single cheap measurement it has always been; ask for rounds when the
-number is going to be compared against something.
+Set `ROUNDS` to repeat each cell (default **1**). Repeated load cells report:
 
-Repetition is not thoroughness for its own sake. These are absolute numbers on a
-machine that has other things to do, so two runs of *identical* code disagree.
-How much they disagree is the **noise floor**, and it is the yardstick every
-later comparison needs: a delta smaller than the floor is not a small effect, it
-is no measured effect. The journal shows why this is not hypothetical — two runs
-of the same commit `aadd201` on the same day recorded 4235.6 and 4061.8 events/s,
-4.19% apart with nothing changed between them, while another same-commit pair
-landed 0.40% apart. One pair cannot tell you which of those is typical.
+- **Coefficient of variation:** how tightly the rounds cluster.
+- **Peak-to-peak:** the gap between best and worst rounds; use this wider bound when comparing one run on each side.
 
-Two figures come out of a repeated cell, answering different questions:
+Rounds run consecutively, each with its own journal row. Spread is calculated from those rows and is not stored. Use multiple rounds for comparisons: two runs of unchanged commit `aadd201` measured 4235.6 and 4061.8 events/s (4.19% apart), while another pair differed by 0.40%. A delta below this noise floor is not a measured effect.
 
-- **Coefficient of variation** — how tightly the rounds cluster. Describes the
-  quality of the rig.
-- **Peak-to-peak** — the full gap between the best and worst round. The wider
-  number, and the honest yardstick for a one-run-each-side comparison, because
-  either side can land at either extreme on luck alone.
-
-Rounds run back to back within a cell, so nothing but chance separates them, and
-each round journals its own row because each is a real measurement. The spread is
-derived and never stored — it only ever describes the rows it was computed from.
-
-The [observability overhead experiment](./observability-overhead.md) is the
-worked example of a delta landing under the floor, and of how much of an
-apparent effect the floor can manufacture: its pooled medians ordered themselves
-exactly as the hypothesis predicted, and pairing arms measured minutes apart
-turned every one of those differences over.
+The [observability experiment](./observability-overhead.md) shows why pairing nearby measurements matters: apparent effects in pooled medians changed sign when paired.
 
 ### The measured floor
 
-Established by the [index experiment](./index-experiment.md), which ran ten
-three-round passes of every cell on this rig — two arms across five corpus
-densities:
+Established by the [index experiment](./index-experiment.md), which ran ten three-round passes of every cell on this rig — two arms across five corpus densities:
 
 | Regime | Peak-to-peak over 3 rounds |
 |---|---|
@@ -150,147 +83,53 @@ densities:
 | Read load, `p95_ms`, sequential scan over megabytes | 0% – 1.0% |
 | Read load, `p95_ms`, empty table | 0% – 4.6% |
 
-Read the single-event write figure as **~6%**, and treat anything below it as no
-measured effect. The batch row is one three-round pass rather than ten, so it is a
-first reading and not yet a range — but it is an order of magnitude tighter than
-the single-event regime, which is the rule below doing what it says: a request that
-does a hundred inserts spends proportionally less of itself in the per-request
-overhead that jitters.
+Use **~6%** for single-event writes. Pooling 30 rounds gave 5.84%, while the ten individual three-round passes ranged from 1.35% to 4.76%. More samples can reveal wider extremes, so the table is a lower bound. The batch figure comes from one three-round pass; batching reduces the share of request overhead that jitters.
 
-Three things about this table are worth stating outright.
+The floor depends on workload: indexed reads varied by at most 1.4%, gigabyte scans by 10%, and megabyte scans by 1%. Empty-table reads took 0.37–0.46 ms, where 0.01 ms rounding alone is ~2%. Do not transfer floors between regimes.
 
-**Three rounds understates it.** Peak-to-peak can only grow as rounds are added —
-more samples, more chance of catching an extreme. The write cell's ten passes
-ranged from 1.35% to 4.76% individually; pooling their 30 rounds gave 5.84%. The
-table is a lower bound, not the real range.
+Spike cells repeat but report no spread: recovery combines service and queue drainage, so no single scalar represents it. Individual inputs vary differently: read `spike_achieved_rps` and `spike_dropped` stayed within 1.2%, while write `spike_achieved_rps` varied by 9.2% and `baseline_p95_ms` by 92%. The recovery rule allows a 5x margin for baseline jitter.
 
-**The floor belongs to the amount of work, not to the machine.** The same queries
-repeat to within 1.4% when an index bounds what they read, and spread to 10% when
-a multi-gigabyte scan answers them — but back to 1% when the scan is only
-megabytes. A floor measured in one regime transfers to no other, and the write
-floor is not the read floor.
-
-**The empty-table row is not jitter.** Those reads answer in 0.37–0.46ms, where
-one hundredth of a millisecond of rounding is 2%. It is quantization of a number
-too small to measure this way, which is a different thing from a noisy regime.
-
-Where the spread is *not* reported: any spike cell. Not because nothing in them
-repeats — the read spike's `spike_achieved_rps` and `spike_dropped` hold to within
-1.2% — but because a spike has no single headline scalar. Its result is a compound
-verdict (`recovered` = served *and* drained), and a spread over one of that
-verdict's inputs would be read as a spread over the verdict. Those inputs run from
-steady to wild: the write spike's `spike_achieved_rps` moves up to 9.2% between
-identical rounds, and its `baseline_p95_ms` up to 92% — a figure small enough for
-one scheduler hiccup to dominate, which is why the recovery gate allows a 5x
-margin. The spike cells still repeat, because several rows are worth having.
-
-The floor measured here describes *this* rig and is not the band
-`compare-runs.mjs` applies in CI (`NOISE_PERCENT`, default 10). That one is
-deliberately wider because a shared GitHub runner jitters more than a fixed
-desktop. Two machines, two numbers; they must not be swapped for each other.
+CI uses a separate, wider `NOISE_PERCENT` band (default 10) in `compare-runs.mjs`, reflecting shared-runner noise.
 
 ### What CI compares
 
-The `perf` label runs every **load** cell — both write shapes and all five read
-shapes — against `main` and the PR back to back on one runner, three rounds by
-default with the median reported, alternating which side goes first each round so
-ordering and thermal drift land on both evenly. Every round rebuilds both sides
-from scratch — fresh schema, freshly seeded corpus, a throwaway warm-up before
-each measured run — and takes the read cells before the write cells, because a
-write cell's inserts and deletes bloat the index by several percent and a read
-cell behind them would measure that as well.
+The `perf` label compares both write load shapes and all five read load shapes against `main` on one runner. By default it reports medians of three rounds, alternating which branch runs first. Each round rebuilds both sides with a fresh schema, corpus, and throwaway warm-up. Reads run before writes to avoid index bloat from inserts and cleanup.
 
-Its corpus is 2M rows over the same 180-day span the fixed rig uses, so the
-window mix keeps its shape at a tenth the density. That makes a CI read number
-comparable to the other side of the same run and to nothing else — never to a
-journal row.
+CI seeds 2M rows over 180 days, one tenth of the reference corpus density. Compare only the two sides of that CI run, never a CI number against a local journal.
 
-Only throughput and the overall p95 carry a verdict there. p99 and the
-per-window figures are printed with their delta and no judgement: measured across
-two runs of an identical jar, batch p99 moved 45% and the narrowest read window
-10%, so a band that trusted them would announce improvements that are not there.
-
-CI drives the k6 scenarios directly rather than through the harness, which is
-part of why they sit at the workload level rather than inside a cell.
+Only throughput and overall p95 receive verdicts. p99 and per-window deltas are informational: identical jars differed by 45% in batch p99 and 10% in the narrowest read window. CI runs k6 scenarios directly, bypassing the harness.
 
 ### The floor between runs
 
-Everything above measures rounds *inside* one pass. Comparing two passes is a
-different and wider thing, and the tenant-timezone run put a number on why.
+Within-pass spread understates differences between whole-suite runs. In the tenant-timezone experiment, unchanged `top-pages` queries slowed 1.1–2.2% across all windows, while the unchanged write path moved ±4.4%.
 
-That run read `top-pages` 1.1% to 2.2% slower on every window it measures — on a
-branch where `top-pages` resolves nothing, opens no transaction, and executes the
-same statement it always did. No single window clears its own round-to-round spread
-by much, and the one-hour window does not clear it at all; what makes this a term
-rather than jitter is that every window moved the same way, medians and p95 alike,
-on an endpoint the branch cannot reach. The write cells said the same: ±4.4% on a
-path the branch cannot touch.
+`perf/all` runs writes before reads. Inserts and cleanup grew the index from 1060 MB after `REINDEX` to 1148 MB before reads: **8.3% more index for the same 20M rows**. `VACUUM ANALYZE` does not remove this bloat; `REINDEX` does. Reusing an intact corpus skips even `VACUUM`.
 
-The mechanism is the suite's own ordering. `perf/all` runs every write cell before
-every read cell, and the write cells insert and delete hundreds of thousands of
-rows. Measured across that run, the index went from 1060MB immediately after a
-`REINDEX` to 1148MB by the time the read cells started — **+8.3% more index for
-the same 20M rows**, and an index scan reads proportionally more pages for it.
-`VACUUM ANALYZE` does not give it back; only `REINDEX` does, and the harness skips
-even the `VACUUM` when it reuses an intact corpus.
+For comparisons:
 
-So a read delta between two whole-suite passes carries a bloat term nobody
-controls, and it is the same size as the effects the read cells are usually asked
-about. Two consequences:
-
-- **Prefer an internal control.** Two shapes measured in the same pass share the
-  index state exactly, so how the gap between them *changes* from pass to pass
-  survives what a raw delta does not. That is how the per-tenant zone lookup was
-  costed at ~0.15 ms. The raw gap will not do it: two shapes differ by their
-  aggregation as well as by the thing under measurement.
-- **When only a cross-pass comparison will do**, `REINDEX` first and run the read
-  cells alone, or accept a floor of several percent rather than the table's ~1%.
-
+- Prefer controls measured in the same pass. Compare how the gap between two shapes changes across passes; a raw gap also includes their aggregation differences. This estimated the tenant-zone lookup at ~0.15 ms.
+- For separate-pass read comparisons, `REINDEX` first and run reads alone, or allow several percent of noise instead of the table's ~1%.
 
 ## The corpus
 
-Every test measures against the same seeded corpus — `SEED_ROWS` (default 20M)
-rows spread over `SEED_SPREAD_DAYS` from `SEED_ANCHOR` — rather than against an
-empty table. Reads need it to mean anything at all: on an empty table the planner
-ignores the very indexes a read test exists to exercise — measured, not assumed,
-by the [index experiment](./index-experiment.md), where both arms answered every
-read in under half a millisecond by sweeping a table with nothing in it. Writes
-keep the same fixed starting point they always had; it simply moved from 0 to
-`SEED_ROWS` and became production-shaped.
+All cells start with `SEED_ROWS` rows (default 20M), spread over `SEED_SPREAD_DAYS` from `SEED_ANCHOR`. Empty tables hide index effects: the [index experiment](./index-experiment.md) measured sub-0.5 ms sequential scans with and without an index. Set `SEED_ROWS=0` only to test that regime explicitly.
 
-`SEED_ROWS=0` asks for that empty table deliberately, which is how the density of
-the corpus becomes a variable a comparison can hold constant or sweep.
-
-The corpus is seeded once per suite run and each test then restores it: reads
-leave it untouched, and a write test deletes exactly the batch it posted, which
-it can find because its rows carry a different `source` than the seeded ones. An
-intact corpus is reused between runs; `SEED_FORCE=1` rebuilds it, which is
-required after changing `lib/event-generator.js` — the reuse check counts rows
-and cannot notice that their shape changed.
+The suite seeds once. Reads leave the corpus intact; writes use a separate tenant and delete their posted rows afterwards. An intact corpus is reused between runs. Set `SEED_FORCE=1` after changing `lib/event-generator.js`: reuse checks count rows but cannot detect changed event contents.
 
 ## Tenants and tokens
 
-A row's `source` now comes from the token's tenant claim rather than the request
-body, so the corpus/write-batch split is carried by **two tokens**:
+Rows use the token's tenant claim (`tenant_name`, formerly `source`). Two tokens separate the corpus from test writes:
 
 | token | tenant | used by |
 |-------|--------|---------|
 | `SEED_TOKEN` | `perf-seed` | every read cell, and the read warm-up |
 | `WRITE_TOKEN` | `perf-test` | every write cell, load and spike |
 
-Both are minted once in `perf_bootstrap` by `lib/mint-token.mjs` (RS256, the key in
-[`dev-keys/`](../dev-keys), node's built-in crypto, same pinned image as the seeder).
-Each cell passes the right one as `-e TOKEN=…`; `k6_run` does not forward `TOKEN`
-from the environment, so a cell states its tenant rather than inheriting one.
+`perf_bootstrap` mints both tokens once with `lib/mint-token.mjs`, using RS256, the [dev key](../dev-keys), and Node's built-in crypto in the seeder's pinned image. Each cell passes `-e TOKEN=…` explicitly; `k6_run` does not inherit it.
 
-Mixing them fails quietly, which is the reason for the table: one shared token either
-writes the batch as `perf-seed`, stranding rows `restore_seed_baseline` deletes by
-`source`, or scopes the read cells to `perf-test` and reports fine latency over
-nothing. The seeder is the exception — it writes the column through `COPY` and
-presents no token.
+Swapping tokens silently invalidates results: writes under `perf-seed` escape write-tenant cleanup, while reads under `perf-test` query an empty dataset. The seeder uses `COPY` directly and needs no token.
 
-No `exp` on either token: Spring checks expiry only when present, and one expiring
-mid-run would surface as a nonzero `failed_rate` and read as load failure.
+Tokens omit `exp` to avoid expiry appearing as a load failure; Spring validates expiry when the claim is present.
 
 ## Layout
 
@@ -338,74 +177,28 @@ perf/
       active-users/
 ```
 
-Both paths split by workload first, because `load` and `spike` are measured
-differently and judged differently, then again by what varies within the path:
-the write side by request shape, the read side by endpoint. Mixed cells run both
-paths at once, so they have a path of their own, split by the endpoint they
-surge. Either way the leaf is a cell — a directory holding `measure.sh`, `journal.jsonl` and `README.md`, and
-nothing else.
+Write and read paths split by workload, then request shape or endpoint. Mixed cells split by the endpoint being surged. Each leaf contains `measure.sh`, `journal.jsonl`, and `README.md`.
 
-A k6 scenario and a measuring routine both live at the workload level. The read
-cells share one scenario because they differ only in the query string; the write
-cells need one each because they post different bodies to different endpoints. The
-routine is shared in both cases, which is the point: cells of one workload differ
-in what they send, never in how they are measured or judged.
+Scenarios and measurement routines live at workload level. Read cells share a scenario; write shapes need separate scenarios for their request bodies. All cells within a workload use the same measurement routine.
 
-- **`lib/harness.sh`** owns everything identical across tests — bringing up
-  dependencies, checking the app and the k6 image, seeding the corpus and
-  restoring it after a write test, and reading the pool/schema/CPU stamps plus
-  the build commit of the jar the app is running and whether its meters and a
-  scrape were on. A test never re-implements this.
-- **`lib/k6-ingest.js`** owns both `/api/v1/events` request shapes, so a contract
-  change touches one file, not every scenario.
-- **`lib/event-generator.js`** owns what an event *looks like*. Both write
-  scenarios and the corpus seeder draw from it, so the table a read test queries
-  and the traffic a write test posts are one population, not two.
-- **`<workload>/measure-cell.sh`** owns a measurement: warm up, run the
-  scenario, stamp and append the journal row, and record a one-line result for
-  the digest. It assumes the harness is already sourced.
-- **`<cell>/measure.sh`** defines a single `perf_<cell>` function, which is one
-  delegating call into that routine carrying what is specific to the cell — its
-  journal, its scenario, and the knobs it owns the defaults for.
+- `lib/harness.sh`: dependencies, app/image checks, seeding, cleanup, and stamps for pool, schema, CPU, running build, metrics, and scraping.
+- `lib/k6-ingest.js`: shared ingest request contracts.
+- `lib/event-generator.js`: event contents for scenarios and the corpus.
+- `<workload>/measure-cell.sh`: warm-up, measurement, journal, and digest entry; expects the harness to be sourced.
+- `<cell>/measure.sh`: a `perf_<cell>` function delegating with the cell's journal, scenario, and defaults.
 
 ## Adding a cell
 
-A cell's directory is its identity: `<path>/<workload>/<cell>/`, where the leaf
-is a request shape on the write side and an endpoint on the read side. Its
-function name spells the same route out — `perf_read_load_top_pages` sits in
-`read/load/top-pages/`, `perf_write_load_single` in `write/load/single/`.
+Use `<path>/<workload>/<cell>/` and a matching function name, e.g. `read/load/top-pages/` → `perf_read_load_top_pages`.
 
-1. Create the cell directory with a `measure.sh` defining that function, an empty
-   `journal.jsonl`, and a `README.md` explaining what the numbers mean. Reuse an
-   existing scenario if the new cell only changes the request; write a k6
-   scenario next to it if the workload shape itself is new.
-2. Add an action at the matching path under `scripts/actions/perf/` (copy an
-   existing one — source the harness and the cell's `measure.sh`, bootstrap, run,
-   report). Mind the `cd` depth: it counts back to the repository root.
-3. Add a run config `.run/PERF - <Name>.run.xml` (copy an existing one). Configs
-   exist per path and per workload, not per cell — a single cell runs from its
-   action, or through its workload's `all`.
-4. Wire it into the pipelines: source its `measure.sh` in its path's `tests.sh`
-   and add one entry to that workload's array. The `all` actions read those
-   arrays, so nothing else needs touching. A single-cell action names its own
-   entry inline, so that one string exists in two places — `tests.sh` stays the
-   list every pipeline reads, but it is not the only place a cell is named.
-5. Optionally define `perf_<cell>_spread`, which the runner calls with the round
-   count after a repeated cell. One line delegating to `perf_spread` with the
-   journal, the field whose spread matters, and a grouping field if a round
-   appends more than one row. Skip it when a spread over the cell's headline
-   metric would not support a comparison — that is why the spike cells have none.
+1. Add `measure.sh`, an empty `journal.jsonl`, and a README explaining results. Reuse a scenario when only the request changes; place new scenarios at the workload level.
+2. Copy a matching action under `scripts/actions/perf/`: source the harness and cell, bootstrap, run, report. Adjust its `cd` depth to the repository root.
+3. Add `.run/PERF - <Name>.run.xml` only for a new path or workload. Individual cells run through their action or the workload's `all` action.
+4. Source the cell in its path's `tests.sh` and add it to the workload array. The single-cell action also names its entry inline.
+5. Optionally add `perf_<cell>_spread`, delegating to `perf_spread` with the journal, metric, and grouping field if a round writes multiple rows. Skip this for compound results such as spike recovery.
 
 ## What runs in CI
 
-Every **load** cell feeds the per-PR comparison (`.github/workflows/perf.yml`) —
-both write shapes and all five read shapes.
-[What CI compares](#what-ci-compares) covers how that run is built and which
-of its numbers carry a verdict.
+The per-PR comparison (`.github/workflows/perf.yml`) runs every load cell; see [What CI compares](#what-ci-compares). CI writes no journal rows.
 
-The **spike** cells stay out. Their result is a compound verdict rather than a
-single number, and a shared runner cannot hold an offered rate steady enough for
-one to mean anything, so regressions there are caught by their journals on a
-fixed rig instead. The mixed cell stays out for the second of those reasons.
-The journals stay the fixed-rig record throughout: CI appends no row for any
-cell; it only compares two sides of one run.
+Spike and mixed cells run locally: shared runners cannot reliably sustain their offered rates, and spike recovery is a compound verdict. Their journals track regressions on a fixed rig.
