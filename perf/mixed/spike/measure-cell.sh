@@ -1,22 +1,11 @@
 #!/bin/bash
 
-# One measured mixed spike cell: post single events at a steady rate while the
-# read path surges far past what the pool can serve and back down, then put the
-# corpus back and append one row to the cell's journal. Defines
-# perf_mixed_spike_cell, which the harness (perf/lib/harness.sh) must already be
-# sourced for.
+# Measure a mixed surge, restore the write tenant, and append phase acceptance and
+# failure counts. Pool-timeout deltas identify 5xx caused by connection waits. Reports
+# have no verdict yet; tolerate k6 failures to record them.
 #
-# The row turns on how much of the scheduled ingest was not accepted in each
-# phase, and on how the rest failed: past the write deadline, answered 5xx, or
-# dropped by the client. The pool's own timeout counter, read around the run, says how many
-# of those 5xx waited out a connection. Nothing here is a verdict yet: the cell
-# measures before a threshold for it exists, so it reports and never gates, and
-# the measured run is tolerated failing for the reason read/spike gives.
-#
-# Writes land in the write tenant and are deleted afterwards, as a write cell's
-# are; reads query the corpus and leave it alone.
-#
-# Usage: perf_mixed_spike_cell <journal> <endpoint> <group_by>
+# Requires perf/lib/harness.sh. Usage: perf_mixed_spike_cell <journal> <endpoint>
+# <group_by>
 
 perf_mixed_spike_cell() {
   local journal=$1 endpoint=$2 group_by=$3

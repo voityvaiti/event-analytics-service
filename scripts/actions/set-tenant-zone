@@ -1,22 +1,12 @@
 #!/bin/bash
 
-# Set the time zone a tenant's /stats time buckets are computed in.
+# Set a tenant's reporting zone idempotently:
 #
-#   scripts/actions/set-tenant-zone acme Asia/Tokyo
+# scripts/actions/set-tenant-zone acme Asia/Tokyo
 #
-# Only for tenants that report outside UTC: a tenant with no row here is
-# bucketed in UTC, so minting a token is still all it takes to get correct
-# figures. Idempotent — running it twice is the same as running it once, and
-# running it again with another zone moves the tenant.
-#
-# The zone is validated by the INSERT itself, which takes the name from
-# pg_timezone_names rather than from the argument, so a name Postgres does not
-# know writes nothing. That is why the empty result is checked: without it a
-# typo would exit 0 and look like a success while the old zone stayed in place.
-#
-# Reaches the database the way perf/lib/harness.sh does. The table it writes to
-# is created by Flyway, so the app has to have started once against this
-# database or psql will report that `tenants` does not exist.
+# Missing settings default to UTC. INSERT selects from pg_timezone_names; an empty
+# result means an invalid zone and must fail rather than leave old settings silently.
+# The app must have run Flyway once to create tenants.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 1
@@ -44,9 +34,9 @@ stored=$(printf '%s\n' "$upsert" \
   | tr -d '[:space:]')
 
 if [ -z "$stored" ]; then
-  echo "Postgres knows no time zone called '$2', so nothing was written." >&2
-  echo "Names come from pg_timezone_names, e.g. Asia/Tokyo or Europe/Kyiv." >&2
+  echo "Unknown PostgreSQL time zone '$2'; nothing written." >&2
+  echo "Use a name from pg_timezone_names, e.g. Asia/Tokyo or Europe/Kyiv." >&2
   exit 1
 fi
 
-echo "Time buckets for '$1' are now computed in $stored."
+echo "Reporting zone for '$1': $stored."

@@ -1,17 +1,7 @@
-// The /api/v1/events request shapes for every write scenario, so a change to the
-// ingest contract touches this file and not every scenario that posts to it. The
-// event bodies themselves are produced by event-generator.js from the caller's
-// sequence number.
-//
-// Both endpoints send the same events; they differ only in how many go per
-// request and in the envelope the batch one puts them in.
-//
-// A caller may pass `request` with the `tags` to put on the request, the
-// `token` to send, which is __ENV.TOKEN unless given, and a `timeout` to give up
-// after, which is k6's 60s unless given. A scenario that writes and
-// reads at once speaks as two tenants — reads have to see the seeded corpus,
-// writes have to land where the harness deletes them from — and one process has
-// one environment.
+// Shared single and batch ingest requests; event-generator.js creates bodies from
+// sequence numbers. request may override tags, token (default __ENV.TOKEN), and timeout
+// (default k6's 60s). Mixed scenarios use separate tokens so reads see the corpus and
+// writes reach the cleanup tenant.
 
 import http from 'k6/http';
 import { generateEvent } from './event-generator.js';

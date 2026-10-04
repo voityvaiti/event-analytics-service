@@ -1,23 +1,6 @@
-// Deterministic query generator for the read scenarios — the read-side
-// counterpart to event-generator.js. Given a sequence number it returns the
-// slice of time one dashboard request would ask for.
-//
-// What varies on a read is not the payload but the question, so that is what
-// this diversifies. Two distributions carry the realism:
-//
-//   window size — analytics traffic is mostly "the last hour" and "today", with
-//   a thinner tail of weekly and monthly reports, and those differ by more than
-//   an order of magnitude in the rows they touch. Every size stays a small
-//   fraction of the corpus: a window covering most of it would be cheaper to
-//   sweep than to look up, and the index under test would never be chosen.
-//
-//   window position — recent data is asked for far more often than old data, by
-//   the same 1/rank law that governs page traffic. The tail still reaches the
-//   start of the corpus, so nothing goes permanently unread.
-//
-// Pure in `seq`, like the event generator: both arms of an index comparison
-// replay the identical sequence of questions, so the only thing left differing
-// between them is the index.
+// Deterministic read windows from sequence numbers. Window sizes favour 1h/1d over
+// weekly/monthly reports; positions follow a 1/rank distribution favouring recent data
+// while reaching the corpus start. A/B runs therefore ask identical questions.
 
 const HOUR_MILLIS = 3600000;
 const DAY_MILLIS = 86400000;

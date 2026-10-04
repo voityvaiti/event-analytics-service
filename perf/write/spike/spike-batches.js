@@ -1,12 +1,5 @@
-// How the batch ingest path behaves when request rate suddenly steps far above
-// steady-state capacity, and whether it recovers afterwards. The single-event
-// spike-events.js counterpart, and it borrows that file's reasoning about why the
-// executor is arrival-rate rather than VU-based.
-//
-// The surge is in requests per second at a fixed batch size, not in batch size at
-// a fixed rate. Both would be a step up in events per second, but only the first
-// is the same shock the single-event cell applies, and a cell that changed the
-// unit of work mid-run would be measuring two things at once.
+// Measure batch surge and recovery with an arrival-rate executor. Keep batch size fixed
+// and increase requests/s so baseline and surge perform the same work per request.
 
 import exec from 'k6/execution';
 import { check } from 'k6';
@@ -23,14 +16,8 @@ const SCENARIO = 'ingest-batch-spike';
 // Events per request, held fixed across all three phases — see the header.
 const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 100);
 
-// Requests-per-second targets, not virtual-user counts, for the reason
-// spike-events.js gives. Both figures are far lower than that cell's because each
-// request here carries BATCH_SIZE events: the surge is in events per second, and
-// the rate that delivers it is smaller by that factor.
-//
-// Derived from this shape's own load journal at 1252 req/s sustained, by the same
-// multiples the single-event cell uses of its own: ~2x sustained for the surge,
-// ~12% of it for the baseline. The cell's README carries the arithmetic.
+// Derive arrival rates from batch load throughput (~1252 req/s): surge ~2x, baseline
+// ~12%. See the cell README for calibration.
 const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 150);
 const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 2500);
 

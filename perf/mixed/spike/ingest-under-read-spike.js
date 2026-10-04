@@ -1,50 +1,21 @@
-// Steady ingest while a read surge holds the connection pool: is an event still
-// accepted when the dashboards take every connection? The read spike cannot ask
-// it, since it sends no writes, and the write cells cannot, since they send no
-// reads.
+// Measure steady ingestion alongside the read spike's phases. Separate tenant tokens
+// keep writes out of the read corpus; both streams share the app, pool, and host.
 //
-// Two flows in one process, each as the tenant it has to be. Reads repeat
-// read/spike's surge — the same three phases, rates and window — against the
-// seeded corpus. Writes post single events to the tenant the harness deletes
-// afterwards, so they never change what a read counts; what the flows share is
-// the app, the pool and the machine.
+// Use one open-model write stream across phases so stalled VUs remain occupied during
+// recovery. Attribute writes to their starting phase and let gracefulStop exceed the
+// deadline so final requests are counted.
 //
-// Writes are one open-model stream across all three phases rather than one
-// scenario per phase. Each request is attributed to the phase it started in,
-// and the VUs a stalled write holds stay held into the next phase, as a real
-// producer's would: a fresh set of VUs at the start of recovery would give the
-// client a clean slate the server never got. gracefulStop outlasts the write
-// deadline, so the last writes are counted rather than cut off.
+// Writes exceeding WRITE_TIMEOUT_SECONDS count as unaccepted even if the server later
+// persists them. Without deadlines, a smoke run reported 18% unaccepted writes solely
+// because its 6,000 VUs were exhausted.
 //
-// Every write carries a deadline, WRITE_TIMEOUT_SECONDS, the way a producer's
-// client does: one not accepted by then is given up on and counts as not
-// accepted, even if the server finishes it later. The deadline is what makes
-// the headline a property of the app. Without it, a write waits as long as the
-// app makes it, each wait holds a VU, and what the run reports as unaccepted is
-// how many VUs k6 was given: a smoke run at 1,000 req/s with 6,000 VUs counted
-// 18% of the surge's writes unaccepted, every one of them dropped by k6 and
-// none refused by the app.
+// Preallocate 1.1 * WRITE_RATE * deadline VUs; growing them during measurement can drop
+// work. The 5s default fits the rig: 10s at 1,000 req/s needs 11,000 VUs, exceeding
+// Tomcat's 8,192 connections even during baseline.
 //
-// The deadline defaults to 5s, stricter than common clients (OkHttp waits 10s),
-// because the rig cannot hold a longer one: k6 keeps a connection per VU and
-// hands iterations to every allocated VU in turn, so even a healthy baseline
-// opens one connection per VU, and Tomcat accepts 8,192. A 10s deadline at
-// 1,000 req/s needs 11,000 VUs, and a smoke run saw Tomcat stop accepting
-// connections eight seconds into the baseline.
-//
-// So the write VU budget is derived from the deadline, a tenth over rate times
-// deadline, and runs out only after the deadline has. The whole budget is
-// allocated before the run starts, because k6 drops an iteration when no VU is
-// free and only then initialises another, which would make the drops count how
-// fast k6 grows VUs. A drop is still possible, and journalled: k6 counts drops
-// per scenario, so a phase's drops are what it scheduled minus what it sent,
-// with the run's exact total beside them. Reads keep read/spike's allocation,
-// so their side of the surge is applied the way that cell applies it.
-//
-// A write ends in one of five outcomes: accepted (202), a server error (5xx),
-// rejected (any other status, which means the harness is wrong, not the app), a
-// timeout (not answered within the deadline), or another transport error.
-// Latency is reported for accepted writes only.
+// Phase drops are scheduled minus sent requests; also record k6's exact total. Outcomes
+// are 202 acceptance, 5xx, other status (harness rejection), timeout, or transport
+// error. Report latency only for accepted writes.
 
 import exec from 'k6/execution';
 import { check } from 'k6';

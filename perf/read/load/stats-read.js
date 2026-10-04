@@ -1,12 +1,5 @@
-// Steady-state read latency for one /api/v1/stats endpoint. Which endpoint and
-// which grouping is env, not a separate file: the cells differ only in the URL
-// they call, while the shape of the measurement — constant VUs over a fixed
-// window against the seeded corpus — is identical for all of them.
-//
-// Latency, not throughput, is the headline here. An analytics read is answered
-// in tens to hundreds of milliseconds rather than the ~2ms an insert takes, and
-// what a regression looks like is a query getting slower, not the service
-// accepting fewer of them.
+// Measure steady read latency with constant VUs against the corpus. ENDPOINT and
+// grouping select the query; every cell uses the same measurement window and scenario.
 
 import exec from 'k6/execution';
 import { check } from 'k6';

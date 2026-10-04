@@ -1,33 +1,13 @@
 #!/bin/bash
 
-# One measured write spike cell, shared by every leaf under write/spike: warm up,
-# step the request rate far above steady-state capacity and back down, put the
-# corpus back, and append one row with a recovery verdict to the leaf's journal.
-# Defines perf_write_spike_cell, which the harness (perf/lib/harness.sh) must
-# already be sourced for.
+# Warm, measure, clean up, and journal a write surge. Requires perf/lib/harness.sh.
+# Tolerate k6 failure long enough to record results; failed recovery returns non-zero.
 #
-# Separate from write/load/measure-cell.sh on purpose: a surge is measured in
-# phases against a verdict, not as one steady window, so the two share the
-# harness and nothing else.
-#
-# The measured run is tolerated failing (|| true): a spike is allowed to shed, so
-# k6's recovery threshold tripping is data, not a reason to abort before it is
-# recorded. The function returns non-zero only when the app did not recover.
-#
-# Everything a cell differs by arrives as an argument rather than being read here,
-# because each is a property of the request shape being surged rather than of a
-# surge:
-#   - the scenario, and the load scenario used to warm for it;
-#   - the surge rate, derived per cell from its own load journal;
-#   - the batch size, when the shape sends more than one event per request;
-#   - the ceiling on a healthy baseline. That last one is not a formality: it
-#     asks "is the baseline phase a state worth measuring recovery against", and
-#     the answer scales with the unit of work. A single insert answers in ~2ms, a
-#     batch of a hundred cannot, and a bound written for one would report the
-#     other as having no valid baseline on every round.
+# Each cell supplies its scenario, matching warm-up, calibrated surge rate,
+# healthy-baseline latency bound, and optional batch size.
 #
 # Usage: perf_write_spike_cell <journal> <script> <warmup_script> <spike_rate>
-#                              <baseline_max_p95_ms> [batch_size]
+# <baseline_max_p95_ms> [batch_size]
 
 perf_write_spike_cell() {
   local journal=$1 script=$2 warmup_script=$3 spike_rate=$4 baseline_max_p95_ms=$5
@@ -89,11 +69,8 @@ def r(value, digits=2):
     return round(value, digits) if isinstance(value, (int, float)) else value
 
 
-# What the two shapes can be surged against each other over: their request rates
-# differ by the batch size, so only the events behind them compare. Journalled
-# only where it says something the row does not already say — a scenario posting
-# one event per request reports no batch size, and for it the achieved request
-# rate already is the achieved event rate.
+# Record achieved events/s for batches to compare request shapes. For single-event
+# requests, achieved req/s already gives the event rate.
 batch_size = s.get("batch_size")
 
 
@@ -101,17 +78,12 @@ def events(value):
     return r(value * batch_size, 1) if isinstance(value, (int, float)) else value
 
 
-# Same definition of recovered the read spike uses: serving every request is not
-# enough if each one now takes far longer than it did before the surge. The
-# multiple is wide because run-to-run jitter already moves this figure by about
-# a factor of two, and a gate that trips on jitter teaches people to ignore it.
+# Require recovered latency as well as successful responses. The 5x margin allows
+# roughly 2x baseline jitter without masking a sustained backlog.
 RECOVERY_LATENCY_FACTOR = 5
 
-# The read spike's precondition, for the same reason: everything else here is
-# relative to the baseline phase, so a baseline that has itself collapsed is not a
-# reference. The bound comes from the cell rather than from here, because what
-# counts as a healthy baseline is a property of the request being surged — see the
-# usage note above.
+# Reject unhealthy baselines before calculating relative recovery. Each cell supplies
+# the bound appropriate to its request size.
 BASELINE_MAX_P95_MS = float(baseline_max_p95_ms)
 
 baseline_valid = (
@@ -171,9 +143,7 @@ row = {name: value for name, value in row.items() if value is not None}
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-# Journalled, so the row answers its own question rather than leaving a reader to
-# apply this file's rule by hand. Which rule produced it is already answered by the
-# row's `commit` stamp, as it is for every other field.
+# Journal the derived verdict; commit identifies the rule used to compute it.
 if not baseline_valid:
     verdict = "NO VALID BASELINE"
 elif recovered:

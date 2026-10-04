@@ -1,17 +1,10 @@
 #!/bin/bash
 
-# Read spike cell: surge GET /api/v1/stats/active-users far past what the pool
-# can serve, then back down, and check the read path recovers. Defines
-# perf_read_spike_active_users; the harness and perf/read/spike/measure-cell.sh
-# must already be sourced. Appends one row to
-# perf/read/spike/active-users/journal.jsonl.
+# Measure active-users surge and recovery. Requires the harness and
+# read/spike/measure-cell.sh; append one journal row.
 #
-# The heaviest read, so the lowest ceiling of the three: ~79 req/s on the
-# reference rig, which 400 clears five times over. Journalled with groupBy=day,
-# the endpoint default; hour is the same plan over more buckets and is reachable
-# with GROUP_BY=hour rather than as its own row.
-#
-# Tunables via env: SPIKE_RATE (default 400), GROUP_BY, SPIKE_WINDOW,
+# The original ~79 req/s ceiling motivated 400 req/s (~5x). Recalculate after pool,
+# corpus, or plan changes. Tunables: SPIKE_RATE (400), GROUP_BY (day), SPIKE_WINDOW,
 # BASELINE_RATE, *_SECONDS, MAX_VUS.
 
 perf_read_spike_active_users() {

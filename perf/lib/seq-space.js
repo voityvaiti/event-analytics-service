@@ -1,20 +1,12 @@
-// The one number line shared by everything that draws from event-generator.js:
-// the corpus seeder and both write scenarios. The generator is a pure function
-// of its sequence number, so two producers standing on the same stretch emit
-// identical events — a run would look like it touched more distinct users,
-// sessions and pages than it did. Bands live here rather than in each consumer
-// so they cannot drift into each other.
-//
-// Keep every band under ~147M: past that the generator's per-field hash streams
-// begin to alias one another.
+// Disjoint sequence bands prevent producers from generating identical users, sessions,
+// and pages. Keep all bands below ~147M, where the generator's per-field hash streams
+// begin to alias.
 
 export const CORPUS_SEQ_LIMIT = 30000000;
 
-// Shared by the single-event load cell and the writes of a mixed cell. A band
-// only has to differ from the rows in the table at the same time, and a mixed
-// run's writes sit beside the corpus alone: every write cell deletes what it
-// posted before the next one starts. The bands below already end at the
-// aliasing ceiling, so a new one would not fit.
+// Single-event load and mixed writes share a band because write cells clean up between
+// runs. Mixed writes coexist only with the corpus. No extra band fits below the
+// aliasing ceiling.
 export const LOAD_SEQ_BASE = 30000000;
 
 export const SPIKE_PHASE_SEQ_BASE = {
@@ -23,12 +15,8 @@ export const SPIKE_PHASE_SEQ_BASE = {
   recovery: 60000000,
 };
 
-// The batch scenarios draw BATCH_SIZE numbers per request where the single-event
-// ones draw one, so their bands are sized for the product rather than for the
-// request count. At the default batch of 100: a 30s load window at even 1000
-// req/s is 3M, and a 30s surge offering a few thousand req/s is under 10M — so
-// 20M for load and 10M/30M/17M for the surge phases leave room for a rate an
-// order of magnitude above anything measured, while the last band still ends
+// Batch bands count events, not requests. At BATCH_SIZE=100, 30s load produces ~3M
+// events and a surge under 10M. The load and phase bands reserve headroom while ending
 // below the ~147M aliasing ceiling.
 export const BATCH_LOAD_SEQ_BASE = 70000000;
 

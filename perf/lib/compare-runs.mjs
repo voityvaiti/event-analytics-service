@@ -1,37 +1,17 @@
 /**
- * Compares two sets of k6 load-cell summaries (main vs PR branch) and renders a
- * Markdown verdict covering every cell that ran. Both sides are expected to have
- * been measured back-to-back on the same runner — this script only interprets the
- * numbers, it does not control how they were produced.
+ * Compare load summaries measured back-to-back on one runner and render a Markdown verdict.
  *
  * Usage: node compare-runs.mjs <main-dir> <pr-dir>
  *
- * Each directory holds `*.json` summaries in the shape the load scripts emit from
- * `handleSummary`. They are grouped by the cell that produced them, using fields
- * the summary already carries — `scenario`, plus `group_by` where one scenario
- * runs several shapes — so the caller needs no filename convention beyond writing
- * each summary somewhere under its own side. Per cell the median across rounds is
- * taken, so an unlucky single round does not decide anything.
+ * Group each directory's *.json summaries by scenario and group_by, then compare medians across
+ * rounds. NOISE_PERCENT (default 10) suppresses small verdicts on shared runners.
  *
- * A delta inside the noise band (NOISE_PERCENT, default 10) is reported as "within
- * noise" rather than a win or a regression: GitHub-hosted runners are too noisy to
- * trust small differences, and a CI-sized corpus makes the read cells noisier
- * still than the fixed-rig floor in perf/README.md.
+ * Only throughput and overall p95 receive verdicts. p99 and per-window deltas are
+ * informational: identical jars differed by 45% in batch p99 and 10% in the narrowest read
+ * window.
  *
- * Only throughput and the overall p95 carry a verdict at all. The p99 and the
- * per-window rows show their delta but are left unjudged, because they are decided
- * by too few samples to survive a short run: measured over two runs of an identical
- * jar, batch p99 swung 45% and the narrowest read window 10%, both of which would
- * have been announced as improvements. They are kept because a real regression
- * usually shows there first — as a number to look at, not a verdict to trust.
- *
- * Throughput counts every request, failures included — a broken app returns errors
- * faster than it does real work, so a high failure rate inflates throughput and
- * would otherwise read as "better". When either side's failure rate reaches
- * FAILED_THRESHOLD (default 0.01, matching the k6 threshold), a side produced no
- * summary at all, or the two sides did not run the same set of cells, the
- * comparison is declared invalid: verdicts are withheld and the process exits
- * non-zero so the workflow fails loudly instead of posting a misleading win.
+ * Throughput includes failed requests. Withhold verdicts and exit non-zero if either side
+ * reaches FAILED_THRESHOLD (default 0.01), emits no summaries, or runs a different cell set.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';

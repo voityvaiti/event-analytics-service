@@ -1,13 +1,11 @@
 #!/bin/bash
 
-# PERF: run the app packaged, so the JVM is free to optimise. Not
-# scripts/actions/start — bootRun passes -XX:TieredStopAtLevel=1 and costs ~15% on
-# the write cells, so the harness refuses it.
+# Launch the packaged app with unrestricted JIT; bootRun's C1 limit loses ~15% write
+# throughput and is rejected by the harness. Start Compose and configure the datasource
+# explicitly because the jar lacks spring-boot-docker-compose. Run in the foreground
+# until Ctrl-C.
 #
-# Compose is started here and the datasource wired by hand, because a jar has no
-# spring-boot-docker-compose to do it. Foreground until Ctrl-C, like `start`.
-#
-# Tunables pass through, e.g. scripts/actions/perf/app --server.port=9090
+# Pass app arguments directly, e.g. scripts/actions/perf/app --server.port=9090.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
@@ -22,21 +20,11 @@ if [ -z "$jar" ]; then
   exit 1
 fi
 
-# The commit this jar was built from, recorded beside it so a perf row can stamp
-# the artifact it measured rather than whatever the checkout happened to say while
-# measuring — switch a branch or edit a file after starting the app and the two
-# disagree with nothing to show for it.
+# Stamp the jar's build commit rather than the later checkout state. Add -dirty only for
+# changes in bootJar inputs; journals and README edits do not affect it.
 #
-# `-dirty` in the sense `git describe --dirty` means it: the pathspec is gradle's
-# input set for bootJar, so a change inside it is a change this jar carries, while
-# one outside it — an uncommitted journal row, a README edit — leaves the stamp
-# alone and keeps the marker worth reading.
-#
-# It has to be written before the exec below, which is also what keeps it from
-# being the last word: a launch that dies on a port something else already holds
-# leaves this stamp behind, describing a build that never started, beside a jar
-# the app still serving was not built from. The harness reads it back against the
-# age of that process rather than trusting it.
+# Write before exec. A failed launch can leave a stamp newer than the still-serving
+# process, so the harness checks its age before trusting it.
 build_commit=$(git rev-parse --short HEAD)
 if [ -n "$(git status --porcelain -- src/main build.gradle settings.gradle gradle)" ]; then
   build_commit="$build_commit-dirty"

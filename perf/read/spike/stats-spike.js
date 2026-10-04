@@ -1,17 +1,6 @@
-// How the read path behaves when dashboard traffic suddenly steps far above
-// what the pool can serve, and whether it recovers afterwards. The write side's
-// spike-events.js counterpart, and it borrows that file's reasoning about why
-// the executor is arrival-rate rather than VU-based.
-//
-// Shared by every cell under spike/, the way stats-read.js is shared by the load
-// cells: they differ in the query they surge and in the rate it takes to outrun
-// that query's ceiling, never in how the surge is applied or judged. ENDPOINT,
-// GROUP_BY, LIMIT and SPIKE_RATE come from the cell, which is where the choice
-// of each is argued.
-//
-// The window size is pinned while the position keeps moving. A spike changes
-// one variable — the arrival rate — and mixing window sizes into it would vary
-// the cost of each request at the same time.
+// Shared arrival-rate read surge. Cells select ENDPOINT, GROUP_BY, LIMIT, and
+// SPIKE_RATE. Fix window size while varying its position so arrival rate is the only
+// changing workload dimension.
 
 import exec from 'k6/execution';
 import { check } from 'k6';
@@ -37,12 +26,8 @@ const CORPUS = {
   endMillis: CORPUS_ANCHOR + CORPUS_DAYS * 86400000,
 };
 
-// Reads are answered in tens to hundreds of milliseconds, not the ~2ms an
-// insert takes, so the pool saturates at request rates two orders of magnitude
-// below the write spike's. SPIKE_RATE must clear the read ceiling — roughly
-// pool size divided by query latency — or there is no surge to observe, which
-// is why each cell derives its own default rate instead of sharing one: the
-// ceiling moves by an order of magnitude between the endpoints.
+// Each cell must exceed its own capacity, approximately pool size / query latency.
+// Endpoint costs differ too much for one shared SPIKE_RATE.
 const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 20);
 const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 400);
 
@@ -62,12 +47,9 @@ const arrival = (rate, duration, startTime) => ({
   maxVUs: MAX_VUS,
 });
 
-// Only recovery is gated. A surge is allowed to shed; what must hold is that
-// the read path serves cleanly again once it passes. The rest are non-failing
-// thresholds that exist to materialise the per-phase sub-metrics handleSummary
-// reads — a phase whose http_reqs is not named here reports no request count at
-// all, which is how baseline_achieved_rps journalled as null until this file
-// listed all three.
+// Recovery has the real k6 threshold; surge failures are observations. Other thresholds
+// materialise phase metrics for handleSummary. List http_reqs for every phase or its
+// count will be absent.
 export const options = {
   scenarios: {
     baseline: arrival(BASELINE_RATE, `${BASELINE_SECONDS}s`, '0s'),

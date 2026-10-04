@@ -1,12 +1,7 @@
 #!/bin/bash
 
-# The read cells, declared once and sourced by every action that runs more than
-# one of them. Keeping the list here rather than in each action is what stops a
-# new cell from being wired into one entry point and quietly missed by another.
-#
-# Split by workload, the same axis the directories use: an action that runs one
-# workload takes that array, and READ_TESTS is their concatenation so the
-# whole-path and whole-suite actions never enumerate cells themselves.
+# Shared read cell lists, grouped by workload. Multi-cell actions consume these arrays;
+# READ_TESTS combines them so new cells reach every entry point.
 
 source perf/read/load/measure-cell.sh
 source perf/read/load/event-counts/measure.sh

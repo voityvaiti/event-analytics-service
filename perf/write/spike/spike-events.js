@@ -10,13 +10,9 @@ const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/write/spike/last-summary.json';
 
 const SCENARIO = 'ingest-spike';
 
-// Requests-per-second targets, not virtual-user counts: an arrival-rate executor
-// is an OPEN model — k6 holds the target rate whether or not the app keeps up,
-// so a surge that outpaces the pool shows as growing latency and, past the
-// connection timeout, dropped work. A closed (constant-vus) model can't show
-// that: 90 idle VUs would just park on getConnection() and we'd measure the
-// pool, not a surge. SPIKE_RATE must exceed the load test's measured throughput
-// (~4k req/s on the reference rig) or there is no surge to observe.
+// An open arrival-rate model keeps offering traffic as latency rises; constant VUs
+// would slow arrivals instead. SPIKE_RATE must exceed measured capacity (~4k req/s on
+// the reference rig).
 const BASELINE_RATE = Number(__ENV.BASELINE_RATE || 500);
 const SPIKE_RATE = Number(__ENV.SPIKE_RATE || 8000);
 
@@ -26,11 +22,8 @@ const BASELINE_SECONDS = Number(__ENV.BASELINE_SECONDS || 20);
 const SPIKE_SECONDS = Number(__ENV.SPIKE_SECONDS || 30);
 const RECOVERY_SECONDS = Number(__ENV.RECOVERY_SECONDS || 30);
 
-// The client-side ceiling on concurrent in-flight requests. Under overload each
-// request holds a VU until it returns, so a hard surge can demand far more VUs
-// than this; when it does, k6 sheds the excess as `dropped_iterations` — itself
-// a signal that the surge outran what the client could offer. Raise it to push
-// the server harder rather than the client.
+// MAX_VUS caps in-flight requests. When all VUs are occupied, k6 reports
+// dropped_iterations. Increase the cap to offer more work to the server.
 const MAX_VUS = Number(__ENV.MAX_VUS || 1000);
 
 const arrival = (rate, duration, startTime) => ({
@@ -43,13 +36,9 @@ const arrival = (rate, duration, startTime) => ({
   maxVUs: MAX_VUS,
 });
 
-// Non-failing thresholds materialise the per-phase sub-metrics so handleSummary
-// can read them; the one real gate is recovery health — after the surge the app
-// must serve cleanly again. The spike phase itself is observed, never gated: a
-// spike is allowed to shed, and gating it would either hide that or red every
-// run. A phase whose http_reqs is not named here reports no request count at
-// all, which is how baseline_achieved_rps journalled as null until all three
-// were listed.
+// Non-failing thresholds expose each phase's sub-metrics to handleSummary. Only
+// recovery health gates; surge shedding is recorded. Materialise http_reqs for all
+// phases to avoid missing counts.
 export const options = {
   scenarios: {
     baseline: arrival(BASELINE_RATE, `${BASELINE_SECONDS}s`, '0s'),

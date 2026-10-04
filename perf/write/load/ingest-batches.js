@@ -15,10 +15,8 @@ const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/write/load/last-summary.json';
 // against the single-event series as one line.
 const SCENARIO = 'ingest-batch';
 
-// Events per request. Reported in the summary rather than assumed by whoever
-// reads the journal: at a fixed batch size, requests/s and events/s differ by
-// exactly this factor, and only one of them is comparable with the single-event
-// cell.
+// Record batch size so events/s can be derived and compared with single-event
+// ingestion.
 const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 100);
 
 // Constant concurrency for the whole window, matching the single-event cell — the

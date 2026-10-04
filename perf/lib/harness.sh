@@ -1,20 +1,10 @@
 #!/bin/bash
 
-# Shared harness for the perf suite. Every test runner sources this, then a
-# cell's measure function (perf/<path>/<workload>/[<endpoint>/]measure.sh) and
-# calls it. It owns the parts that are identical across tests — bringing up
-# backing services, checking the app and the k6 image, resetting the table, and
-# reading the stamps that make a number mean something — the pool, the schema, the
-# CPU, the commit the running jar was built from, and whether its meters and a
-# scrape were on — so a new test file is only the k6 scenario plus how to
-# summarise it, never this plumbing.
+# Shared perf bootstrap, corpus management, k6 execution, and measurement stamps.
 #
-# Contract for a sourcing script:
-#   - it has already cd'd to the repo root;
-#   - it calls perf_bootstrap once, before any measure;
-#   - k6 scenario files live beside the cells that run them and are passed to
-#     k6_run as repo-root-relative paths (k6 runs with the repo mounted at
-#     /work).
+# Callers must cd to the repo root, source the harness and cell, then call
+# perf_bootstrap once before measuring. Pass k6 scenario paths relative to the repo
+# root, mounted at /work.
 
 export BASE_URL=${BASE_URL:-http://localhost:8080}
 K6_IMAGE=${K6_IMAGE:-grafana/k6:0.50.0}
@@ -33,15 +23,10 @@ export SEED_ROWS=${SEED_ROWS:-20000000}
 export SEED_SPREAD_DAYS=${SEED_SPREAD_DAYS:-180}
 export SEED_ANCHOR=${SEED_ANCHOR:-2026-01-01T00:00:00Z}
 
-# Row sources, split so a write test's batch can be told apart from the corpus
-# and deleted on its own (see restore_seed_baseline).
-#
-# Each half is now asserted by a token rather than sent in a request body, so the
-# split lives in what each cell authenticates as: SEED_SOURCE mirrors the constant
-# in perf/lib/seed-corpus.mjs, which COPYs the column directly, while
-# WRITE_BATCH_SOURCE mirrors the tenant claim in WRITE_TOKEN. Mixing the two would
-# not fail loudly — it would either have the write cells append rows the teardown
-# no longer matches, or scope the read cells to a source holding almost nothing.
+# Separate corpus and write tenants so cleanup removes only test writes. SEED_SOURCE
+# must match seed-corpus.mjs (which uses COPY); WRITE_BATCH_SOURCE must match
+# WRITE_TOKEN. Mixing tokens silently leaves test rows behind or measures reads over an
+# empty tenant.
 SEED_SOURCE=perf-seed
 WRITE_BATCH_SOURCE=perf-test
 
@@ -61,14 +46,14 @@ perf_bootstrap() {
   scripts/actions/dependencies
 
   if ! curl -sf "$BASE_URL/actuator/health" | grep -q '"status":"UP"'; then
-    echo "App is not healthy at $BASE_URL — start it (e.g. scripts/actions/start) and retry." >&2
+    echo "App is unhealthy at $BASE_URL. Start it with scripts/actions/perf/app and retry." >&2
     return 1
   fi
 
   # Pull/verify the k6 image up front so a missing image or broken Docker fails
   # here, not as a swallowed warm-up error surfacing later.
   if ! docker run --rm "$K6_IMAGE" version >/dev/null 2>&1; then
-    echo "Could not run the k6 image '$K6_IMAGE' — is Docker available and the image pullable?" >&2
+    echo "Cannot run '$K6_IMAGE'. Check Docker and image access." >&2
     return 1
   fi
 
@@ -78,10 +63,8 @@ perf_bootstrap() {
   # before the first measurement instead of after it.
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
 
-  # One token per row source, minted once for the whole run and passed to k6 by
-  # each cell as `-e TOKEN=...`, the same way a cell passes any other knob. A cell
-  # that forgets it is answered 401 on every request, which the summary reports
-  # only as a failure rate — so the two names below are what a new cell copies.
+  # Mint read and write tokens once. Each cell must pass its token explicitly via -e
+  # TOKEN=...; missing tokens cause 401s reported as load failures.
   SEED_TOKEN=$(mint_token "$SEED_SOURCE") || return 1
   WRITE_TOKEN=$(mint_token "$WRITE_BATCH_SOURCE") || return 1
 
@@ -98,11 +81,9 @@ app_pid() {
   ss -ltnp 2>/dev/null | grep -F ":$port " | grep -oP 'pid=\K[0-9]+' | head -1
 }
 
-# Refuse to measure an app whose JIT is capped at C1. bootRun passes
-# -XX:TieredStopAtLevel=1 (Spring Boot's optimizedLaunch), which cost 126.0k vs 107k
-# events/s on the batch cell here and nothing on the read cells — so it reads as a
-# regression on half the suite rather than as a broken run. A hard failure and not a
-# warning because no journal field records how the app was launched.
+# Reject C1-only JIT (-XX:TieredStopAtLevel=1 from bootRun). It reduced batch throughput
+# from 126.0k to 107k events/s while leaving reads unchanged. Journal rows do not record
+# launch mode, so fail rather than record misleading results.
 require_optimized_jvm() {
   case "$BASE_URL" in
     *localhost*|*127.0.0.1*) ;;
@@ -122,25 +103,16 @@ require_optimized_jvm() {
 
   if tr '\0' '\n' < "/proc/$pid/cmdline" | grep -q 'TieredStopAtLevel'; then
     cat >&2 <<'MESSAGE'
-The app is running with -XX:TieredStopAtLevel=1, so C2 never compiles the request
-path. Write-cell numbers come out ~15% low, read cells are unaffected, and no
-journal row would show it — this is what bootRun and scripts/actions/start give you.
-
+The app limits tiered compilation, disabling C2 and understating measured write throughput by ~15%. Read results were unaffected; journals do not record this setting.
 Start the app with: scripts/actions/perf/app
 MESSAGE
     return 1
   fi
 }
 
-# When the process serving BASE_URL started, in epoch seconds, for the checks that
-# have to tell what is running apart from what is on disk beside it.
-#
-# Read from the kernel as the mtime of /proc/<pid>, which is when the process was
-# exec'd. Deriving it from `ps -o etimes=` instead cost a whole launch: elapsed
-# seconds and `date +%s` are both whole, and their difference lands a second
-# either side of the real start — a second early is enough to make the stamp
-# written immediately before `exec java` look newer than the process it describes,
-# which failed the ordinary launch path rather than the one worth catching.
+# Read the serving process's start time from /proc/<pid> mtime. Subtracting integer `ps
+# etimes` from `date +%s` can be off by a second and incorrectly reject a stamp written
+# just before exec.
 process_started_at() {
   local started
   started=$(stat -c %Y "/proc/$1" 2>/dev/null)
@@ -153,27 +125,12 @@ process_started_at() {
   printf '%s' "$started"
 }
 
-# The commit that produced the jar the app is actually running, read from the
-# stamp scripts/actions/perf/app writes beside that jar at build time. `git
-# rev-parse HEAD` cannot answer this: the jar was built at some earlier moment,
-# and a branch switched or a file edited since leaves every row naming a commit
-# that did not produce its number — with nothing in the row to show it.
+# Read the running jar's build stamp into ARTIFACT_COMMIT before each measured cell. The
+# checkout may differ, and the app may restart between cells.
 #
-# Read again for every cell rather than once for a pass, and left in
-# ARTIFACT_COMMIT the way count_events leaves CORPUS_ROWS. A pass runs for hours;
-# an app restarted from a different jar between two of its cells would otherwise
-# have every row after the restart stamping the SHA the first cell read. A cell
-# asks before its measured run rather than beside the stamps it reads after one,
-# so an app that cannot be traced fails the cell before it spends a measurement.
-#
-# Nothing is inferred. A local app whose jar cannot be traced back to a stamp
-# fails the run the way the bootRun check does, because a SHA that cannot be
-# proved is the exact defect this stamp exists to remove. A stamp newer than the
-# process it is read for fails the same way: the launcher writes it before exec,
-# which is the only moment it can, so a launch that died on an already-taken port
-# leaves a stamp beside the jar naming a build that never took over from the app
-# still serving. A remote app, which cannot be inspected at all, stamps "unknown"
-# — still not a claim about an artifact, just an honest absence of one.
+# Reject local jars without a traceable stamp or with a stamp newer than the process. A
+# failed second launch can replace the stamp while the old app still serves.
+# Uninspectable remote apps use "unknown".
 ARTIFACT_COMMIT=""
 read_artifact_commit() {
   case "$BASE_URL" in
@@ -205,11 +162,7 @@ read_artifact_commit() {
 
   if [ -z "$stamp" ]; then
     cat >&2 <<'MESSAGE'
-Could not tell which commit the running app was built from: the process it serves
-from was not launched with a jar carrying a build stamp beside it. Every journal
-row would then name whatever this checkout says, which is not what produced the
-number.
-
+The running app has no readable jar build stamp; its commit cannot be recorded reliably.
 Start the app with: scripts/actions/perf/app
 MESSAGE
     return 1
@@ -221,11 +174,7 @@ MESSAGE
   if [ "$(stat -c %Y "$jar")" -gt "$process_started" ] \
     || [ "$(stat -c %Y "$jar.commit")" -gt "$process_started" ]; then
     cat >&2 <<'MESSAGE'
-The jar the app is serving from, or the commit stamped beside it, was written
-after that app started — so the stamp describes a build the running process never
-loaded. The usual cause is a second scripts/actions/perf/app: it rebuilt and
-stamped the jar, then died on the port the first one still holds.
-
+The jar or build stamp is newer than the running app, so it cannot identify the loaded build. A second launch may have rebuilt the jar before failing on the occupied port.
 Restart the app with: scripts/actions/perf/app
 MESSAGE
     return 1
@@ -234,9 +183,7 @@ MESSAGE
   printf '%s\n' "$stamp"
 }
 
-# Sign a bearer token asserting one tenant, which is what the app now reads a row's
-# `source` from. Runs from the pinned node image like the corpus seeder, so the
-# suite still needs nothing on the host but Docker.
+# Sign a tenant token with the pinned Node image; only Docker is required.
 mint_token() {
   docker run --rm \
     --volume "$PWD":/work --workdir /work \
@@ -246,19 +193,14 @@ mint_token() {
   }
 }
 
-# Run the pinned k6 image against the host-resident app and repo.
-#   --network host    so localhost:8080 (and the summary's base_url) match a
-#                     host run exactly. Linux-only; Docker Desktop would instead
-#                     need BASE_URL=http://host.docker.internal:8080.
-#   --user $(id -u)…  so the summary file k6 writes into the mounted repo is
-#                     owned by us, not the image's baked-in uid.
-# Usage: k6_run <script.js> [extra docker/k6 args...]. The common env (base URL,
-# run id, summary path) is forwarded here; a test appends its own knobs as further
-# --env flags, and a later -e wins so a warm-up can override them.
+# Run pinned k6 with the repo mounted and the host app reachable via --network host
+# (Linux). Docker Desktop needs host.docker.internal routing instead. Use the caller's
+# uid so summaries remain user-owned.
 #
-# TOKEN is deliberately not among them: which tenant a cell authenticates as decides
-# which rows it writes and which it can read, so every cell passes it explicitly as
-# `-e TOKEN=...` rather than inheriting whatever the shell happens to hold.
+# Usage: k6_run <script.js> [extra docker/k6 args...]
+#
+# Forward common base URL, run ID, and summary settings. Later -e arguments override
+# earlier ones. Each cell must pass TOKEN explicitly to select its tenant.
 k6_run() {
   local script="$1"
   shift
@@ -274,28 +216,15 @@ psql_events() {
   docker compose exec -T postgres psql -U event_analytics -d event_analytics "$@"
 }
 
-# Load the fixed corpus every test measures against, so runs start from a known
-# non-empty table rather than an empty one — an index the planner ignores on an
-# empty table would tell us nothing, and production tables are not empty either.
-# Deterministic: the same SEED_ROWS always rebuilds the same corpus, so two runs
-# stay comparable.
-#
-# Rows are streamed straight into COPY instead of posted to the API, which turns
-# an hour of ingest at measured throughput into a couple of minutes. The closing
-# VACUUM ANALYZE is not housekeeping: ANALYZE gives the planner statistics for
-# the new size (stale ones can make it skip the index altogether, measuring the
-# wrong thing), and VACUUM sets the visibility map that index-only scans need.
-# Autovacuum does both eventually — on its own schedule, possibly in the middle
-# of a measured run.
+# Seed a deterministic corpus via COPY. Empty tables hide index effects, while API
+# ingestion would make setup slow. Finish with ANALYZE for current planner statistics
+# and VACUUM for the visibility map required by index-only scans; do not wait for
+# autovacuum during measurement.
 seed_corpus() {
-  # SEED_ROWS=0 runs the same suite against an empty table, which is how much of
-  # a read number belongs to the corpus rather than to the code. Answered here
-  # and not through the paths below: the generator rejects a zero-row corpus, and
-  # the reuse check would skip the ANALYZE — TRUNCATE leaves the planner's row
-  # estimate untouched, so it would go on choosing plans for a corpus that is no
-  # longer there.
+  # Handle SEED_ROWS=0 separately: the generator rejects zero, and TRUNCATE needs
+  # ANALYZE to replace stale planner row estimates.
   if [ "$SEED_ROWS" = 0 ]; then
-    echo "Emptying the table — SEED_ROWS=0 measures against no corpus at all."
+    echo "Emptying the table for SEED_ROWS=0."
     psql_events -qc 'TRUNCATE events;' || return 1
     psql_events -qc 'VACUUM ANALYZE events;' || return 1
     return 0
@@ -325,30 +254,17 @@ seed_corpus() {
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
 
-# Restore the corpus after a write test by deleting exactly the batch it posted.
-# Reads leave the table alone, so only writers need this; vacuuming afterwards
-# keeps their dead rows from accumulating across tests and keeps the visibility
-# map current for the reads that follow.
-#
-# ANALYZE as well, because the write cells run before the read cells: a measured
-# write run adds and then deletes a few hundred thousand rows, and if autoanalyze
-# catches it mid-flight the read cells plan against a row estimate that includes a
-# batch no longer in the table. Against 20M rows that is a rounding error; against
-# 2M it is over a tenth of the table, and against an empty one it is the whole
-# difference between an index and a sequential scan.
+# Delete only test writes, then VACUUM for dead rows and visibility maps. ANALYZE
+# removes row-count estimates that autoanalyze may have captured mid-write; otherwise
+# following reads can plan for a larger corpus.
 restore_seed_baseline() {
   psql_events -qc "DELETE FROM events WHERE tenant_name = '$WRITE_BATCH_SOURCE';" || return 1
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
 
-# The row count a measured run actually started from, journalled so a number is
-# never read against the wrong table size. Counted once and remembered: it is
-# the same for every cell by construction — reads never touch it and writes put
-# back exactly what they added — and the count itself is a full scan of the
-# corpus, which would otherwise sweep gigabytes through the buffer cache
-# immediately before each measurement.
-# Also left in CORPUS_ROWS, so a caller can read it without the command
-# substitution that would discard the cache on every cell.
+# Cache the starting row count in CORPUS_ROWS: reads preserve it and writes restore it.
+# Recounting would scan the corpus and disturb caches before every cell. Read the
+# variable directly; command substitution would discard its cached state.
 CORPUS_ROWS=""
 count_events() {
   [ -n "$CORPUS_ROWS" ] || CORPUS_ROWS=$(psql_events -tAc 'SELECT count(*) FROM events' \
@@ -356,12 +272,9 @@ count_events() {
   printf '%s' "$CORPUS_ROWS"
 }
 
-# Warm JIT and the connection pool for the read path, once per process rather
-# than once per cell. The pool fills on first use and never shrinks, and the
-# preceding cell's own measured run warms the shared HTTP and JDBC path better
-# than a short pass ever could — so repeating it per cell only spends time.
-# Deliberately not folded into perf_bootstrap: a write cell churns the table
-# between bootstrap and the first read, and a single-cell run still needs it.
+# Warm read JIT and the pool once per process, immediately before the first read.
+# Bootstrap may precede write cells that churn the table; later reads reuse the warmed
+# shared path.
 READS_WARMED=0
 warm_reads() {
   [ "$READS_WARMED" = 1 ] && return 0
@@ -373,19 +286,9 @@ warm_reads() {
   READS_WARMED=1
 }
 
-# Scan counters on events as of now, as JSON: idx_scan per secondary index plus
-# the table's seq_scan. A read cell journals the delta over its measured run,
-# which is what keeps a flat read-latency result from being ambiguous: it says
-# outright whether the planner reached for an index or swept the table instead.
-# Per index rather than one hardcoded name, because the moment two indexes serve
-# different /stats queries a total cannot say which tree answered the run — and
-# a hardcoded name already made one plan change invisible until V5 renamed it
-# here. Taken from counters over the queries the app actually ran, rather than
-# from EXPLAIN on a copy of the SQL — the statements live in the repository
-# class, and a second copy here would be one more thing to keep in step. An
-# index that does not exist is simply absent, which a delta reads as 0 — exactly
-# what the without-index arm of an experiment should record. The primary key is
-# excluded: it exists for idempotency, not for serving reads.
+# Return current events scan counters as JSON: idx_scan per secondary index and table
+# seq_scan. Cells journal deltas over actual app queries, avoiding a duplicate EXPLAIN
+# query. Missing indexes contribute zero; exclude the idempotency primary key.
 read_scan_counters() {
   psql_events -tAc "
     SELECT json_build_object(
@@ -409,11 +312,8 @@ read_pool() {
   }
 }
 
-# How many times the pool has failed to hand out a connection within Hikari's
-# connectionTimeout since the app started. A cell journals the delta over its
-# run, which is what tells a 500 that waited out the pool from one that failed
-# some other way — the status code alone cannot, since the write path maps both
-# to the same catch-all.
+# Read cumulative Hikari connection timeouts; cells journal the run's delta. This
+# distinguishes pool-wait 500s from other write failures with the same status.
 read_connection_timeouts() {
   curl -sf "$BASE_URL/actuator/metrics/hikaricp.connections.timeout" \
     | python3 -c 'import json, sys; print(int(json.load(sys.stdin)["measurements"][0]["value"]))' || {
@@ -435,20 +335,10 @@ read_schema() {
   }
 }
 
-# Whether the app was publishing request metrics while it ran, asked of the app
-# for the same reason read_pool asks the actuator and read_schema asks the
-# database: an arm that denies `management.metrics.enable.http` produces a row
-# identical to every other row in these journals, and a label passed in on the
-# command line is a label an operator forgets to change.
-#
-# The single-meter endpoint rather than a grep over /actuator/prometheus: a deny
-# filter takes the meter out of both, but fetching the scrape endpoint IS a
-# scrape, so that probe would contaminate the one below.
-#
-# The status code is read rather than curl's verdict, because only 404 means the
-# meter is gone. A refused connection or a 503 fails the same way under `-f` and
-# would have a row claim the meters were denied in an arm where they were not —
-# the same unproven stamp the build commit exists to keep out of a journal.
+# Probe the request meter to stamp instrumentation state automatically. Avoid
+# /actuator/prometheus because probing it would contaminate scrape measurements. Only
+# 404 means disabled; connection failures or 503s must not be recorded as denied
+# metrics.
 read_request_metrics() {
   local status
   status=$(curl -s -m 5 -o /dev/null -w '%{http_code}' \
@@ -482,35 +372,14 @@ print(summary["started_at"], summary["finished_at"])
   }
 }
 
-# Whether anything was pulling those metrics while the run happened. Asked of
-# Prometheus, because the app cannot answer it: its own request counter records
-# scrapes too, but only while request metrics are on — which couples the two facts
-# the experiment exists to tell apart — and a counter cumulative since startup
-# cannot say whether the scraping happened during this run or an hour ago.
+# Query Prometheus for scrape attempts within [started_at, finished_at], evaluated at
+# finished_at. A probe-time window could mislabel runs measured before the stack
+# started.
 #
-# Asked about the run's own window: the query is evaluated at the instant the run
-# finished and spans a range as long as the run took, so what it counts is the
-# scrapes that fall between those two stamps. Anchored at probe time instead it
-# would answer "is the stack scraping now" — bring the stack up between a run and
-# this probe and a run nothing ever scraped is stamped `on`.
-#
-# count_over_time, not sum_over_time: a sample of `up` exists per scrape attempt
-# and its value only says whether Prometheus liked the answer. What separates the
-# arms is whether the app was paying for being scraped, and a scrape that timed out
-# (the timeout is 1s, against an endpoint a surging app can be slow to render) cost
-# it that work all the same.
-#
-# One sample is enough to read `on`: at a 2s scrape interval a 30s cell holds
-# around fifteen and a run shorter than the interval can hold no more than one, so
-# asking for more would make short runs unanswerable rather than better answered.
-# What a count cannot separate is a window the stack covered from one it covered in
-# part: start the stack inside a run and that run still reads `on`. That is one row
-# for each time the stack is started, where a probe-time anchor mislabelled every
-# run measured in the five minutes before it.
-#
-# A stack that is not up is the ordinary case and the state every row already in
-# these journals was measured in, so it reports `off` and never warns or fails. The
-# job name mirrors the one in observability/prometheus.yml.
+# Use count_over_time(up), including failed scrapes: they still cost app work. One
+# sample means on, including a partially scraped run or one shorter than the 2s
+# interval. A stopped stack means off. Keep the job name aligned with
+# observability/prometheus.yml.
 #
 # Usage: read_scrape <started_at> <finished_at>
 read_scrape() {
@@ -556,24 +425,9 @@ perf_journalled() {
   PERF_JOURNALS+=("$1")
 }
 
-# The spread across the rows a repeated cell just appended — jitter alone, since
-# nothing changed between rounds. Shared by every cell that reports one, so the
-# statistics and their wording are defined once; a cell only says which journal,
-# which field, and how its rows are grouped.
-#
-# Read back off the journal rather than accumulated in shell state, so what this
-# reports is exactly what was recorded rather than a parallel tally that could
-# disagree with it.
-#
-# group_key names a field whose distinct values split the rows into separate
-# series: event-counts appends one row per grouping every round, and a spread
-# taken across groupings would compare different query plans instead of the same
-# plan twice. Omit it when a round appends a single row.
-#
-# Reports peak-to-peak as well as the coefficient of variation because they
-# answer different questions. The coefficient says how tightly the rounds
-# cluster; peak-to-peak is what a single before/after pair can differ by on luck
-# alone, and one run each side is what a comparison usually is.
+# Calculate spread from the journal rows just appended. group_key separates series such
+# as event-counts groupings; omit it for one row per round. Report CV for clustering and
+# peak-to-peak for the variation a single before/after pair can show.
 #
 # Usage: perf_spread <label> <journal> <rounds> <field> [group_key]
 perf_spread() {
@@ -620,29 +474,12 @@ PY
   done < <(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')
 }
 
-# Run a list of "label:function" cells back to back and report them together.
-# A failing cell does not abort the rest — stopping at the first problem would
-# hide every number behind it — so the caller gets a non-zero exit only once
-# everything has had its turn.
+# Run label:function cells sequentially, repeating each ROUNDS times (default 1). A
+# failure stops that cell's remaining rounds, but other cells still run; report non-zero
+# after all cells finish.
 #
-# ROUNDS repeats each cell that many times before moving to the next, and lives
-# here rather than in the cells so every entry point honours it and no new cell
-# can forget to. Repetition is the only way a spread gets measured at all: nothing
-# changes between rounds, so however much they disagree is what jitter alone
-# produces, and a later delta smaller than that is not a result. A cell that fails
-# stops repeating — its remaining rounds would only re-measure whatever broke.
-#
-# The default is 1, so an ordinary run stays the single cheap measurement it has
-# always been and repetition is a deliberate act. Ask for rounds when the number
-# is going to be compared against something — establishing the noise floor, or
-# measuring either side of a change — and the run costs that many times as long,
-# which is a price worth paying knowingly rather than by default.
-#
-# After a repeated cell, a <function>_spread hook is called with the round count
-# if the cell defines one. The spike cells deliberately define none: their
-# overload metrics are too high-variance to reduce to a delta (see the suite
-# README), so publishing a spread over them would invite exactly the comparison
-# that is not supportable.
+# For repeated cells, call the optional <function>_spread hook. Spike cells omit it
+# because a scalar spread does not represent their recovery verdict.
 perf_run_tests() {
   local rounds=${ROUNDS:-1}
   local failures=0 entry name fn round cell_failed
@@ -682,7 +519,7 @@ perf_run_tests() {
   done
 
   perf_report
-  echo "Eyeball the appended journal lines above, then commit them yourself."
+  echo "Review the appended journal rows before committing."
 
   if [ "$failures" -gt 0 ]; then
     echo "$failures perf cell(s) failed." >&2
@@ -690,18 +527,9 @@ perf_run_tests() {
   fi
 }
 
-# Print the collected headline results together, and put the runs behind them on
-# the dashboard. Called once at the end of a run.
-#
-# The sync belongs here and not in a measure function: it is HTTP traffic to a
-# container on the same rig, and the experiment these stamps exist for measures
-# what work happening around the app costs it — so the harness must not add any
-# of its own between a k6 run and the row it produces. By the time this runs,
-# every row is written and printed.
-#
-# Tolerated failing for the reason a stopped metrics stack reads `off` instead of
-# stopping a cell. The journals are the record; a dashboard is a view of them, and
-# never worth a measurement.
+# Print the digest and sync dashboard annotations after all journal rows are written.
+# Syncing earlier would add HTTP/container work to measurements. Annotation failures are
+# non-fatal; journals remain the record.
 perf_report() {
   echo
   echo "=== perf results ==="
