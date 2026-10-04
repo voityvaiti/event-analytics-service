@@ -1,21 +1,11 @@
 #!/bin/bash
 
-# Bring up the metrics stack — Prometheus, and the Grafana that reads it.
+# Start Prometheus (localhost:9090) and Grafana (localhost:3000) through the
+# observability Compose profile. The profile keeps these extra workloads out of normal
+# dependency startup.
 #
-# These live in compose.yaml behind an `observability` profile rather than in a
-# compose file of their own, so the single source of truth stays single. The
-# profile is what keeps them out of scripts/actions/dependencies, which every
-# measured run starts through: extra containers on the rig would move the
-# numbers the perf journal compares against.
-#
-# The application is NOT started here — it runs on the host, and Prometheus
-# reaches it through the host gateway. Start it separately with
-# scripts/actions/start, in either order.
-#
-#   Prometheus  http://localhost:9090
-#   Grafana     http://localhost:3000
-#
-# Pass `down` to stop the stack again, leaving Postgres running.
+# Start the host app separately; Prometheus uses the host gateway. Pass down to stop
+# observability while leaving Postgres running.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 1
@@ -26,15 +16,7 @@ fi
 
 docker compose --profile observability up -d --wait "$@"
 
-# Rebuild the run list from the journals, which is the whole answer to "the stack
-# was down when I measured" — annotations live in Grafana's own database, and
-# this stack is down for most measurements. The harness syncs the run it just
-# finished; this syncs every run there has ever been, and because both are
-# idempotent the overlap is read back and skipped rather than doubled.
-#
-# Tolerated failing. Bringing the stack up is what this action was asked for and
-# it has already happened by here, so a sync that could not read a journal — one
-# a pass is appending to as this runs — must not redden the action; under `set
-# -e` it would, and through xargs, which answers a failed command with a 123 of
-# its own.
+# Import all journal annotations on startup, including runs measured while Grafana was
+# down. Sync is idempotent and non-fatal: a partial or unreadable journal must not fail
+# stack startup under set -e or xargs.
 find perf -name journal.jsonl -print0 | xargs -0 -r perf/lib/annotate-runs.sh || true

@@ -1,13 +1,7 @@
 #!/bin/bash
 
-# One measured read load cell, shared by every leaf under read/load: warm up,
-# run the scenario against the seeded corpus, and append one row to the leaf's
-# journal. Defines perf_read_load_cell, which the harness (perf/lib/harness.sh)
-# must already be sourced for. The spike cells do not share it — a surge is
-# measured in phases against a recovery verdict, not as one steady window.
-#
-# Reads do not mutate, so unlike a write cell there is nothing to clean up
-# afterwards — the corpus is still exactly as seeded when the run ends.
+# Warm and measure one read load cell against the corpus, then journal it. Reads need no
+# cleanup. Requires perf/lib/harness.sh.
 #
 # Usage: perf_read_load_cell <journal> <endpoint> [group_by] [limit]
 

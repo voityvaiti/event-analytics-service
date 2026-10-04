@@ -1,12 +1,6 @@
-// Deterministic, moderately-entropic event generator shared by every k6 write
-// scenario, so the request shape lives in one place and the load and spike
-// tests exercise the same distribution. Given a sequence number it returns a
-// request body whose fields imitate a real event stream: high-cardinality
-// users, a skewed event-type mix, Zipf-ish page URLs, and a property set that
-// differs per event type. It is a pure function of `seq` — no Math.random(),
-// no wall-clock in the distribution — so the generated stream's shape is
-// identical from run to run and never injects noise into the throughput series
-// the write tests are compared against.
+// Deterministic event bodies shared by write scenarios and the corpus seeder. Sequence
+// numbers determine high-cardinality users, skewed event types and page URLs, and
+// type-specific properties. No randomness or clock input affects the distribution.
 
 const USER_SPACE = 100000;
 const PAGE_SPACE = 300;

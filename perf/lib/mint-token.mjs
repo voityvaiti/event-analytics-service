@@ -1,19 +1,9 @@
-// Mints an RS256 bearer token for one tenant, signed with the throwaway key in
-// dev-keys/. Node's built-in crypto does the whole job, so this needs no
-// dependencies and runs from the same pinned node image the corpus seeder uses —
-// keeping the suite's "nothing but Docker and a running app" promise.
+// Mint an RS256 tenant token with dev-keys/ using Node's built-in crypto.
 //
 // Usage: node perf/lib/mint-token.mjs <tenant>
 //
-// Writes the token to stdout with no trailing newline, so a caller can use it
-// directly in an Authorization header.
-//
-// No `exp` claim is emitted, and that is deliberate. Spring validates expiry only
-// when the claim is present, and a full suite run — ten cells, three rounds, 20M
-// rows — outlives any lifetime worth choosing. A token expiring mid-run would
-// surface as a nonzero failed_rate in a journal row, which reads as the service
-// failing under load rather than as an auth problem, and the row would be wrong
-// in a way nobody would think to question.
+// Write only the token, without a trailing newline. Omit exp so long perf runs cannot
+// turn token expiry into an apparent load failure; Spring checks expiry when present.
 
 import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';

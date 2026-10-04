@@ -1,19 +1,11 @@
 #!/bin/bash
 
-# Fail unless GitHub still holds every commit a perf journal row stamps.
+# Require journal commits to remain reachable from origin branches, tags, or PR heads.
+# Rebase merges preserve original commits only through refs that still contain them;
+# local objects are insufficient.
 #
-# A rebase merge re-creates every commit it lands, so no stamp ever names a
-# commit on main. GitHub keeps the originals as the head of the pull request
-# that carried them, and that survives the merge and the branch's deletion —
-# but only for commits the final head still contains. One measured and then
-# rewritten, or never pushed, exists on this machine alone, which is why only
-# refs fetched from origin count here and local objects never do.
-#
-# A `-dirty` stamp fails too: it names a commit the measured jar did not match.
-# `unknown` is skipped, since it names no commit to keep.
-#
-# When it fails: push the branch if the commit is new; if it was rewritten,
-# tag the original commit and push the tag. Never swap a stamp for another SHA.
+# Reject -dirty and skip unknown. Push new commits; for rewritten commits, tag and push
+# the original. Never replace a journal stamp.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.." || exit 1

@@ -1,22 +1,10 @@
 #!/bin/bash
 
-# One measured read spike cell, shared by every leaf under read/spike: warm up,
-# step the request rate far above what the pool can serve and back down, then
-# append one row to the leaf's journal with a recovery verdict. Defines
-# perf_read_spike_cell, which the harness (perf/lib/harness.sh) must already be
-# sourced for.
+# Warm, measure, and journal one read surge with its recovery verdict. Requires
+# perf/lib/harness.sh; reads need no cleanup.
 #
-# Separate from read/load/measure-cell.sh on purpose: a surge is measured in
-# phases against a recovery verdict, not as one steady window, so the two share
-# the harness and nothing else.
-#
-# The measured run is tolerated failing (|| true): a surge is allowed to shed,
-# so k6's recovery threshold tripping is data, not a reason to abort before it
-# is recorded. These cells report rather than gate (see the spike README), so
-# the function succeeds even on a red verdict — which is the expected outcome at
-# the default corpus, and a cell that failed would stop its remaining rounds and
-# take the rest of the measurements with it.
-# Reads do not mutate, so the corpus needs no restoring afterwards.
+# Tolerate k6 failures to record overload. A failed recovery verdict does not fail the
+# function, so remaining rounds still run.
 #
 # Usage: perf_read_spike_cell <journal> <endpoint> <spike_rate> [group_by] [limit]
 
@@ -90,27 +78,13 @@ def r(value, digits=2):
     return round(value, digits) if isinstance(value, (int, float)) else value
 
 
-# Serving every request is not enough to call this recovered. A run can answer
-# everything while still taking tens of times longer than it did before, which
-# is an outage as far as a dashboard is concerned, so latency has to come back
-# too. The multiple is deliberately wide — ordinary run-to-run jitter moves this
-# figure by a factor of two, and a gate that trips on jitter teaches people to
-# ignore it. What it has to catch is the real case, and that one is not close:
-# a surge past the pool's ceiling leaves recovery an order of magnitude slow.
+# Recovery requires latency to return as well as successful responses. The 5x margin
+# tolerates baseline jitter while catching sustained queueing.
 RECOVERY_LATENCY_FACTOR = 5
 
-# Recovery is judged against the baseline phase, so the baseline has to be a
-# healthy state or none of the rest means anything. Absolute, not relative: a
-# ratio to a collapsed baseline is satisfied by a system that never recovered,
-# and the index experiment measured exactly that — 28s recovery against a 15196ms
-# baseline was called recovered, while the same test on a healthy 123ms baseline
-# was not.
-#
-# 1000ms sits an order of magnitude above the healthy figure and an order of
-# magnitude below the collapsed one, so it separates the two cases without
-# tripping on jitter. It is a property of these workloads at BASELINE_RATE, not a
-# universal number: raise it deliberately if the baseline rate or the pool
-# changes, rather than to make a red run go green.
+# Require an absolute healthy baseline before applying the recovery ratio. Otherwise 28s
+# recovery against a 15196ms baseline passes. The 1000ms bound separates healthy from
+# collapsed runs on this rig; reconsider it when changing baseline load or pool size.
 BASELINE_MAX_P95_MS = 1000
 
 baseline_valid = (
@@ -172,12 +146,8 @@ row = {
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
 
-# The verdict is journalled even though it is derived, because the row is meant to
-# answer its own question: numbers without a conclusion mean going to read this
-# file's rule and applying it by hand. Which rule produced a given verdict is
-# already answered by the row's `commit` stamp — the same mechanism every other
-# field relies on — so a stored verdict from before the baseline clause existed is
-# attributable rather than merely stale.
+# Store the verdict for direct interpretation. The commit stamp identifies the rule
+# version, including rows predating the baseline check.
 if not baseline_valid:
     verdict = "NO VALID BASELINE"
 elif recovered:

@@ -1,32 +1,14 @@
 #!/bin/bash
 
-# Put the measured windows a journal records onto the Grafana dashboard, one
-# annotation per row, so a run is found and opened there rather than copied out
-# of a JSON file by hand.
+# Add Grafana annotations for measured journal windows. Called after perf runs and when
+# observability starts; existing annotations are skipped by key.
 #
-# Two callers, one entry point: the harness at the end of a run (perf_report),
-# and scripts/actions/observability when the stack comes up. The second is what
-# makes a run measured while Grafana was down appear the moment it is started,
-# and it only works because both do the same idempotent thing — read back what
-# Grafana already holds, skip it, create the rest. Neither caller has to know
-# what the other did.
+# Skip and count rows without started_at or valid JSON, including partial lines from
+# concurrent appends. Annotations are written once, so later journal edits do not update
+# their text.
 #
-# Rows written before the window stamps existed carry no `started_at`. They are
-# counted and never annotated: a region invented for them would be a claim about
-# a window nobody measured, which is the defect the stamps removed. A line that
-# cannot be read at all is counted the same way — the realistic one is a journal
-# a pass is appending to while this runs, and half a line is worth one missing
-# region, not every other journal's runs as well.
-#
-# An annotation is written once and never revisited, so a journal whose figures
-# are rewritten later — perf journals here get rebased — keeps the text its
-# annotation was first given. What a reader navigates by is the window, and that
-# is the one thing a rewrite of the figures does not move.
-#
-# Grafana being down is the ordinary case, the same way a stopped stack is for
-# read_scrape — it prints one line and exits 0. A dashboard is never worth a
-# failed measurement, so nothing here aborts on a failed request; each one is
-# checked where it is made rather than through `set -e`.
+# Grafana outages and failed requests must not fail measurements; handle each request
+# explicitly rather than using set -e.
 #
 # Usage: perf/lib/annotate-runs.sh <journal.jsonl>...
 
@@ -52,20 +34,12 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
-# One annotation per measured window, as "<key>\t<time>\t<timeEnd>\t<body>".
+# Emit one window as "<key>\t<time>\t<timeEnd>\t<body>". Keys include cell, run, phase,
+# and start time: an exported RUN_ID can be reused across cells. Reconstruct the same
+# key from annotation tags and time.
 #
-# The key is what makes this idempotent, and it holds everything that tells two
-# regions apart: the cell, the run, the phase within it, and the instant the
-# region begins. `run_id` alone reads as enough, since k6 mints one per run — but
-# only when nothing hands it one, and an operator with RUN_ID exported gives every
-# cell of a pass the same id. A key without the cell and the window would then
-# collapse that whole pass into a single annotation, last row read winning. Each
-# part of it is read back off the annotation's own tags and `time`, so both sides
-# build the same key out of the same facts.
-#
-# Nothing here knows a cell by name. The tag comes from the journal's directory,
-# which is a cell's identity, and the text is assembled from whichever known
-# fields the row happens to carry — so a new cell is legible without being known.
+# Derive the cell from its directory and annotation text from available fields, so new
+# cells need no registration.
 plan=$(python3 - "$RUN_TAG" "$@" <<'PY'
 import json, os, sys
 from datetime import datetime
@@ -265,17 +239,9 @@ fi
 range_from=$(printf '%s\n' "$plan" | cut -f2 | sort -n | head -1)
 range_to=$(printf '%s\n' "$plan" | cut -f3 | sort -n | tail -1)
 
-# What Grafana already holds, keyed the way the plan is. Read a page at a time,
-# each page ending where the previous one's oldest annotation began, because the
-# API answers with a bounded number of the most recent and would otherwise leave
-# the oldest runs looking absent.
-#
-# Paging turns on the cursor alone, never on what a page happened to contain: a
-# page shorter than the limit is the last one, and a boundary that does not move
-# strictly backwards would ask for the page just read again (`to` is inclusive).
-# A full page of `perf-run` annotations that this did not write — hand-made, or
-# older than the `run:` tag — adds nothing to the map and still has every older
-# page behind it.
+# Page existing annotations backwards by oldest timestamp. Stop on a short page or a
+# cursor that fails to move: Grafana's `to` is inclusive. A full page containing only
+# foreign annotations still requires another page, even if it adds no keys.
 declare -A present=()
 boundary=$range_to
 while :; do

@@ -1,26 +1,10 @@
 #!/bin/bash
 
-# One measured write load cell, shared by every leaf under write/load: warm up,
-# run the scenario against the seeded corpus, put the corpus back, and append one
-# row to the leaf's journal. Defines perf_write_load_cell, which the harness
-# (perf/lib/harness.sh) must already be sourced for. The spike cells do not share
-# it — a surge is measured in phases against a recovery verdict, not as one
-# steady window.
+# Warm, measure, clean up, and journal one write load cell. Requires
+# perf/lib/harness.sh. Cleanup restores the corpus for the next cell.
 #
-# Unlike a read cell, a write cell mutates: every measured run inserts rows and
-# then deletes exactly the ones it inserted, so the next cell starts from the
-# same corpus this one did.
-#
-# The scenario is an argument rather than a constant here, because that is what
-# separates one write cell from another: they post different request shapes to
-# different endpoints and are measured identically. VUS and DURATION arrive
-# resolved for the same reason a cell resolves its own knobs — the window a cell
-# wants is a property of the request it sends, and an exported one would outlive
-# the cell that set it.
-#
-# batch_size is optional and only reaches a scenario that posts batches; the
-# events-per-second the row turns on is derived from what the scenario reports
-# using it, not from what was asked for here.
+# Pass scenario, VUs, and duration explicitly to avoid leaking one cell's settings into
+# another. Batch metrics use the scenario's reported batch size.
 #
 # Usage: perf_write_load_cell <journal> <script> <vus> <duration> [batch_size]
 
@@ -30,11 +14,8 @@ perf_write_load_cell() {
   local batch=()
   [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
 
-  # Warm up (JIT + connection pool) and throw the numbers away, so the measured
-  # run reflects steady state, not cold start. This pass also stands in for a
-  # ramp stage — the measured run then starts at full VUs against a warmed app,
-  # so its summary is not diluted by low-concurrency ramp samples. Its rows are
-  # then dropped, putting the table back to the seeded corpus.
+  # Discard warm-up metrics and rows. Measure at full VUs against a warmed app and the
+  # restored corpus.
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
     -e VUS="$vus" -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
@@ -77,16 +58,8 @@ import json, sys
 with open(summary_path) as f:
     s = json.load(f)
 
-# Events per second is what one write shape can be compared with another over: a
-# batch request and a single-event request have request rates that differ by the
-# batch size and mean nothing side by side.
-#
-# It is journalled only where it says something the row does not already say. A
-# scenario that posts one event per request reports no batch size, and its row
-# carries neither the size nor anything derived from it — for one event per
-# request, `requests` is the event count and `throughput_rps` is the event rate,
-# and a second copy of each under another name is a field that can go stale
-# against itself.
+# Derive events and events/s only for batches. Single-event requests and throughput
+# already represent those values, so duplicate fields are unnecessary.
 batch_size = s.get("batch_size")
 requests = round(s["requests"])
 throughput_rps = round(s["throughput_rps"], 1)

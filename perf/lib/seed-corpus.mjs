@@ -1,17 +1,6 @@
-// Emits the fixed corpus as CSV on stdout for COPY to swallow — one line per
-// row, in the column order the harness declares. Rows come from the same
-// generator the write scenarios post through, so the corpus and the write path
-// are one population instead of two implementations drifting apart.
-//
-// occurred_at is spread linearly over the window rather than hashed: that is
-// how an event table actually accumulates, and it keeps physical row order
-// aligned with the index the read tests exercise.
-//
-// The tenant is set here rather than by the generator, which no longer emits
-// one: a write scenario's rows take theirs from the tenant its token asserts,
-// and only this COPY still writes `tenant_name` directly. The two must stay
-// different so a write test's teardown deletes its own batch and leaves the
-// corpus standing.
+// Emit corpus CSV in the harness's COPY column order, using the shared event generator.
+// Linear timestamps align physical row order with time. Set tenant_name directly here;
+// API writes obtain it from tokens. Keep corpus and write tenants distinct for cleanup.
 
 import { generateEvent } from './event-generator.js';
 import { CORPUS_SEQ_LIMIT } from './seq-space.js';

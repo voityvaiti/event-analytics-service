@@ -1,13 +1,6 @@
-// The /api/v1/stats request shape for every read scenario, so a change to the
-// read contract touches this file rather than each scenario — the write side's
-// k6-ingest.js counterpart.
-//
-// The endpoints differ only in path and query parameters, so they share one
-// request builder instead of one file each; which endpoint a cell measures is
-// the caller's choice, not a separate copy of the same code.
-//
-// `request` carries the request's `tags` and its `token`, which is __ENV.TOKEN
-// unless given, for the reason k6-ingest.js gives.
+// Shared /api/v1/stats request builder. Callers select endpoint and query parameters.
+// request supplies tags and an optional token overriding __ENV.TOKEN for mixed
+// scenarios.
 
 import http from 'k6/http';
 

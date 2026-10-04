@@ -1,11 +1,8 @@
 #!/bin/bash
 
-# PERF: run the whole suite — every write, read and mixed cell — back to back
-# against the running app, and print one combined digest at the end. The cell
-# lists live next to the cells themselves, in perf/write/tests.sh,
-# perf/read/tests.sh and perf/mixed/tests.sh, so this action never drifts out of
-# step with the per-path ones. Each cell appends to its own journal — eyeball
-# and commit those yourself.
+# Run all write, read, and mixed cells and print one digest. Lists come from
+# perf/<path>/tests.sh. Each cell updates its journal; review and commit those
+# separately.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
