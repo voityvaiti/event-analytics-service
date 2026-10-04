@@ -1,0 +1,180 @@
+{
+  "about": "Pool and CPU figures for the runs perf/mixed/spike/README.md cites, read from the local Prometheus (2s scrape) on 2026-10-04, because it keeps 15 days. Each value is a query below evaluated at the end of its phase over that phase's length.",
+  "caveats": [
+    "acquire_max_seconds is Micrometer's decaying max, so a phase can carry an earlier peak: the baselines of rounds 2 and 3 show the previous round's surge.",
+    "The pool figures cover reads and writes together: Hikari does not tell them apart.",
+    "host_cpu_share includes everything on the rig, k6 and Postgres among it."
+  ],
+  "queries": {
+    "pending_max": "max_over_time(hikaricp_connections_pending[$window])",
+    "active_avg": "avg_over_time(hikaricp_connections_active[$window])",
+    "acquire_mean_seconds": "increase(hikaricp_connections_acquire_seconds_sum[$window]) / increase(hikaricp_connections_acquire_seconds_count[$window])",
+    "acquire_max_seconds": "max_over_time(hikaricp_connections_acquire_seconds_max[$window])",
+    "connections_handed_out": "increase(hikaricp_connections_acquire_seconds_count[$window])",
+    "hold_mean_seconds": "increase(hikaricp_connections_usage_seconds_sum[$window]) / increase(hikaricp_connections_usage_seconds_count[$window])",
+    "app_cpu_share": "avg_over_time(process_cpu_usage[$window])",
+    "host_cpu_share": "avg_over_time(system_cpu_usage[$window])"
+  },
+  "rounds": [
+    {
+      "run_id": "1791143469696",
+      "commit": "ab1f425",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-10-04T19:49:49.589Z",
+          "finished_at": "2026-10-04T19:50:09.589Z",
+          "figures": {
+            "pending_max": 0.0,
+            "active_avg": 4.1,
+            "acquire_mean_seconds": 6.3e-05,
+            "acquire_max_seconds": 0.025654,
+            "connections_handed_out": 20400.0,
+            "hold_mean_seconds": 0.004097,
+            "app_cpu_share": 0.024872,
+            "host_cpu_share": 0.219126
+          }
+        },
+        "spike": {
+          "started_at": "2026-10-04T19:50:09.589Z",
+          "finished_at": "2026-10-04T19:50:39.589Z",
+          "figures": {
+            "pending_max": 8081.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 7.254342,
+            "acquire_max_seconds": 16.80349,
+            "connections_handed_out": 23221.071429,
+            "hold_mean_seconds": 0.012433,
+            "app_cpu_share": 0.042274,
+            "host_cpu_share": 0.619257
+          }
+        },
+        "recovery": {
+          "started_at": "2026-10-04T19:50:39.589Z",
+          "finished_at": "2026-10-04T19:51:09.589Z",
+          "figures": {
+            "pending_max": 8016.0,
+            "active_avg": 7.733333,
+            "acquire_mean_seconds": 3.243435,
+            "acquire_max_seconds": 16.863662,
+            "connections_handed_out": 39829.285714,
+            "hold_mean_seconds": 0.00514,
+            "app_cpu_share": 0.028587,
+            "host_cpu_share": 0.368364
+          }
+        }
+      }
+    },
+    {
+      "run_id": "1791143569202",
+      "commit": "ab1f425",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-10-04T19:51:29.142Z",
+          "finished_at": "2026-10-04T19:51:49.142Z",
+          "figures": {
+            "pending_max": 0.0,
+            "active_avg": 5.2,
+            "acquire_mean_seconds": 6.4e-05,
+            "acquire_max_seconds": 16.863662,
+            "connections_handed_out": 20400.0,
+            "hold_mean_seconds": 0.004106,
+            "app_cpu_share": 0.019056,
+            "host_cpu_share": 0.20917
+          }
+        },
+        "spike": {
+          "started_at": "2026-10-04T19:51:49.142Z",
+          "finished_at": "2026-10-04T19:52:19.142Z",
+          "figures": {
+            "pending_max": 8081.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 7.706391,
+            "acquire_max_seconds": 16.878063,
+            "connections_handed_out": 23317.5,
+            "hold_mean_seconds": 0.012392,
+            "app_cpu_share": 0.030514,
+            "host_cpu_share": 0.607256
+          }
+        },
+        "recovery": {
+          "started_at": "2026-10-04T19:52:19.142Z",
+          "finished_at": "2026-10-04T19:52:49.142Z",
+          "figures": {
+            "pending_max": 8001.0,
+            "active_avg": 7.466667,
+            "acquire_mean_seconds": 3.080494,
+            "acquire_max_seconds": 16.881422,
+            "connections_handed_out": 39886.071429,
+            "hold_mean_seconds": 0.005025,
+            "app_cpu_share": 0.026035,
+            "host_cpu_share": 0.349287
+          }
+        }
+      }
+    },
+    {
+      "run_id": "1791143668701",
+      "commit": "ab1f425",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-10-04T19:53:08.594Z",
+          "finished_at": "2026-10-04T19:53:28.594Z",
+          "figures": {
+            "pending_max": 5.0,
+            "active_avg": 5.5,
+            "acquire_mean_seconds": 8.1e-05,
+            "acquire_max_seconds": 16.881422,
+            "connections_handed_out": 20406.666667,
+            "hold_mean_seconds": 0.004059,
+            "app_cpu_share": 0.017366,
+            "host_cpu_share": 0.203535
+          }
+        },
+        "spike": {
+          "started_at": "2026-10-04T19:53:28.594Z",
+          "finished_at": "2026-10-04T19:53:58.594Z",
+          "figures": {
+            "pending_max": 8081.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 7.418395,
+            "acquire_max_seconds": 16.881422,
+            "connections_handed_out": 22613.571429,
+            "hold_mean_seconds": 0.012806,
+            "app_cpu_share": 0.024464,
+            "host_cpu_share": 0.590834
+          }
+        },
+        "recovery": {
+          "started_at": "2026-10-04T19:53:58.594Z",
+          "finished_at": "2026-10-04T19:54:28.594Z",
+          "figures": {
+            "pending_max": 8053.0,
+            "active_avg": 7.533333,
+            "acquire_mean_seconds": 3.34264,
+            "acquire_max_seconds": 16.881422,
+            "connections_handed_out": 39823.928571,
+            "hold_mean_seconds": 0.005173,
+            "app_cpu_share": 0.025501,
+            "host_cpu_share": 0.361594
+          }
+        }
+      }
+    }
+  ],
+  "gate": {
+    "cell": "write/load/single",
+    "run_id": "1791143346281",
+    "started_at": "2026-10-04T19:48:06.279Z",
+    "finished_at": "2026-10-04T19:49:06.281Z",
+    "figures": {
+      "pending_max": 1.0,
+      "active_avg": 9.4,
+      "acquire_mean_seconds": 1e-06,
+      "acquire_max_seconds": 0.001716,
+      "connections_handed_out": 224963.793103,
+      "hold_mean_seconds": 0.002072,
+      "app_cpu_share": 0.06668,
+      "host_cpu_share": 0.16653
+    }
+  }
+}
