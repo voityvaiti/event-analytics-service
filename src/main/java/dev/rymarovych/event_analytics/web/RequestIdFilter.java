@@ -12,18 +12,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Gives every request an id, so the lines it logs can be found together and quoted back.
+ * Set the response request ID and logging context, then clear context in finally to prevent leakage
+ * between requests.
  *
- * <p>The id goes into the logging context rather than through method signatures: the logging
- * framework reads that context when it formats a line, so everything logged while this request is
- * being handled carries the id without any of it knowing the id exists. It is removed in a {@code
- * finally} because a context left behind would label the next request with this one's id.
- *
- * <p>Ordered ahead of everything, which matters for exactly one case: {@code
- * spring.security.filter.order} defaults to -100, so a filter registered after it would leave every
- * rejected request — the 401s, the ones most worth correlating — with no id at all.
- *
- * <p>Which ids are accepted from a caller, and what a minted one looks like, is {@link RequestId}.
+ * <p>Run before Spring Security (default order -100) so authentication failures also have IDs.
+ * RequestId defines validation and generation.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)

@@ -16,12 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Pins the generated API document to the API it claims to describe.
- *
- * <p>A generated document cannot go out of date, but it can quietly be wrong about what it
- * generated from: swagger-core introspects with a Jackson mapper of its own, so field naming,
- * schema naming, and the document version are each something it can settle correctly for itself and
- * incorrectly for this service. Every assertion below is a way that has already happened once.
+ * Verify generated OpenAPI names, schemas, and version against the API. swagger-core uses its own
+ * Jackson mapper, so generated metadata can differ from runtime serialization.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

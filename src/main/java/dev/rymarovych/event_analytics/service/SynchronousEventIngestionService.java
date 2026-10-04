@@ -29,12 +29,8 @@ class SynchronousEventIngestionService implements EventIngestionService {
   }
 
   /**
-   * Counted per event rather than per request, because on the batch path the two differ by up to a
-   * thousand — a request rate would describe the same load as 1,205/s that the journal records as
-   * 120,523 events/s. Split by path for the same reason the perf suite measures them apart.
-   *
-   * <p>Incremented after the write and before the commit, so a failure to commit overcounts. The
-   * error rate that failure also produces sits on the same dashboard.
+   * Count events by ingest path, since batch request rates understate event volume. Increment after
+   * writing but before commit; commit failures can overcount and appear in error metrics.
    */
   private static Counter ingestedCounter(MeterRegistry meterRegistry, String path) {
     return Counter.builder("events.ingested")
@@ -50,17 +46,11 @@ class SynchronousEventIngestionService implements EventIngestionService {
   }
 
   /**
-   * The only transaction in the codebase, and it is here so that "all or nothing" is a property of
-   * this method rather than of the driver. pgjdbc sends a whole batch followed by one {@code Sync},
-   * and Postgres treats everything between two of those as an implicit transaction block, so a
-   * batch already commits once today: {@code
-   * EventBatchIngestionIntegrationTest.midBatchDatabaseFailureLeavesNothingWritten} passes with
-   * this annotation removed. It changes no outcome, then. What it changes is where the guarantee
-   * lives — declared by the method the endpoint's contract rests on, rather than inherited from a
-   * driver detail that no test here pins and a version bump could take away.
+   * Declare batch atomicity at the service boundary. pgjdbc currently makes a batch atomic through
+   * its protocol Sync, so midBatchDatabaseFailureLeavesNothingWritten also passes without this
+   * annotation. Keep the guarantee independent of that driver detail.
    *
-   * <p>The cost is constant in batch size: one commit round trip and one WAL flush per request,
-   * against a batch that does a hundred inserts.
+   * <p>Commit cost is one round trip and WAL flush per request, independent of batch size.
    */
   @Override
   @Transactional

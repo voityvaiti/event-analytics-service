@@ -18,24 +18,11 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Answers authentication and authorization failures as RFC 9457 {@code application/problem+json}.
+ * Return RFC 9457 problem bodies for security failures, which occur before MVC advice can handle
+ * them.
  *
- * <p>These failures happen inside the security filter chain, before the {@code DispatcherServlet},
- * so {@code ApiExceptionHandler} — which gives every other error in the API its problem body —
- * never sees them. Spring Security's default entry point answers a bare status with no body, which
- * would leave auth as the one error clients cannot parse the same way as the rest.
- *
- * <p>The detail messages deliberately do not distinguish a missing token from a malformed, expired,
- * or wrongly-signed one. All four are the same instruction to the client, and naming which check
- * failed tells an unauthenticated caller more about the token format than it tells a legitimate
- * one.
- *
- * <p>The log line under each rejection is the deliberate opposite: it names the check that failed,
- * because the operator reading it is not the caller. The exception's own message is left out of it
- * — the type already says which check, and a decoder's message can quote the token it choked on.
- * Without it a rejected request leaves no trace at all — these failures never reach {@code
- * ApiExceptionHandler}, which logs every other one — and a caller reporting that its token stopped
- * working could be answered only by guesswork.
+ * <p>Clients receive the same detail for missing, malformed, expired, or invalidly signed tokens.
+ * Logs identify the exception type but omit its message, which may contain token material.
  */
 @Component
 class ProblemDetailAuthenticationHandler implements AuthenticationEntryPoint, AccessDeniedHandler {

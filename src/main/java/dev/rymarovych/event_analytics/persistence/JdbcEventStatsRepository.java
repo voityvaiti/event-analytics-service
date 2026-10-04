@@ -20,22 +20,14 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * {@link JdbcClient}-backed {@link EventStatsRepository}.
+ * Tenant-scoped JDBC analytics. date_trunc(unit, ts, zone) uses the requested calendar
+ * independently of the session zone.
  *
- * <p>Time buckets use the three-argument {@code date_trunc(unit, ts, zone)} so the boundary follows
- * the requested zone's calendar, independent of the session time zone.
+ * <p>The (tenant_name, occurred_at, event_type, user_id) index covers counts and active-users.
+ * top-pages still fetches properties from the heap.
  *
- * <p>Every query is scoped to one tenant and rides the {@code (tenant_name, occurred_at,
- * event_type, user_id)} index: tenant equality first, then the {@code occurred_at} range. Both
- * count shapes and {@code active-users} are answered from the index alone; {@code top-pages} still
- * visits the heap, because {@code properties} is not in it. What that costs is measured rather than
- * assumed — see the read cells under {@code perf/}.
- *
- * <p>Queries are bounded by the pool's {@code statement_timeout} (see {@code application.yaml}),
- * set once per connection rather than per request. A query the database cancels for exceeding it
- * arrives here as SQL state {@code 57014}, and this class is where that stops being a driver
- * detail: it is translated into {@link AnalyticsQueryTimeoutException} so the layers above answer
- * in their own vocabulary.
+ * <p>The pool sets statement_timeout once per connection. Translate cancellation SQL state 57014
+ * into AnalyticsQueryTimeoutException for the layers above.
  */
 @Repository
 class JdbcEventStatsRepository implements EventStatsRepository {

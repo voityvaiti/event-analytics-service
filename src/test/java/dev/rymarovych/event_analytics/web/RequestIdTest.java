@@ -5,11 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pins which inbound ids the service is willing to repeat.
- *
- * <p>The value arrives in a header, is written into every log line the request produces, and is
- * echoed back — so what it accepts is a question about forged log entries and log size, not about
- * tidiness. Each rejection below is a caller who gets a minted id instead, silently.
+ * Validate IDs before echoing them in headers and logs, preventing log forgery and excessive size.
+ * Invalid input is replaced with a generated ID.
  */
 class RequestIdTest {
 

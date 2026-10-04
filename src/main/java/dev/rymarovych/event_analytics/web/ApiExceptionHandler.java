@@ -23,28 +23,12 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
- * Translates request-handling failures into RFC 9457 {@code application/problem+json} responses.
+ * Map MVC failures to RFC 9457 problem bodies using ResponseEntityExceptionHandler. This advice
+ * replaces Boot's default problem handler and catches otherwise unhandled servlet exceptions before
+ * request logging context is cleared.
  *
- * <p>Extending {@link ResponseEntityExceptionHandler} means every Spring MVC exception — a
- * malformed or missing query parameter, an unreadable body, a bean-validation failure, and the
- * {@code ResponseStatusException} the controllers throw for bad time windows — already yields a
- * {@link ProblemDetail} body; this class only augments two of them. The auto-configured
- * problem-detail handler backs off once this advice is present, so no {@code
- * spring.mvc.problemdetails} property is needed.
- *
- * <p>Nothing escapes it: a handler of last resort answers whatever no typed handler claims, so a
- * failure is answered inside the servlet rather than by the container after the request's logging
- * context is gone.
- *
- * <p>Every failure that lands here is logged once, and the framework's own line for the same
- * exception is silenced in {@code application.yaml} so that one failed request means one entry. A
- * 5xx is logged with the exception, because the fault is this service's and the stack trace is the
- * only place its location is recorded; a 4xx is logged without one, because a caller's mistake is
- * not a defect and its message already says what was wrong.
- *
- * <p>Bean-validation failures carry an {@code errors} member listing the offending fields. The
- * field name is the Java property name (e.g. {@code eventId}), not the JSON name the client sent
- * (e.g. {@code event_id}); JSON-name fidelity is intentionally out of scope for now.
+ * <p>Log each failure once: 5xx with stack traces, 4xx without. application.yaml disables duplicate
+ * framework logs. Validation errors name Java properties (eventId), not JSON names (event_id).
  */
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
@@ -70,11 +54,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
   }
 
   /**
-   * A stored reporting zone the service cannot read is a 500, not a 400 or a 503: the request was
-   * well formed, the fault is in the tenant's own settings, and no retry or narrower window will
-   * change it. It is answered here rather than left to escape so that this failure carries the same
-   * problem+json body as every other, and the detail names the offending value — the caller's own
-   * setting — so it can be corrected without reading the server's logs.
+   * Return 500 for an invalid stored reporting zone: retrying cannot fix the setting. Include the
+   * offending value in the problem detail so the tenant can correct it.
    */
   @ExceptionHandler(InvalidTenantZoneException.class)
   @Nullable ResponseEntity<Object> handleInvalidTenantZone(
@@ -89,19 +70,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
   }
 
   /**
-   * Answers a failure no other handler claims, which is the only way it can be answered while the
-   * request is still inside the servlet. Left to escape, it is logged by the container after this
-   * request's logging context has been cleared and then re-enters through an error dispatch: three
-   * lines, none of them carrying the request id, and the only one naming a path naming {@code
-   * /error}.
+   * Handle remaining servlet failures before logging context is cleared, avoiding duplicate
+   * container/error-dispatch logs. Keep internal exception details in server logs, not responses.
    *
-   * <p>The detail says nothing about the failure. An exception message is the string most likely to
-   * carry internals, the caller can act on none of it, and the line logged beside this already
-   * names the type and keeps the stack trace.
-   *
-   * <p>Spring resolves the most specific handler, so every typed one above still wins. Method
-   * security, if it is ever added, has to be let past this: an {@code AccessDeniedException} caught
-   * here would be answered 500 where the security chain would have answered 403.
+   * <p>Specific handlers take precedence. If method security is added, let AccessDeniedException
+   * reach security handling rather than converting its 403 to 500.
    */
   @ExceptionHandler(Exception.class)
   @Nullable ResponseEntity<Object> handleUnclaimedFailure(Exception ex, WebRequest request) {
@@ -188,10 +161,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
   }
 
   /**
-   * A 4xx message frequently quotes the request that caused it — a parse failure names the value it
-   * could not read — so it is caller-controlled text on its way into a log line. A newline in it
-   * would end the line and start one the caller wrote, which is the same forgery the request id is
-   * checked against, arriving by a different door.
+   * Sanitize caller-controlled 4xx messages before logging; embedded newlines could forge log
+   * entries.
    */
   private static String singleLine(@Nullable String message) {
     return message == null ? "" : CONTROL_CHARACTERS.matcher(message).replaceAll(" ");

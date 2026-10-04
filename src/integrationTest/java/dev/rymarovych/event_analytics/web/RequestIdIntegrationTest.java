@@ -23,17 +23,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Proves that a request's id reaches the lines the request produces, which is the whole point of
- * minting one.
+ * Verify response IDs appear in request logs. Assert substrings so both text and JSON output work.
  *
- * <p>Assertions are made against captured output as plain substrings rather than against a line
- * shape, because the same lines are rendered as JSON when a deployment asks for it and the shape
- * changes while the content does not.
- *
- * <p>The rejection case is load-bearing beyond what it says: a 401 is answered inside the security
- * chain, so it carries an id only while this filter is ordered ahead of that chain. It also holds
- * only under {@code @AutoConfigureMockMvc}'s default, which adds the context's filters; a test
- * written with {@code addFilters = false} would lose the id and not say so.
+ * <p>The 401 case requires RequestIdFilter before Spring Security and MockMvc's default
+ * addFilters=true; otherwise rejected requests lack correlation.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

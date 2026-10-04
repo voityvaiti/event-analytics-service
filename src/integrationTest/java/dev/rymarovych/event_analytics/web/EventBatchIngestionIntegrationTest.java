@@ -23,12 +23,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * End-to-end batch ingestion tests driving the real controller → service → repository → Postgres
- * path.
- *
- * <p>Deliberately NOT {@code @Transactional}, for the same reason the single-event tests are not: a
- * batch's own transaction is the thing under test here, and a surrounding rollback would hide it.
- * Isolation comes from deleting the rows after each test.
+ * Test batch ingestion through the controller, service, repository, and PostgreSQL. Avoid a test
+ * transaction: it would hide the batch's own commit behavior. Delete rows after each test for
+ * isolation.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -113,17 +110,11 @@ class EventBatchIngestionIntegrationTest {
   }
 
   /**
-   * The batch commits once or not at all, and this is what says so rather than the driver's
-   * protocol. A NUL byte is the failure to provoke it with: {@code @NotBlank} sees a perfectly good
-   * non-blank string, and Postgres refuses it in a {@code TEXT} column — so the batch fails at its
-   * second event, after the first has already been sent.
+   * A NUL byte passes NotBlank but PostgreSQL rejects it in TEXT, failing the second event after
+   * the first was sent. Assert no rows remain and the error has a problem body.
    *
-   * <p>It passes with the service's {@code @Transactional} removed as well, which is recorded
-   * there: the batch is already atomic today, and the annotation says so rather than making it so.
-   *
-   * <p>The failure used to escape as a thrown exception, which was how this test detected it. It is
-   * answered as a problem body now, because a failure nothing claims is answered by the advice
-   * rather than by the container; what this test is about — nothing written — is unchanged.
+   * <p>This also passes without the service transaction today because of pgjdbc batching behavior;
+   * the service annotation makes the guarantee explicit.
    */
   @Test
   void midBatchDatabaseFailureLeavesNothingWritten() throws Exception {

@@ -5,22 +5,11 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * The identifier one request is known by — the one its caller brought, or one minted for it.
+ * Request correlation ID supplied by the caller or generated locally. Accept only 8–64 letters,
+ * digits, hyphens, or underscores to bound log size and prevent log injection.
  *
- * <p>An inbound id is honoured so that a caller or a proxy already tracking the request keeps a
- * single identifier across the hop. It is untrusted input with an unusual destination, though: it
- * is written into every line the request logs and echoed back in the response. A newline in it ends
- * a line and starts one the caller wrote, and an unbounded value multiplies the size of all of
- * them.
- *
- * <p>Hence the rule: letters, digits, hyphen and underscore, between 8 and 64 characters. The upper
- * bound leaves room for a UUID and for a W3C trace id; the lower one refuses a value too short to
- * identify anything. Anything else is discarded rather than trimmed — a truncated forgery is still
- * a forgery, and a silently altered id correlates nothing while looking as if it does. The response
- * then carries the id the service actually used, so a caller whose value was refused can see that.
- *
- * <p>A minted id satisfies the same rule, which is what keeps the two halves from drifting: the
- * next service to receive one applies this check to it.
+ * <p>Replace invalid IDs rather than trimming them, which would break correlation. Echo the actual
+ * ID in the response; generated IDs satisfy the same validation rule.
  */
 record RequestId(String value) {
 

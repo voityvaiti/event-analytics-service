@@ -9,13 +9,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * {@link JdbcClient}-backed {@link TenantSettingsRepository}: one primary-key lookup on a table
- * with a row per tenant that reports outside UTC.
- *
- * <p>The stored text is parsed here rather than passed up as a string, so a value that is not a
- * zone is caught at the edge of the system that produced it instead of somewhere downstream. The
- * zone written by {@code scripts/actions/set-tenant-zone} is one Postgres knows; this parse is what
- * catches a row that arrived some other way, or a name Postgres knows and the JVM's tzdb does not.
+ * Look up tenant reporting settings with JdbcClient and parse the zone at the persistence boundary.
+ * Reject invalid values, including manually inserted names or PostgreSQL zones absent from the
+ * JVM's tzdb.
  */
 @Repository
 class JdbcTenantSettingsRepository implements TenantSettingsRepository {

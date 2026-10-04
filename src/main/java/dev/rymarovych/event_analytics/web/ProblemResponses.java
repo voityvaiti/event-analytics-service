@@ -10,11 +10,8 @@ import java.lang.annotation.Target;
 import org.springframework.http.ProblemDetail;
 
 /**
- * The two failures every endpoint answers with, stated once because {@link ApiExceptionHandler}
- * answers them once — for the whole API rather than per controller.
- *
- * <p>Only what a caller can act on. A {@code 500} is deliberately absent: every endpoint can fail
- * that way, and nothing a client does follows from being told so.
+ * Shared API error documentation for responses produced by ApiExceptionHandler and security.
+ * Generic 500 responses are omitted because they add no endpoint-specific guidance.
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,24 +14,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * {@link AnalyticsService} that computes each answer on demand with a fresh SQL aggregation over
- * the raw event log — no caching or rollups yet; correctness over latency while the data set is
- * small. The cached/rollup-backed variant arrives as a separate implementation once load tests show
- * the on-the-fly query hurts.
+ * Compute analytics directly from raw events; caching and rollups can use a separate implementation
+ * when measurements justify them.
  *
- * <p>Owns the bucketing time-zone policy: a time-bucketed aggregation runs in the tenant's own
- * zone, and in {@link #DEFAULT_BUCKETING_ZONE} when the tenant has none stored. Absence is an
- * answer, not a gap — a tenant reporting in UTC needs no settings row — so a token is all it takes
- * to get correct figures. The resolved zone travels with the result, so the caller can report which
- * zone the buckets used.
+ * <p>Resolve the tenant's reporting zone, defaulting to DEFAULT_BUCKETING_ZONE, and include it in
+ * bucketed results. Type grouping reads no settings.
  *
- * <p>Grouping by event type reads no settings, because it produces no buckets for a zone to place.
- * That also leaves the cheapest query in the system paying for nothing it uses.
- *
- * <p>Where a zone is resolved the read is transactional and read-only — not for atomicity, which a
- * single-statement read does not need, but so the settings lookup and the aggregation ride one
- * pooled connection. Taking a connection twice means queueing for one twice, and the pool is the
- * only place a request waits.
+ * <p>Read-only transactions let zone lookup and aggregation share one pooled connection, avoiding a
+ * second connection wait.
  */
 @Service
 class OnDemandAnalyticsService implements AnalyticsService {

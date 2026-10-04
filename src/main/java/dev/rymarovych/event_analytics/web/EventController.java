@@ -14,12 +14,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Ingestion API for raw events.
- *
- * <p>{@link Principal#getName()} is the tenant: the security configuration resolves the principal
- * from the token's tenant claim, so the name a request arrives under is the tenant its rows are
- * written for. Taking it as a {@link Principal} rather than reading the claim here keeps the
- * claim's name in one place and this package free of any security dependency.
+ * Ingest events for Principal.getName(), which security resolves from the tenant claim. Using
+ * Principal keeps claim naming and security-specific types out of this layer.
  */
 @RestController
 @RequestMapping("/api/v1/events")

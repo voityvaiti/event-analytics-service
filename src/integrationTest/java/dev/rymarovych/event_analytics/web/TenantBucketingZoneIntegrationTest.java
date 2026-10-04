@@ -21,18 +21,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * End-to-end tests that time buckets follow the tenant's own calendar, driving the real controller
- * → service → repository → Postgres path with committed rows (no {@code @Transactional}), so {@code
- * date_trunc}'s zone argument is exercised by the database production uses.
+ * Verify tenant calendars with committed PostgreSQL rows and no test transaction. Each test uses
+ * the same events and query window, changing only tenant settings.
  *
- * <p>Every test seeds the same two events and asks over the same window. The only thing that
- * differs is a row in {@code tenants}, so a difference in the figures can have come from nothing
- * else.
- *
- * <p>The events straddle Tokyo's day boundary and not UTC's: Tokyo is UTC+9 with no DST, so its day
- * begins at 15:00Z the day before. 10:00Z and 16:00Z are therefore one UTC day and two Tokyo days.
- * A Tokyo bucket consequently starts earlier than {@code from} — which is correct, because the
- * window selects the events that are counted, not the boundaries they are counted into.
+ * <p>10:00Z and 16:00Z share a UTC day but straddle Tokyo's 15:00Z day boundary. A bucket may begin
+ * before from: the query window selects events, not bucket boundaries.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
