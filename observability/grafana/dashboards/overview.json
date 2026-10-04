@@ -1,7 +1,7 @@
 {
   "uid": "event-analytics-overview",
   "title": "Event Analytics \u2014 overview",
-  "description": "The quantities a k6 run has to be reconstructable from without opening the journal, and whether the scrape that recorded them happened.",
+  "description": "API traffic, latency, errors, resource usage, and scrape health for the selected window or perf run.",
   "tags": [
     "event-analytics"
   ],
@@ -73,7 +73,7 @@
       "id": 8,
       "type": "stat",
       "title": "Scrape, whole window",
-      "description": "Whether the target answered every scrape in this window, not whether it answered the last one: min_over_time reads 1 only if no scrape in the window failed. The conservative reading is the useful one here, because a run measured across a dip is a run whose numbers are suspect, and \"was it ever up\" would hide the dip. Bounded by the window on purpose \u2014 a bare up is an instant selector, and Prometheus carries the last sample forward for five minutes, so it could not say \"not scraped\" until long after the scraper died.",
+      "description": "Scrape health across the selected window: healthy only if every recorded scrape succeeded. No data means no scrape samples in that window. A failure anywhere in the window remains visible.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -153,7 +153,7 @@
       "id": 9,
       "type": "stat",
       "title": "Requests/s",
-      "description": "Every /api/v1 route, ingest and read together, averaged over the whole window shown. Guarded with or vector(0) so an application that has served nothing yet reads 0 rather than No data: Micrometer registers a URI timer on the first request, while the ingest counters beside it exist from startup.",
+      "description": "Average requests/s across all /api/v1 routes in the selected window. Shows 0 before any route has served a request.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -215,7 +215,7 @@
       "id": 14,
       "type": "stat",
       "title": "Rejected/s",
-      "description": "Requests a security filter turned away before handler mapping, averaged over the whole window shown. Spring tags them uri=\"UNKNOWN\", so they are in none of the /api/v1 panels, neither as traffic nor as errors, and a k6 run against an expired token otherwise reads as no traffic at all. Counted here rather than folded into the tiles beside it: widening their uri filter would let actuator traffic into the error-rate denominator and dilute it.",
+      "description": "Average security rejections/s in the selected window. These requests have uri=\"UNKNOWN\" and are excluded from the API traffic and error panels. Check this tile when invalid tokens make a run appear idle.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -277,7 +277,7 @@
       "id": 10,
       "type": "stat",
       "title": "Events/s",
-      "description": "Both ingest paths, counted per event rather than per request, averaged over the whole window shown. Events accepted rather than rows written \u2014 a duplicate the unique constraint drops counts here too. The Ingest rate \u2014 events/s panel below carries the detail.",
+      "description": "Average accepted events/s across both ingest paths in the selected window. Includes duplicates skipped by the database. See Ingest rate — events/s for counting limitations.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -340,7 +340,7 @@
       "id": 11,
       "type": "stat",
       "title": "p95 latency",
-      "description": "Pooled across routes over the whole window shown, so it is not the same number as any single line on the latency panel below. A window that served nothing has no p95 in it at all and the tile reads No data \u2014 it no longer revives a value measured before the window and presents it as the current one.",
+      "description": "p95 across all routes for the selected window. Individual routes may differ. No data means the window contains no requests.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -403,7 +403,7 @@
       "id": 12,
       "type": "stat",
       "title": "Server error rate",
-      "description": "Red above 0.01%, one server error in ten thousand requests, over the whole window shown. The numerator is guarded, so a service that has yet to serve a 5xx reads zero rather than No data. The denominator is not, so a window with no requests in it leaves the ratio undefined and the tile reads No data; the Scrape tile says whether that was an idle service or a stack that was not running.",
+      "description": "Share of API requests returning 5xx in the selected window. Red above 0.01% (1 in 10,000). Shows 0 with no server errors and No data with no requests; check scrape health to distinguish idle from missing data.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -470,7 +470,7 @@
       "id": 13,
       "type": "stat",
       "title": "Peak pool pending",
-      "description": "The deepest queue for a connection anywhere in the window, not the queue at its last sample. Red at one: the pool is the first thing to saturate under a spike, and a spike that queued in the middle of a run should not be erased by a calm end to it.",
+      "description": "Maximum number of requests waiting for a connection during the selected window. Red from 1; a quiet end does not hide earlier queueing.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -550,7 +550,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Ingest rate \u2014 events/s",
-      "description": "Counted per event rather than per request, so the batch path reads at its real scale rather than at its request rate. Events accepted, though, not rows written: both paths insert with ON CONFLICT (event_id) DO NOTHING and neither reads the affected-row count, so a re-delivered event the unique constraint drops is counted here like any other and a replayed run reads as throughput. The paths also differ on when they count. The single path runs in no transaction, so its counter moves after the insert has already committed; the batch path counts the whole request inside its transaction, before the commit, so a batch that fails to commit is counted anyway.",
+      "description": "Accepted events/s by ingest path, including duplicates skipped by ON CONFLICT. This is not a count of new rows. Single-event counters increment after commit; batch counters increment before commit and can include a batch whose commit fails.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -606,7 +606,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Ingest rate \u2014 requests/s",
-      "description": "The same load per request. The gap to the panel beside it is the batch size in flight.",
+      "description": "Ingest requests/s by path. The events/s-to-requests/s ratio reflects batch size.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -662,7 +662,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "Read rate \u2014 requests/s",
-      "description": "The other half of the load. The ingest panels beside this one filter /api/v1/events.*, which is what makes the gap between them a batch size, so the read routes had nowhere to appear: three of the five read cells and the endpoint that saturates first ran with nothing on the dashboard moving. Split by uri, because the routes are not comparable \u2014 active-users is seconds where event-counts is milliseconds.",
+      "description": "Analytics requests/s by endpoint. Separate series show which read routes are receiving traffic.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -731,7 +731,7 @@
       "id": 3,
       "type": "timeseries",
       "title": "Latency p95 / p99",
-      "description": "Computed from bucket counts at query time, so the window is whatever this dashboard shows. Log scale, because the routes are three orders apart: over today's measurement pass p95 runs from 2.5 ms on /api/v1/events to 3.4 s on /api/v1/stats/active-users, and on a linear axis every write series lies flat on zero. Two quantiles across the five routes is ten legend rows, more than a table legend gets under a panel this tall, so it sits beside the plot instead \u2014 which also gives the log axis the full panel height.",
+      "description": "p95 and p99 by route, calculated from histogram buckets. The logarithmic scale keeps fast writes and slow reads visible together; the legend lists both quantiles for each route.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -802,7 +802,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Error rate",
-      "description": "Split by who failed: a rejected request is not a broken service. The numerator is guarded, so a service that has yet to serve a 5xx reads as zero rather than as No data. The denominator is not, so a window with no requests leaves the ratio undefined and the line breaks. A gap therefore means nothing was served, not that nothing failed \u2014 and the Scrape panel tells those cases apart: up at 1 beside the gap is an idle service, up at 0 is a service that was down, no up at all is a stack that was not running.",
+      "description": "Client and server error shares. Zero means requests were served without errors; a gap means no requests or missing metrics. Check scrape health: up=1 indicates an idle service, up=0 a failed scrape, and no samples a missing scraper.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -883,7 +883,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Connection pool",
-      "description": "Pending is the one to watch: eighteen journalled spike rounds resolved to waiting for a connection rather than to slow queries.",
+      "description": "Connection usage and pending requests. A growing pending count indicates time spent waiting for a connection, which dominated the measured read spikes.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -973,7 +973,7 @@
       "id": 16,
       "type": "timeseries",
       "title": "CPU",
-      "description": "Both meters are already in the scrape and were drawn nowhere. system_cpu_usage is the whole host \u2014 16 cores on this rig, Postgres and every unrelated container stack included \u2014 and process_cpu_usage is this application's share of it. Host CPU is the first confounder of any before/after comparison measured here: over today's write window the application peaked at 10.2% of the host while the host itself peaked at 55.5%, so most of the machine was busy with something the experiment does not control.",
+      "description": "CPU usage for the whole host and this application. Host usage includes PostgreSQL and other containers; unrelated work can affect performance comparisons.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1042,7 +1042,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Scrape duration",
-      "description": "What it cost the application to answer the scrape, for scrapes it actually answered. Masked on up == 1 deliberately: Prometheus records a duration for a failed scrape too, so an unmasked line keeps ticking over while the service is dead and reads livelier than a healthy idle one. A gap here is no successful scrape \u2014 the word for the current state is on the Right now row.",
+      "description": "Duration of successful scrapes only (up=1). A gap means no successful scrape; check scrape health for the cause.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1115,7 +1115,7 @@
           "id": 6,
           "type": "annolist",
           "title": "Perf runs",
-          "description": "Runs measured while this stack was scraping, newest first. Picking one sets the range to exactly that run, so the row above summarises it and nothing else: the tiles then agree with the row in the cell's journal. Padding the range would read a neighbouring cell into them \u2014 the read cells run one second apart, and a minute either side turned a 3,683 events/s cell into 36,614. Runs measured with the stack down are in the journals and on the annotation toggle above, but the panels have nothing to show for their windows. Not read from Prometheus \u2014 these come from Grafana's own annotation store, put there by perf/lib/annotate-runs.sh.",
+          "description": "Perf runs recorded while scraping was active, newest first. Select a run to show its exact window; padding can include adjacent cells. Runs without scraping remain in journals and the annotation toggle, but have no metrics. Entries come from Grafana annotations imported by perf/lib/annotate-runs.sh.",
           "datasource": {
             "type": "datasource",
             "uid": "grafana"
