@@ -6,8 +6,9 @@
 // Both endpoints send the same events; they differ only in how many go per
 // request and in the envelope the batch one puts them in.
 //
-// A caller may pass `request` with the `tags` to put on the request and the
-// `token` to send, which is __ENV.TOKEN unless given. A scenario that writes and
+// A caller may pass `request` with the `tags` to put on the request, the
+// `token` to send, which is __ENV.TOKEN unless given, and a `timeout` to give up
+// after, which is k6's 60s unless given. A scenario that writes and
 // reads at once speaks as two tenants — reads have to see the seeded corpus,
 // writes have to land where the harness deletes them from — and one process has
 // one environment.
@@ -26,14 +27,18 @@ function buildEvent(eventId, seq) {
   };
 }
 
-function requestParams({ tags, token = __ENV.TOKEN } = {}) {
-  return {
+function requestParams({ tags, token = __ENV.TOKEN, timeout } = {}) {
+  const params = {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
     tags,
   };
+  if (timeout) {
+    params.timeout = timeout;
+  }
+  return params;
 }
 
 export function postEvent(baseUrl, eventId, seq, request) {
