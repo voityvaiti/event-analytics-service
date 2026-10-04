@@ -6,8 +6,9 @@
 # Appends one row per round to perf/mixed/spike/active-users/journal.jsonl.
 # Journal-only, never a gate, so this exits non-zero only when a run could not
 # be measured at all. The app must already be running on the host. Tunables:
-# WRITE_RATE, WRITE_MAX_VUS, READ_SPIKE_RATE, READ_BASELINE_RATE, READ_MAX_VUS,
-# GROUP_BY, SPIKE_WINDOW, *_SECONDS, ROUNDS (default 1).
+# WRITE_RATE, WRITE_TIMEOUT_SECONDS, WRITE_MAX_VUS, READ_SPIKE_RATE,
+# READ_BASELINE_RATE, READ_MAX_VUS, GROUP_BY, SPIKE_WINDOW, *_SECONDS, ROUNDS
+# (default 1).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1

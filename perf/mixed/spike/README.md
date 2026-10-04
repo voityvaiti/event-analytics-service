@@ -34,23 +34,42 @@ Fields are `<phase>_write_*` and `<phase>_read_*`, for `baseline`, `spike` and
 `recovery`.
 
 - **`<phase>_write_unaccepted_share`** is the headline: the share of the writes
-  the schedule asked for that did not come back 202.
-- The rest of each phase's writes say how they ended: `dropped` (never sent,
-  because every VU in the budget was waiting on an earlier write),
-  `server_errors`, `rejected` (any other status, which is a harness fault rather
-  than the app's), `timeouts` (no response within k6's 60 s), `transport_errors`.
+  the schedule asked for that did not come back 202 within the write deadline
+  (`write_timeout_seconds`).
+- The rest of each phase's writes say how they ended: `timeouts` (not answered
+  within the deadline, so the producer gave up, although the server may still
+  have written it), `server_errors`, `rejected` (any other status, which is a
+  harness fault rather than the app's), `transport_errors`, and `dropped` (never
+  sent, which the budget below leaves only for k6 itself falling behind).
 - **`connection_timeouts`** is how often the pool failed to hand out a connection
   within Hikari's 30 s during the run. The write path answers that with the same
   500 as any other failure, so this is what says whether `server_errors` waited
   out the pool.
-- **Write latency is of accepted writes only.** A dropped write has none, so
-  under drops the percentiles describe the writes that got through.
+- **Write latency is of accepted writes only**, so it never exceeds the
+  deadline.
 
-The write VU budget (`write_max_vus`, default 6,000: 1,000 req/s held for the
-~6 s a read waits in read/spike's surge) is a condition of the run, not a
-property of the app, and drops mean the wait outran it. It is allocated before
-the run starts, so a drop never measures how fast k6 grows VUs; that costs k6
-about 2 GB and under one core on the reference rig.
+## The deadline
+
+Every write is given up on after `write_timeout_seconds`, the way a producer's
+client gives up. That is what makes the headline the app's. Without a deadline
+a write waits as long as the app makes it, each wait holds one of k6's VUs, and
+what a row reports as unaccepted is how many VUs k6 had: a smoke run with a
+fixed 6,000 counted 18% of the surge's writes unaccepted, every one dropped by
+k6 and none refused by the app.
+
+The VU budget is therefore derived from the deadline, a tenth over rate times
+deadline, so it runs out only after the deadline has. It is allocated before the
+run starts, because k6 drops writes while it grows VUs mid-run.
+
+The default of 5 s is set by the rig, not by what a producer would tolerate, and
+it is stricter than common clients (OkHttp waits 10 s). k6 keeps a connection
+per VU and hands work to every allocated VU in turn, so a run opens as many
+connections as it has VUs, and Tomcat accepts 8,192. A 10 s deadline at
+1,000 req/s needs 11,000 VUs, and a smoke run saw Tomcat stop accepting
+connections eight seconds into the baseline. At 5 s the run holds 5,500 write
+and 500 read connections. The deadline only moves how many of the surge's
+writes count as unaccepted, not whether the surge blocks them, and it stays the
+same for every row of the series, Stage 3's included.
 
 Compare each phase with the baseline phase of the same row, not with
 read/spike's journal: the writes take connections, so the read side is not

@@ -13,24 +13,38 @@
 // scenario per phase. Each request is attributed to the phase it started in,
 // and the VUs a stalled write holds stay held into the next phase, as a real
 // producer's would: a fresh set of VUs at the start of recovery would give the
-// client a clean slate the server never got. gracefulStop outlasts k6's 60s
-// request timeout, so the last stalled writes are counted rather than cut off.
+// client a clean slate the server never got. gracefulStop outlasts the write
+// deadline, so the last writes are counted rather than cut off.
 //
-// A write the schedule asked for but no VU was free to send is dropped. k6
-// counts drops per scenario, not per phase, so a phase's drops are what it
-// scheduled minus what it sent, and the run's exact total is journalled beside
-// them. The write VU budget is therefore a condition of the experiment: a drop
-// means the wait outran it, and a dropped write has no latency to measure. The
-// whole budget is allocated before the run starts, because k6 drops an
-// iteration when no VU is free and only then initialises another: VUs grown
-// mid-run drop writes the budget still had room for, and the drops would count
-// how fast k6 initialises instead. Reads keep read/spike's allocation, so their
-// side of the surge is applied the way that cell applies it.
+// Every write carries a deadline, WRITE_TIMEOUT_SECONDS, the way a producer's
+// client does: one not accepted by then is given up on and counts as not
+// accepted, even if the server finishes it later. The deadline is what makes
+// the headline a property of the app. Without it, a write waits as long as the
+// app makes it, each wait holds a VU, and what the run reports as unaccepted is
+// how many VUs k6 was given: a smoke run at 1,000 req/s with 6,000 VUs counted
+// 18% of the surge's writes unaccepted, every one of them dropped by k6 and
+// none refused by the app.
+//
+// The deadline defaults to 5s, stricter than common clients (OkHttp waits 10s),
+// because the rig cannot hold a longer one: k6 keeps a connection per VU and
+// hands iterations to every allocated VU in turn, so even a healthy baseline
+// opens one connection per VU, and Tomcat accepts 8,192. A 10s deadline at
+// 1,000 req/s needs 11,000 VUs, and a smoke run saw Tomcat stop accepting
+// connections eight seconds into the baseline.
+//
+// So the write VU budget is derived from the deadline, a tenth over rate times
+// deadline, and runs out only after the deadline has. The whole budget is
+// allocated before the run starts, because k6 drops an iteration when no VU is
+// free and only then initialises another, which would make the drops count how
+// fast k6 grows VUs. A drop is still possible, and journalled: k6 counts drops
+// per scenario, so a phase's drops are what it scheduled minus what it sent,
+// with the run's exact total beside them. Reads keep read/spike's allocation,
+// so their side of the surge is applied the way that cell applies it.
 //
 // A write ends in one of five outcomes: accepted (202), a server error (5xx),
 // rejected (any other status, which means the harness is wrong, not the app), a
-// timeout (no response within k6's request timeout), or another transport
-// error. Latency is reported for accepted writes only.
+// timeout (not answered within the deadline), or another transport error.
+// Latency is reported for accepted writes only.
 
 import exec from 'k6/execution';
 import { check } from 'k6';
@@ -63,7 +77,10 @@ const READ_SPIKE_RATE = Number(__ENV.READ_SPIKE_RATE || 400);
 const READ_MAX_VUS = Number(__ENV.READ_MAX_VUS || 500);
 
 const WRITE_RATE = Number(__ENV.WRITE_RATE || 1000);
-const WRITE_MAX_VUS = Number(__ENV.WRITE_MAX_VUS || 6000);
+const WRITE_TIMEOUT_SECONDS = Number(__ENV.WRITE_TIMEOUT_SECONDS || 5);
+const WRITE_MAX_VUS = Number(
+  __ENV.WRITE_MAX_VUS || Math.ceil(WRITE_RATE * WRITE_TIMEOUT_SECONDS * 1.1),
+);
 
 const SECONDS = {
   baseline: Number(__ENV.BASELINE_SECONDS || 20),
@@ -131,7 +148,7 @@ export const options = {
       timeUnit: '1s',
       duration: `${TOTAL_SECONDS}s`,
       startTime: '0s',
-      gracefulStop: '70s',
+      gracefulStop: `${WRITE_TIMEOUT_SECONDS + 5}s`,
       preAllocatedVUs: WRITE_MAX_VUS,
       maxVUs: WRITE_MAX_VUS,
       tags: { flow: 'write' },
@@ -182,9 +199,12 @@ export function write() {
   const iteration = exec.scenario.iterationInTest;
   const phase = phaseAt(Date.now() - exec.scenario.startTime);
 
-  const response = postEvent(BASE_URL, `evt_${RUN_ID}_mixed_${iteration}`, LOAD_SEQ_BASE + iteration, {
+  const eventId = `evt_${RUN_ID}_mixed_${iteration}`;
+
+  const response = postEvent(BASE_URL, eventId, LOAD_SEQ_BASE + iteration, {
     tags: { phase },
     token: __ENV.WRITE_TOKEN,
+    timeout: `${WRITE_TIMEOUT_SECONDS}s`,
   });
   writeOutcomes[outcomeOf(response)].add(1, { phase });
 }
@@ -251,6 +271,7 @@ export function handleSummary(data) {
     read_spike_rate: READ_SPIKE_RATE,
     read_max_vus: READ_MAX_VUS,
     write_rate: WRITE_RATE,
+    write_timeout_seconds: WRITE_TIMEOUT_SECONDS,
     write_max_vus: WRITE_MAX_VUS,
     write_dropped: count(data, 'dropped_iterations{scenario:write}'),
     seconds: SECONDS,
@@ -264,7 +285,10 @@ export function handleSummary(data) {
   const text = [
     '',
     `ingest under read spike  ${query} ${WINDOW}  (run ${RUN_ID})`,
-    line('writes', `${WRITE_RATE} req/s, up to ${WRITE_MAX_VUS} VUs`),
+    line(
+      'writes',
+      `${WRITE_RATE} req/s, ${WRITE_TIMEOUT_SECONDS}s deadline, up to ${WRITE_MAX_VUS} VUs`,
+    ),
     line('reads baseline → spike', `${READ_BASELINE_RATE} → ${READ_SPIKE_RATE} req/s`),
     ...PHASES.flatMap((phase) => {
       const { read, write } = phases[phase];

@@ -11,9 +11,9 @@
 # the heaviest read, and its read spike cell still drains after the surge ends.
 # groupBy=day, as in that cell.
 #
-# Tunables via env: WRITE_RATE (default 1000), WRITE_MAX_VUS (6000),
-# READ_SPIKE_RATE (400), READ_BASELINE_RATE (20), READ_MAX_VUS (500), GROUP_BY,
-# SPIKE_WINDOW, *_SECONDS.
+# Tunables via env: WRITE_RATE (default 1000), WRITE_TIMEOUT_SECONDS (5),
+# WRITE_MAX_VUS (derived from those two), READ_SPIKE_RATE (400),
+# READ_BASELINE_RATE (20), READ_MAX_VUS (500), GROUP_BY, SPIKE_WINDOW, *_SECONDS.
 
 perf_mixed_spike_active_users() {
   perf_mixed_spike_cell perf/mixed/spike/active-users/journal.jsonl \

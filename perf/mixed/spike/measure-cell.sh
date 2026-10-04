@@ -7,8 +7,8 @@
 # sourced for.
 #
 # The row turns on how much of the scheduled ingest was not accepted in each
-# phase, and on how the rest failed: dropped by the client, answered 5xx, or
-# timed out. The pool's own timeout counter, read around the run, says how many
+# phase, and on how the rest failed: past the write deadline, answered 5xx, or
+# dropped by the client. The pool's own timeout counter, read around the run, says how many
 # of those 5xx waited out a connection. Nothing here is a verdict yet: the cell
 # measures before a threshold for it exists, so it reports and never gates, and
 # the measured run is tolerated failing for the reason read/spike gives.
@@ -38,7 +38,7 @@ perf_mixed_spike_cell() {
   k6_run "$script" \
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS --env SPIKE_WINDOW \
     --env READ_BASELINE_RATE --env READ_SPIKE_RATE --env READ_MAX_VUS \
-    --env WRITE_RATE --env WRITE_MAX_VUS \
+    --env WRITE_RATE --env WRITE_TIMEOUT_SECONDS --env WRITE_MAX_VUS \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS \
     -e ENDPOINT="$endpoint" -e GROUP_BY="$group_by" \
     -e READ_TOKEN="$SEED_TOKEN" -e WRITE_TOKEN="$WRITE_TOKEN" \
@@ -96,6 +96,7 @@ row = {
     "scrape": scrape,
     "start_rows": int(start_rows),
     "write_rate": s["write_rate"],
+    "write_timeout_seconds": s["write_timeout_seconds"],
     "write_max_vus": s["write_max_vus"],
     "read_baseline_rate": s["read_baseline_rate"],
     "read_spike_rate": s["read_spike_rate"],
