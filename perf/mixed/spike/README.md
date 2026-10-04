@@ -66,8 +66,9 @@ it is stricter than common clients (OkHttp waits 10 s). k6 keeps a connection
 per VU and hands work to every allocated VU in turn, so a run opens as many
 connections as it has VUs, and Tomcat accepts 8,192. A 10 s deadline at
 1,000 req/s needs 11,000 VUs, and a smoke run saw Tomcat stop accepting
-connections eight seconds into the baseline. At 5 s the run holds 5,500 write
-and 500 read connections. The deadline only moves how many of the surge's
+connections eight seconds into the baseline. At 5 s the run opens at most
+5,500 write and 500 read connections; the server can still end up holding more,
+as the first rows show. The deadline only moves how many of the surge's
 writes count as unaccepted, not whether the surge blocks them, and it stays the
 same for every row of the series, Stage 3's included.
 
@@ -75,8 +76,51 @@ Compare each phase with the baseline phase of the same row, not with
 read/spike's journal: the writes take connections, so the read side is not
 surging against the ceiling that cell derives its rate from.
 
+## What the first rows measured
+
+Three rounds on `ab1f425` (2026-10-04), 20.1M rows, LiveAgent stopped and the
+stack scraping. Ranges are across the rounds. The pool figures come from
+Prometheus, which keeps 15 days, so they are kept in
+[`pool-metrics.json`](./pool-metrics.json) with the queries that produced them.
+
+| Phase | Writes not accepted within 5 s | Wait for a connection, mean | Read p95 |
+|---|---|---|---|
+| baseline | 0% | ~0 | 115–117 ms |
+| spike | 93.7–94.1% | 7.3–7.7 s (max 16.9 s) | 8.5–8.6 s |
+| recovery | 19.8–21.1% | 3.1–3.3 s | 7.6–7.8 s |
+
+- **A read surge all but stops ingest.** Of the 30,000 writes scheduled during
+  the surge, 1,775–1,877 were accepted within the deadline. The wait is the
+  server's own figure, the time Hikari took to hand out a connection, so it does
+  not depend on the deadline: a client patient for 10 s would still have lost a
+  large share.
+- **Nothing failed; everything waited.** No 5xx and no pool timeout. Every
+  unaccepted write timed out, apart from 23–33 per round that could not connect
+  at all.
+- **The pool is what holds them.** All ten connections were busy for the whole
+  surge, with up to 8,081 requests queued for one, while the app used under one
+  core and the host about 60%, which by elimination is mostly Postgres's ten
+  backends sorting for `active-users`.
+- **The surge outlasts itself.** In the 30 s after it ended, a fifth of the
+  writes still missed the deadline and reads ran at about 65x their baseline.
+
+One reading is an inference rather than a measurement: **a request whose client
+gave up keeps its place in the queue.** Nothing cancels it, so it waits for a
+connection and runs its INSERT for nobody. The queue reached 8,081 while the
+clients held at most 6,000 requests, and the pool handed out about 23,000
+connections during the surge against roughly 1,800 writes accepted and 2,350
+reads served, so most of the surge's write work went to clients that had already
+left. Those requests are also why the server ran into Tomcat's 8,192 connections
+when the run opens no more than 6,000: the connection failures above, and the
+same 8,081 in every round, match that ceiling.
+
+This is the baseline Stage 3 is measured against: the same cell with
+`ingest_path: async` has to accept the surge's writes as it accepts the
+baseline's.
+
 ## No verdict yet
 
-A row records numbers and no pass or fail, because nothing has been measured to
-set a threshold by: Stage 3's target is what the first rows will be read for.
+A row records numbers and no pass or fail. The thresholds belong to Stage 3,
+which states them against these rows, and a verdict here would judge the sync
+path by a target set for the async one.
 The cell stays out of the CI comparison for the reason every spike cell does.
