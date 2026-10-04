@@ -462,19 +462,23 @@ any single statement may run, so nothing occupies a connection indefinitely.
 matters more than the timeout did.** Both paths draw from one pool of ten
 connections, first-come-first-served, and virtual threads mean that pool is the
 only place a request ever waits. Throughout the surge above, all ten were held
-by reads continuously — so an insert worth 2 ms of work queues behind them and
-its latency becomes seconds, or fails outright once the wait passes Hikari's
-connection timeout. The healthy half of the system degrades because of the half
-that is not, and no query plan or timeout prevents it: the timeout bounds how
-long one connection is held, never how many of them reads may hold at once.
+by reads continuously, so an insert worth 2 ms of work queues behind them.
+[The mixed cell](perf/mixed/spike/README.md) measured how far: during the surge a
+write waits 7.3–7.7 s on average for a connection, a producer that gives up after
+5 s has 94% of its writes go unaccepted, and a fifth still miss in the 30 s
+after. None reaches Hikari's connection timeout, because the client gives up
+first, and its abandoned request keeps its place in the queue. The healthy half
+of the system degrades because of the half that is not, and no query plan or
+timeout prevents it: the timeout bounds how long one connection is held, never
+how many of them reads may hold at once.
 
 Two shapes answer it. A second pool reserves connections for writes outright,
 at the cost of leaving Boot's datasource auto-configuration and of sizing two
 pools where one was measured. A concurrency limit on reads reserves the same
 capacity from a single pool and bounds the queue as well, which the split does
-not. Neither is measured yet — no cell runs ingest and a read surge together,
-so this is a mechanism the design admits rather than a number the suite
-reports, and that cell comes first.
+not. Neither is built. The mixed cell is the baseline either would be judged
+against, and Stage 3's broker answers the write half without a second pool by
+taking ingest off this pool altogether; the read queue it leaves alone.
 
 Then rollup tables to remove the linear scan for wide windows. Only after that
 does caching pay — a TTL cache in front of an unbounded query shortens the good
