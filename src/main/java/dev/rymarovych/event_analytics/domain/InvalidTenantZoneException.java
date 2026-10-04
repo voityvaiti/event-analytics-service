@@ -3,15 +3,8 @@ package dev.rymarovych.event_analytics.domain;
 import java.io.Serial;
 
 /**
- * Thrown when a tenant's stored reporting time zone is not a time zone this service can use.
- *
- * <p>It lives in {@code domain} for the reason {@link AnalyticsQueryTimeoutException} does: the
- * persistence layer raises it when it reads the settings row, and the web layer maps it to a
- * response.
- *
- * <p>That this is an exception rather than a fallback to UTC is the point. A tenant configured in
- * one zone and bucketed in another gets figures that are plausible and wrong, which is the failure
- * mode this system is built to avoid; refusing to answer is the loud alternative.
+ * Signals an unusable stored reporting zone. Persistence raises it and the web layer maps it to a
+ * response. Fail instead of silently falling back to UTC and reporting against the wrong calendar.
  */
 public class InvalidTenantZoneException extends RuntimeException {
 

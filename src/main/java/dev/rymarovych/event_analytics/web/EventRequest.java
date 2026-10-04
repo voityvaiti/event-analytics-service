@@ -9,18 +9,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 
 /**
- * Inbound payload for a single event ingestion request.
+ * Single-event payload. Tenant identity comes only from the authenticated token; a body-supplied
+ * tenant/source field is ignored.
  *
- * <p>The tenant is deliberately absent: a row's {@code source} comes from the authenticated token's
- * tenant claim, so a client cannot write events attributed to anyone else. A {@code source} field
- * in the body is ignored rather than rejected — it carries no authority, so failing the request
- * over it would only break clients for no gain in safety.
- *
- * <p>{@code properties} is arbitrary semi-structured context stored verbatim as {@code jsonb}; an
- * absent value, or an explicit JSON {@code null} (which Jackson binds to a {@code NullNode}), is
- * normalized to an empty object. The API document declares it as unconstrained JSON rather than
- * letting a schema be generated for it: {@code JsonNode} introspects into two dozen accessor flags
- * that say nothing about what a caller may send.
+ * <p>Store properties as arbitrary JSON, normalizing missing or explicit null to an empty object.
+ * Describe it as unconstrained JSON in OpenAPI to avoid exposing JsonNode accessor flags as a
+ * schema.
  */
 public record EventRequest(
     @NotBlank String eventId,

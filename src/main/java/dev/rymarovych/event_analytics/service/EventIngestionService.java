@@ -13,12 +13,9 @@ public interface EventIngestionService {
   void ingest(NewEvent event);
 
   /**
-   * Ingests a batch of events as one unit: either all of them are persisted or none is, so a caller
-   * whose batch was rejected can retry the whole thing.
-   *
-   * <p>Idempotent per event, exactly as {@link #ingest} is. A re-delivered batch, or the same
-   * {@code event_id} twice inside one batch, is accepted as a no-op rather than reported as an
-   * error, which is why the batch needs no per-event result.
+   * Persist a batch atomically. Duplicate event_id values, including duplicates within the batch,
+   * are skipped as in single-event ingestion. A caller can safely retry the whole batch without
+   * per-event results.
    */
   void ingestBatch(List<NewEvent> events);
 }

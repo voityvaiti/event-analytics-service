@@ -6,19 +6,11 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
- * Inbound payload for a batch ingestion request: the same events {@link EventRequest} describes,
- * many per request.
+ * Batch request envelope for EventRequest items. One size constraint produces one violation for
+ * empty or oversized batches. The envelope allows future fields without changing the array
+ * contract.
  *
- * <p>The size bound is one constraint rather than {@code @NotEmpty} plus a maximum, so that an
- * empty batch and an oversized one are each one violation, and the message quotes the range the
- * endpoint actually accepts instead of claiming zero is allowed.
- *
- * <p>An object rather than a bare JSON array, so a later addition to the request does not break the
- * contract — the same reason the read responses are enveloped.
- *
- * <p>{@code @Valid} on the list is what cascades validation into the elements, and with it the
- * offending field arrives position-indexed ({@code events[3].eventId}), which is the only way an
- * all-or-nothing rejection can say which event it objected to.
+ * <p>Valid cascades into elements, identifying failures by position, e.g. events[3].eventId.
  */
 public record EventBatchRequest(
     @NotNull @Size(min = 1, max = EventBatchRequest.MAX_EVENTS) @Valid List<EventRequest> events) {

@@ -24,13 +24,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * Proves what the security chain accepts and rejects, driving the real {@code JwtDecoder} with
- * really-signed tokens rather than a pre-built authentication.
- *
- * <p>Several of these pin autoconfiguration rather than our own code — that Boot installs the
- * {@code OAuth2TokenValidator} bean onto a public-key decoder, and that it verifies RS256 against
- * the configured key. Nothing in {@code SecurityConfig} shows either, so nothing but a test would
- * notice them breaking.
+ * Exercise the real JwtDecoder with signed tokens. Pin Boot's installation of the tenant validator
+ * and RS256 verification against the configured public key.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

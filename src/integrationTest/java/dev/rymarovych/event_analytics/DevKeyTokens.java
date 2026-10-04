@@ -17,21 +17,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 /**
- * Signs bearer tokens for the integration tests with the committed development key, so requests
- * travel the real filter chain: the real decoder verifies a real RS256 signature, and the token
- * validator and principal converter run as they do in production.
+ * Sign real RS256 tokens with the development key so tests exercise the decoder, claim validator,
+ * and principal conversion.
  *
- * <p>Deliberately not {@code SecurityMockMvcRequestPostProcessors.jwt()}. That injects a ready-made
- * authentication straight into the security context and never invokes the {@code JwtDecoder}, which
- * would leave the algorithm pinning and the required-tenant-claim validator untested — the two
- * things most worth testing — and cannot express a rejected token at all.
- *
- * <p>This is the second signer over the same key; {@code perf/lib/mint-token.mjs} is the first. The
- * duplication is intended: the perf suite runs from a node image with no JVM, and these tests run
- * with no node. So the claim's name lives in three places — {@code SecurityConfig} reads it, both
- * signers write it — and only the reader is load-bearing: a signer with the wrong name produces
- * tokens that fail verification immediately, while a reader with the wrong name would scope
- * requests to the wrong tenant in silence.
+ * <p>Mock JWT authentication bypasses the decoder and cannot test signature or token rejection.
+ * Keep a Java signer here and a Node signer in perf because each suite runs without the other's
+ * runtime; both must use SecurityConfig's tenant claim.
  */
 public final class DevKeyTokens {
 

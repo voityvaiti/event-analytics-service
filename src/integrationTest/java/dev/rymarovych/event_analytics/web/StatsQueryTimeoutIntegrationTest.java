@@ -19,16 +19,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Verifies that a query cancelled by the pool's {@code statement_timeout} reaches the client as a
- * 503 problem detail, and that the bound really is on every pooled connection.
+ * Verify statement timeouts produce 503 problem details on every pooled connection. Hold ACCESS
+ * EXCLUSIVE on events to block a read deterministically: statement_timeout includes lock waits.
  *
- * <p>The slow query is produced by taking an {@code ACCESS EXCLUSIVE} lock on {@code events} from a
- * second connection: {@code statement_timeout} covers time spent waiting for a lock, so the read is
- * held past the timeout deterministically instead of racing a stopwatch against a query that is
- * normally milliseconds fast.
- *
- * <p>The pool is capped at two connections so both halves stay exact — one connection holds the
- * lock while the other serves the request, and the second test can then inspect the whole pool.
+ * <p>Use two connections, one for the lock and one for the request, then inspect the entire pool.
  */
 @SpringBootTest(
     properties = {

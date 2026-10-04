@@ -10,19 +10,9 @@ import java.time.ZoneId;
 import java.util.List;
 
 /**
- * Read-side aggregation queries over the raw event log.
- *
- * <p>Every method is scoped to a single {@link TenantName}, so a caller can only be answered about
- * its own events. The scope is a required argument rather than an optional filter, which is what
- * makes an unscoped query impossible to write by omission.
- *
- * <p>A method takes a {@code zone} when, and only when, its query buckets by time. Which shapes
- * those are is a fact about the SQL below, so it is spelled out in these signatures rather than
- * left for a caller to know: asking for a count by type cannot be handed a zone, and asking for one
- * by time bucket cannot omit it.
- *
- * <p>Buckets are returned bare. The zone a result was computed in is the service's answer, not the
- * database's, so the reports that carry it are assembled a layer up.
+ * Tenant-scoped aggregations over raw events. TenantName is required, preventing accidental
+ * unscoped queries. Only time-bucketed methods accept a zone. The service adds zone metadata to the
+ * returned buckets.
  */
 public interface EventStatsRepository {
 
@@ -49,12 +39,9 @@ public interface EventStatsRepository {
       TenantName tenant, Instant from, Instant to, TimeGrouping grouping, ZoneId zone);
 
   /**
-   * Ranks pages by how many of {@code tenant}'s events in the half-open interval {@code [from, to)}
-   * reference them via a {@code page_url} property, most-referenced first, ties broken by URL.
-   * Returns at most {@code limit} pages and whether more ranked pages existed beyond them.
-   *
-   * <p>The only method still returning a report, because {@code hasMore} is something only the
-   * query knows: it probes one row past {@code limit} rather than counting the ranking twice.
+   * Rank pages referenced by the tenant's events in [from, to), by count descending and URL for
+   * ties. Return at most limit pages and hasMore, determined by probing one extra row rather than
+   * counting the ranking twice.
    */
   TopPagesReport topPages(TenantName tenant, Instant from, Instant to, int limit);
 }

@@ -11,15 +11,11 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * {@link JdbcClient}-backed {@link EventRepository}.
+ * JdbcClient-backed event persistence. One INSERT serves single and batch writes; ON CONFLICT DO
+ * NOTHING skips duplicate event_id values and the database supplies created_at.
  *
- * <p>Inserts are idempotent on {@code event_id}: a re-delivered event is silently skipped via
- * {@code ON CONFLICT DO NOTHING}. {@code created_at} is left to the database default.
- *
- * <p>One statement serves both methods, so there is a single INSERT and a single conflict clause to
- * keep in step with the schema. The batch runs through {@link NamedParameterJdbcTemplate} rather
- * than the client because {@link JdbcClient} exposes no batch API — the template is what the client
- * is built on, so this is the same statement over the same datasource, not a second access style.
+ * <p>Use NamedParameterJdbcTemplate for batching because JdbcClient has no batch API; both share
+ * the datasource and statement.
  */
 @Repository
 class JdbcEventRepository implements EventRepository {

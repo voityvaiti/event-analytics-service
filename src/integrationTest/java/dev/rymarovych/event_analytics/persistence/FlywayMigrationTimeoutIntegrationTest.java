@@ -11,16 +11,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * Guards the one place the pool's {@code statement_timeout} would do damage: a migration is exactly
- * the kind of long statement the bound exists to kill, and building an index over millions of rows
- * takes minutes. This context migrates under a 100ms bound with a test-only migration that takes a
- * second, so a migration subject to the bound fails Flyway and the context never starts.
+ * Verify that Flyway migrations bypass the pool's statement timeout. A one-second test migration
+ * must succeed while pooled connections have a 100ms bound.
  *
- * <p>What keeps them out of its way is that Boot hands Flyway its own {@code
- * SimpleDriverDataSource} built from the connection details, so it never borrows a pooled
- * connection and never sees the init SQL. Nothing in the configuration says so, which is exactly
- * why this test exists: the day a Boot version or a datasource change puts Flyway back on the pool,
- * a migration slower than the bound is cancelled, Flyway fails, and the context does not start.
+ * <p>Boot gives Flyway a separate SimpleDriverDataSource. This test catches configuration or
+ * upgrade changes that route migrations through the timed pool.
  */
 @SpringBootTest(
     properties = {
