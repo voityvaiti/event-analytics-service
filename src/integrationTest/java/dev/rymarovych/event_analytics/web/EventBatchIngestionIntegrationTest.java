@@ -2,6 +2,7 @@ package dev.rymarovych.event_analytics.web;
 
 import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -85,6 +86,67 @@ class EventBatchIngestionIntegrationTest {
         .andExpect(status().isBadRequest())
         .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
         .andExpect(jsonPath("$.errors[*].field", hasItem("events[1].eventId")));
+
+    assertThat(countAll()).isZero();
+  }
+
+  /**
+   * Validated before anything is written, so the refusal reaches the client: once acceptance
+   * precedes storage, a value PostgreSQL refuses could no longer be reported.
+   */
+  @Test
+  void rejectsWholeBatchWhenOneEventHoldsAValuePostgresWouldRefuse() throws Exception {
+    var nulInNestedProperty =
+        """
+        {
+          "event_id": "evt_3",
+          "user_id": "user_42",
+          "event_type": "page_view",
+          "timestamp": "2026-05-24T10:15:30Z",
+          "properties": {"context": {"page_url": "/x\\u0000"}}
+        }
+        """;
+
+    postBatch(batchOf(eventJson("evt_1"), eventJson("evt_2"), nulInNestedProperty))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.errors[*].field", hasItem("events[2].properties")));
+
+    assertThat(countAll()).isZero();
+  }
+
+  /**
+   * Through the application's own HTTP mapper, where a fraction past double range parses to
+   * infinity and an unpaired surrogate escape becomes a lone half: both would be stored as
+   * something else, so the batch is refused before any of it is written.
+   */
+  @Test
+  void rejectsWholeBatchWhenAnEventWouldBeStoredAsSomethingElse() throws Exception {
+    var unpairedSurrogate =
+        """
+        {
+          "event_id": "evt_2",
+          "user_id": "user_\\ud800_42",
+          "event_type": "page_view",
+          "timestamp": "2026-05-24T10:15:30Z"
+        }
+        """;
+    var fractionPastDoubleRange =
+        """
+        {
+          "event_id": "evt_3",
+          "user_id": "user_42",
+          "event_type": "purchase",
+          "timestamp": "2026-05-24T10:15:30Z",
+          "properties": {"amount": 1e400}
+        }
+        """;
+
+    postBatch(batchOf(eventJson("evt_1"), unpairedSurrogate, fractionPastDoubleRange))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            jsonPath(
+                "$.errors[*].field",
+                containsInAnyOrder("events[1].userId", "events[2].properties")));
 
     assertThat(countAll()).isZero();
   }
