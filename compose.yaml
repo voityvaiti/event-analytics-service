@@ -15,6 +15,22 @@ services:
       timeout: 3s
       retries: 5
 
+  # Single-node KRaft broker on the image's default config, which advertises
+  # localhost:9092; the host port must therefore stay 9092.
+  kafka:
+    image: apache/kafka:4.3.1
+    ports:
+      - "127.0.0.1:9092:9092"
+    # Each check starts a JVM using ~1.6 cores for a second or two, which would be
+    # standing noise on a perf rig: check every 2s only until healthy, then rarely.
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
+      start_period: 60s
+      start_interval: 2s
+      interval: 5m
+      timeout: 10s
+      retries: 3
+
   # Start observability only through its Compose profile
   # (scripts/actions/observability), keeping extra containers out of default dependency
   # startup.
