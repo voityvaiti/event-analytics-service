@@ -6,6 +6,9 @@ spring:
       enabled: true
   jackson:
     property-naming-strategy: SNAKE_CASE
+    deserialization:
+      # Preserve decimal precision before validation and storage.
+      use-big-decimal-for-floats: true
   security:
     oauth2:
       resourceserver:

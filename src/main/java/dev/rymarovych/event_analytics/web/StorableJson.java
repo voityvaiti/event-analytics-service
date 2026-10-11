@@ -9,11 +9,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Every property name and string in the JSON value, at any depth, meets {@link StorableText}, and
- * no fractional number is past double range. The parser reads fractions as doubles, so an overflow
- * would become infinity and be written as the string {@code "Infinity"}. Fractions within range are
- * kept at double precision, which can round digits the client sent; integers parse exactly and are
- * not checked.
+ * Applies {@link StorableText} to all JSON keys and strings. Numbers may have at most 1,000 digits
+ * before and 1,000 after the point, excluding trailing fractional zeros; zero counts as written.
+ * Parser limits also apply.
  */
 @Documented
 @Constraint(validatedBy = StorableJsonValidator.class)
@@ -22,7 +20,8 @@ import java.lang.annotation.Target;
 public @interface StorableJson {
 
   String message() default
-      "must not contain NUL, unpaired surrogate characters, or fractions beyond double range";
+      "must not contain NUL, unpaired surrogate characters, or numbers past 1000 digits before or"
+          + " after the point";
 
   Class<?>[] groups() default {};
 

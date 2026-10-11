@@ -5,12 +5,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import jakarta.validation.ValidatorFactory;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.JsonNodeFactory;
 
 class EventRequestValidationTest {
@@ -141,14 +142,50 @@ class EventRequestValidationTest {
   }
 
   @Test
-  void rejectsFractionsPastDoubleRangeButKeepsBigIntegers() {
-    var overflow = JsonMapper.shared().readTree("{\"amount\": {\"value\": 1e400}}");
-    var bigInteger = JsonMapper.shared().readTree("{\"amount\": 1" + "0".repeat(400) + "}");
+  void acceptsNumbersAtTheirDigitLimitsWhateverTheNotation() {
+    for (BigDecimal number :
+        new BigDecimal[] {
+          new BigDecimal("1E+999"),
+          new BigDecimal(BigInteger.TEN.pow(StorableJsonValidator.MAX_INTEGER_DIGITS - 1)),
+          new BigDecimal("1E-1000"),
+          BigDecimal.ZERO,
+          new BigDecimal("0E+999"),
+          new BigDecimal("0E-1000"),
+          new BigDecimal("1." + "0".repeat(2 * StorableJsonValidator.MAX_FRACTION_DIGITS))
+        }) {
+      assertThat(validator.validate(withProperties(nestedNumber(number))))
+          .as(number.toString())
+          .isEmpty();
+    }
+  }
 
-    assertThat(validator.validate(withProperties(overflow)))
-        .extracting(v -> v.getPropertyPath().toString())
-        .containsExactly("properties");
-    assertThat(validator.validate(withProperties(bigInteger))).isEmpty();
+  @Test
+  void rejectsNumbersPastTheirDigitLimitsWhateverTheNotation() {
+    for (BigDecimal number :
+        new BigDecimal[] {
+          new BigDecimal("1E+1000"),
+          new BigDecimal(BigInteger.TEN.pow(StorableJsonValidator.MAX_INTEGER_DIGITS)),
+          new BigDecimal("1E-1001"),
+          new BigDecimal("1E+2147483647"),
+          new BigDecimal("10E+2147483647"),
+          new BigDecimal("100E+2147483647"),
+          new BigDecimal("0E+1000"),
+          new BigDecimal("0E-1001"),
+          new BigDecimal("0E+2147483647"),
+          new BigDecimal("0E-2147483647"),
+          new BigDecimal("-0." + "0".repeat(StorableJsonValidator.MAX_FRACTION_DIGITS) + "1")
+        }) {
+      assertThat(validator.validate(withProperties(nestedNumber(number))))
+          .extracting(v -> v.getPropertyPath().toString())
+          .as(number.toString())
+          .containsExactly("properties");
+    }
+  }
+
+  private static JsonNode nestedNumber(BigDecimal number) {
+    var json = JsonNodeFactory.instance;
+    return json.objectNode()
+        .set("amounts", json.arrayNode().add(1).add(json.objectNode().put("value", number)));
   }
 
   @Test

@@ -90,10 +90,6 @@ class EventBatchIngestionIntegrationTest {
     assertThat(countAll()).isZero();
   }
 
-  /**
-   * Validated before anything is written, so the refusal reaches the client: once acceptance
-   * precedes storage, a value PostgreSQL refuses could no longer be reported.
-   */
   @Test
   void rejectsWholeBatchWhenOneEventHoldsAValuePostgresWouldRefuse() throws Exception {
     var nulInNestedProperty =
@@ -114,13 +110,9 @@ class EventBatchIngestionIntegrationTest {
     assertThat(countAll()).isZero();
   }
 
-  /**
-   * Through the application's own HTTP mapper, where a fraction past double range parses to
-   * infinity and an unpaired surrogate escape becomes a lone half: both would be stored as
-   * something else, so the batch is refused before any of it is written.
-   */
+  /** Exercises the application's HTTP mapper before validation, including nested array values. */
   @Test
-  void rejectsWholeBatchWhenAnEventWouldBeStoredAsSomethingElse() throws Exception {
+  void rejectsWholeBatchWhenAnEventHoldsTextOrANumberItCannotStoreUnchanged() throws Exception {
     var unpairedSurrogate =
         """
         {
@@ -130,18 +122,18 @@ class EventBatchIngestionIntegrationTest {
           "timestamp": "2026-05-24T10:15:30Z"
         }
         """;
-    var fractionPastDoubleRange =
+    var numberPastDigitLimits =
         """
         {
           "event_id": "evt_3",
           "user_id": "user_42",
           "event_type": "purchase",
           "timestamp": "2026-05-24T10:15:30Z",
-          "properties": {"amount": 1e400}
+          "properties": {"amounts": [1, {"value": 1E+1000}]}
         }
         """;
 
-    postBatch(batchOf(eventJson("evt_1"), unpairedSurrogate, fractionPastDoubleRange))
+    postBatch(batchOf(eventJson("evt_1"), unpairedSurrogate, numberPastDigitLimits))
         .andExpect(status().isBadRequest())
         .andExpect(
             jsonPath(
