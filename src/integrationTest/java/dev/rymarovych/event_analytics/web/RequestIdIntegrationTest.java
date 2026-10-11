@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +20,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -39,6 +41,7 @@ class RequestIdIntegrationTest {
   private static final String STATS_PATH = "/api/v1/stats/event-counts";
 
   @Autowired private MockMvc mockMvc;
+  @Autowired private JdbcClient jdbcClient;
 
   @Test
   void mintsAnIdentifierWhenTheRequestBringsNone() throws Exception {
@@ -93,30 +96,33 @@ class RequestIdIntegrationTest {
         .doesNotContain("at dev.rymarovych.event_analytics.web.StatsController");
   }
 
-  /**
-   * A NUL byte is a value {@code @NotBlank} accepts and a {@code TEXT} column refuses, so it fails
-   * in the repository — the one failure this API can provoke that no typed handler claims.
-   */
+  /** A database failure exercises the fallback exception handler. */
   @Test
   void logsAFailureNothingClaimsWithItsStackTrace(CapturedOutput output) throws Exception {
-    var withNulByte =
+    var refusedEvent =
         """
         {
-          "event_id": "evt_nul",
-          "user_id": "user_\\u0000_42",
+          "event_id": "%s",
+          "user_id": "user_42",
           "event_type": "page_view",
           "timestamp": "2026-05-24T10:15:30Z"
         }
-        """;
+        """
+            .formatted(InjectedDatabaseFailure.FAILING_EVENT_ID);
 
-    mockMvc
-        .perform(
-            post("/api/v1/events")
-                .with(bearerTokenFor(TENANT))
-                .header(RequestIdFilter.HEADER, "unclaimed-1b7de4")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(withNulByte))
-        .andExpect(status().isInternalServerError());
+    InjectedDatabaseFailure.install(jdbcClient);
+    try {
+      mockMvc
+          .perform(
+              post("/api/v1/events")
+                  .with(bearerTokenFor(TENANT))
+                  .header(RequestIdFilter.HEADER, "unclaimed-1b7de4")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(refusedEvent))
+          .andExpect(status().isInternalServerError());
+    } finally {
+      InjectedDatabaseFailure.remove(jdbcClient);
+    }
 
     assertThat(output.getAll())
         .contains("unclaimed-1b7de4")

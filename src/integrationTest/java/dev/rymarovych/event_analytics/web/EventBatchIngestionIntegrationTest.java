@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -110,27 +111,26 @@ class EventBatchIngestionIntegrationTest {
   }
 
   /**
-   * A NUL byte passes NotBlank but PostgreSQL rejects it in TEXT, failing the second event after
-   * the first was sent. Assert no rows remain and the error has a problem body.
+   * The database refuses the second event after the first was sent. Assert no rows remain and the
+   * error has a problem body.
    *
    * <p>This also passes without the service transaction today because of pgjdbc batching behavior;
    * the service annotation makes the guarantee explicit.
    */
   @Test
   void midBatchDatabaseFailureLeavesNothingWritten() throws Exception {
-    var withNulByte =
-        """
-        {
-          "event_id": "evt_2",
-          "user_id": "user_\\u0000_42",
-          "event_type": "page_view",
-          "timestamp": "2026-05-24T10:15:30Z"
-        }
-        """;
-
-    postBatch(batchOf(eventJson("evt_1"), withNulByte, eventJson("evt_3")))
-        .andExpect(status().isInternalServerError())
-        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    InjectedDatabaseFailure.install(jdbcClient);
+    try {
+      postBatch(
+              batchOf(
+                  eventJson("evt_1"),
+                  eventJson(InjectedDatabaseFailure.FAILING_EVENT_ID),
+                  eventJson("evt_3")))
+          .andExpect(status().isInternalServerError())
+          .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    } finally {
+      InjectedDatabaseFailure.remove(jdbcClient);
+    }
 
     assertThat(countAll()).isZero();
   }
