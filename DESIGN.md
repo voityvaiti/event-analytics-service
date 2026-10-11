@@ -49,11 +49,13 @@ Transaction cost remains unmeasured: `groupBy=type` opens an unused transaction,
 
 ## Architecture
 
-Dependencies run `controller → service → repository` through interfaces. Implementations are package-private and wired by Spring.
+Two entry points, `web` and `consumer`, call `service`, which reaches `persistence` and `messaging` through interfaces; ArchUnit holds that direction. Implementations are package-private and wired by Spring.
 
 - **Web** — REST endpoints, request validation, DTO mapping. Errors are RFC 9457 `application/problem+json`.
+- **Consumer** — the `persistence` group, storing what arrives on `events.raw`.
 - **Service** — ingestion and aggregation logic; owns the bucketing-zone policy.
-- **Persistence** — JDBC data access. No JPA on the write path; one parameterised `INSERT` serves both ingest endpoints, batched when a request carries more than one event.
+- **Messaging** — publishes each accepted request as one `events.raw` record; sets unstorable records aside on `events.raw.dead-letter`.
+- **Persistence** — JDBC data access. No JPA on the write path; one parameterised `INSERT` serves every write, batched over the events of one transaction.
 
 The web layer runs on virtual threads, so request handling is plain blocking code.
 
@@ -98,9 +100,10 @@ It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was not
 ## Key design decisions
 
 - **Database idempotency.** The client supplies `event_id`; its primary-key constraint prevents duplicates across concurrent writers. *Rejected:* a seen-ID cache can become stale or disagree across instances. Broker deduplication covers producer sessions, not later HTTP retries.
-- **Atomic batches.** Up to 1,000 events are validated together; one invalid event returns `400` with its position in `errors[]`, e.g. `events[3].eventId`. A batched statement in one transaction rolls back on database failure. The whole batch is safe to retry because each event is idempotent. *Rejected:* partial acceptance adds response and retry complexity without improving retry safety. Dynamic multi-row `INSERT ... VALUES (...),(...)` fragments the driver statement cache and `pg_stat_statements` by batch size.
-- **Batch count limit.** The 1,000-event cap bounds work per request. Request bytes remain unbounded and need a separate guardrail.
+- **Atomic batches.** Up to 1,000 events are validated together; one invalid event returns `400` with its position in `errors[]`, e.g. `events[3].eventId`. The consumer stores a batch in one transaction or sets it aside whole. The whole batch is safe to retry because each event is idempotent. *Rejected:* partial acceptance adds response and retry complexity without improving retry safety. Dynamic multi-row `INSERT ... VALUES (...),(...)` fragments the driver statement cache and `pg_stat_statements` by batch size.
+- **Batch count limit.** The 1,000-event cap bounds work per request; bodies are capped at 512 KiB and encoded messages at 768 KiB, answered `413`.
 - **Validate before acceptance.** Event/user IDs allow 256 UTF-16 units; event types/tenant names allow 128, keeping index entries below PostgreSQL's B-tree limit. Reject NUL and unpaired surrogates in event text, JSON keys/strings and tenant names. Timestamps are limited to years 0001–9999 UTC. `properties` numbers retain decimal precision, with at most 1,000 digits before and 1,000 after the point after removing trailing fractional zeros (zero counts as written); the parser separately limits numeric literal length to 1,000. These checks prevent known storage failures and text replacement after acceptance. *Rejected:* double conversion loses decimal precision before validation.
+- **Asynchronous acceptance.** `202` follows the broker's acknowledgement of one `events.raw` record per request: the tenant and its events. A `503` after the 3 s publication budget leaves the outcome unknown, so clients retry with the same IDs. The `persistence` group stores whole records, commits offsets only after the database commit, retries any failure that does not blame the rows, and dead-letters what the database refuses or cannot be decoded. It shares the API's JVM and connection pool for now. *Rejected:* a message per event, which would split client batches; classifying by Spring's non-transient errors, which include an unreachable database and would dead-letter every event during an outage.
 - **At-least-once delivery.** The planned pipeline relies on database idempotency for harmless reprocessing. *Rejected:* Kafka transactions add throughput and operational costs for an exactly-once guarantee the idempotent sink does not need.
 - **Append-only events.** Immutable raw data lets aggregates be rebuilt. *Rejected:* mutable counters alone cannot recover from corruption or answer new questions about historical events.
 - **Virtual threads.** Java 21 supports concurrent blocking handlers with JDBC and ordinary stack traces. *Rejected:* WebFlux adds reactive types across layers and a narrower driver choice without enough benefit for this workload.
@@ -125,9 +128,7 @@ It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was not
 
 ## Planned evolution
 
-**Stage 3 — asynchronous persistence.** One HTTP request becomes one Kafka record in `events.raw`, containing the authenticated tenant and an event list. Single events and batches use the same envelope and `persistence` consumer group. Preserve batch atomicity by validating the whole request before publication and writing its new events in one database transaction; existing IDs remain no-ops. Reports use event timestamps, so per-user processing order across requests is not guaranteed and `user_id` is not a mandated partition key. Routing remains to be chosen.
-
-Both endpoints currently return `202` after synchronous persistence. In Stage 3, `202` follows broker acknowledgement; database visibility becomes eventual. Commit consumer offsets after the corresponding database commit, relying on `ON CONFLICT (event_id) DO NOTHING` for replay safety. Initially the consumer runs in the same JVM and uses the same connection pool as reads. It respects service/repository interfaces and has an independent lifecycle, including graceful completion of in-flight writes, so deployment roles can be split later.
+**Stage 3 — asynchronous persistence.** Acceptance and storage are split (see the decisions above). Still to come: lag and persisted-event metrics, and async measurements including a 60 s stop and restart of the consumer.
 
 **Stage 4 — data usage and storage design.** First establish the service's purpose, who uses its data, the questions and workflows it supports, and the required history, detail, freshness and exactness. Preserve current read endpoints as the starting point; adapt or replace them when those needs show they no longer fit the service, documenting the reason, resulting contract and client migration. Use the requirements and comparable measurements to select storage that balances latency, cost and operational effort. PostgreSQL is the initial baseline. Rollups, replication to a read database, ClickHouse, S3-compatible object storage and caching are examples in an open set of options; requirements may lead to other approaches or combinations, with no technology preferred in advance. Retention, delivery, migration and recovery follow the selected design. Stage 3 does not depend on this selection; Stage 5 deploys and sizes the chosen architecture.
 
@@ -156,7 +157,7 @@ Those numbers predate the statement timeout. Every pooled connection now carries
 
 Scoping reads to a tenant then cost the one cell that used to pass, and the tenant-led index bought it back. `event-counts` absorbed a surge and drained afterwards: offered 4,000 req/s it served ~717 and recovered to a p95 of ~15 ms. With a heap fetch per row it served ~260 and recovered to ~655 ms — no recovery at all. Over the new index it serves ~693 and recovers to 15.2 ms, in all three rounds. `active-users` and `top-pages` did not move on any field in either direction, which pins the swing to the query rather than to the rig — and leaves them draining, as they were before tenancy. A few milliseconds per query is not a latency detail when ten connections are the only place a request waits; it sets how deep the queue goes and how long it drains, which is why a query plan decided a surge verdict here while the statement timeout above could not.
 
-**Next changes.** The statement timeout is in place; Stage 3 adds asynchronous acceptance and measures persistence recovery. Reads and writes still share ten connections, so cheap inserts can wait behind expensive queries.
+**Next changes.** The statement timeout is in place and ingestion is asynchronous; the async measurements will show whether persistence recovers while reads hold the shared pool. Reads and writes still share ten connections, so cheap inserts can wait behind expensive queries.
 
 [The mixed cell](perf/mixed/spike/README.md) measured a 7.3–7.7 s mean wait for writes during a read surge. With a 5 s client deadline, ~94% were unaccepted during the surge and ~20% in the following 30 s. No request reached Hikari's connection timeout. Abandoned requests appear to remain queued; a statement timeout cannot limit how many connections reads occupy.
 

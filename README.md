@@ -16,16 +16,17 @@ See [DESIGN.md](./DESIGN.md) for architecture, trade-offs, and rejected alternat
 
 - **Java 21**, **Spring Boot 4** (Spring MVC on virtual threads)
 - **PostgreSQL** with **Flyway** migrations
+- **Apache Kafka** (KRaft) between acceptance and storage
 - **Gradle** (wrapper committed)
 - **JUnit 5** + **Testcontainers** (real Postgres and Kafka in tests, no H2)
 - **springdoc-openapi** (OpenAPI 3.1 and Swagger UI generated from the controllers)
 
 ## Status
 
-Early development. Stages 0–2 (setup, MVP, and observability) are complete:
+Early development. Stages 0–2 (setup, MVP, and observability) are complete, and Stage 3 (asynchronous ingestion) is under way:
 
 - Formatting, static analysis, coverage, CI, and dependency automation.
-- Synchronous ingestion into a Flyway-managed schema: `POST /api/v1/events` and `POST /api/v1/events/batch`. Batches accept up to 1,000 events, with all-or-nothing validation and the same idempotency as single events.
+- Asynchronous ingestion: `POST /api/v1/events` and `POST /api/v1/events/batch` answer `202` once Kafka holds the request, and a consumer stores it in a Flyway-managed schema. Batches accept up to 1,000 events in 512 KiB, with all-or-nothing validation and the same idempotency as single events.
 - Analytics: `GET /api/v1/stats/event-counts` (grouped by type, hour, or day), `GET /api/v1/stats/active-users` (distinct users per hour/day), and `GET /api/v1/stats/top-pages` (top-N pages with a truncation flag).
 - JWT tenant isolation and tenant-specific reporting zones.
 - Generated OpenAPI documentation and Swagger UI.
