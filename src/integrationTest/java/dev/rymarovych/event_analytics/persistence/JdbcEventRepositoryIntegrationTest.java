@@ -38,7 +38,8 @@ class JdbcEventRepositoryIntegrationTest {
   void reportsARefusedEventAsPermanent() {
     InjectedDatabaseFailure.install(jdbcClient);
 
-    assertThatThrownBy(() -> repository.save(event(InjectedDatabaseFailure.FAILING_EVENT_ID)))
+    assertThatThrownBy(
+            () -> repository.saveAll(List.of(event(InjectedDatabaseFailure.FAILING_EVENT_ID))))
         .isInstanceOf(EventsRefusedByStorageException.class)
         .isInstanceOf(PermanentException.class);
     assertThatThrownBy(
@@ -52,7 +53,8 @@ class JdbcEventRepositoryIntegrationTest {
   void reportsAFailureThatDoesNotBlameTheEventAsRecoverable() {
     InjectedDatabaseFailure.install(jdbcClient, "57014");
 
-    assertThatThrownBy(() -> repository.save(event(InjectedDatabaseFailure.FAILING_EVENT_ID)))
+    assertThatThrownBy(
+            () -> repository.saveAll(List.of(event(InjectedDatabaseFailure.FAILING_EVENT_ID))))
         .isInstanceOf(StorageUnavailableException.class)
         .isInstanceOf(RecoverableException.class);
     assertThatThrownBy(
