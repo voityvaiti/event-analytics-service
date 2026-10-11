@@ -37,6 +37,16 @@ public final class DevKeyTokens {
     return bearerToken(signedFor(tenant));
   }
 
+  /**
+   * A request post-processor presenting a valid token for {@code tenant} granting {@code scope}.
+   */
+  public static RequestPostProcessor bearerTokenFor(String tenant, String scope) {
+    return bearerToken(
+        sign(
+            new JWTClaimsSet.Builder().claim(TENANT_CLAIM, tenant).claim("scope", scope).build(),
+            developmentPrivateKey()));
+  }
+
   /** A request post-processor presenting {@code token} verbatim, valid or not. */
   public static RequestPostProcessor bearerToken(String token) {
     return request -> {
