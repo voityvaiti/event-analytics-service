@@ -17,7 +17,7 @@ See [DESIGN.md](./DESIGN.md) for architecture, trade-offs, and rejected alternat
 - **Java 21**, **Spring Boot 4** (Spring MVC on virtual threads)
 - **PostgreSQL** with **Flyway** migrations
 - **Gradle** (wrapper committed)
-- **JUnit 5** + **Testcontainers** (real Postgres in tests, no H2)
+- **JUnit 5** + **Testcontainers** (real Postgres and Kafka in tests, no H2)
 - **springdoc-openapi** (OpenAPI 3.1 and Swagger UI generated from the controllers)
 
 ## Status

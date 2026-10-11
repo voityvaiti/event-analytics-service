@@ -120,7 +120,7 @@ It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was not
 - **Top-N limits only.** `top-pages` returns a bounded result and truncation flag; `event-counts` returns every bucket. *Rejected:* time-series limits silently omit buckets and do not save the aggregation work performed before `LIMIT`.
 - **Generated API reference.** springdoc derives OpenAPI 3.1 from mappings and validation constraints. The bearer scheme, `[from, to)` window, and response codes are supplied manually. *Rejected:* a separate handwritten reference can drift from the implementation.
 - **Separate test source sets.** `src/test/java` runs without Docker; `integrationTest` alone has Testcontainers on its classpath. *Rejected:* tag filtering still lets accidental Testcontainers imports compile in unit tests; separate classpaths catch them at compilation.
-- **Host app, Docker infrastructure in development.** Run the app from the IDE and Postgres through Compose. Containerise the app for smoke tests and deployment. *Rejected:* a development app container adds class mounts and remote debugging without automatic Java reload from a bind mount.
+- **Host app, Docker infrastructure in development.** Run the app from the IDE, and Postgres and Kafka through Compose. Containerise the app for smoke tests and deployment. *Rejected:* a development app container adds class mounts and remote debugging without automatic Java reload from a bind mount.
 
 ## Planned evolution
 
