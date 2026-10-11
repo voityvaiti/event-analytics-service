@@ -17,13 +17,8 @@ import tools.jackson.databind.node.JsonNodeFactory;
  * Describe it as unconstrained JSON in OpenAPI to avoid exposing JsonNode accessor flags as a
  * schema.
  *
- * <p>The constraints keep out values that would fail at PostgreSQL, and values the parser or driver
- * would turn into something else ({@code ?}, {@code "Infinity"}), because once acceptance precedes
- * storage neither can be reported to the client. Fractions within double range are still rounded to
- * double precision. Lengths keep index entries under the 2,704-byte B-tree limit in the worst case:
- * {@code @Size} counts UTF-16 units of at most three UTF-8 bytes each, so an event ID is at most
- * 768 bytes in the primary key, and a user ID and event type at most 1,152 bytes of the composite
- * index entry they share with the token's tenant.
+ * <p>Length limits count UTF-16 units, at most three UTF-8 bytes each, keeping the primary and
+ * composite index entries within PostgreSQL's B-tree limit. See DESIGN for the input contract.
  */
 public record EventRequest(
     @NotBlank @Size(max = EventRequest.MAX_EVENT_ID_LENGTH) @StorableText String eventId,
