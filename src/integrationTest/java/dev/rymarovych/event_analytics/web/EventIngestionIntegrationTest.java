@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
+import dev.rymarovych.event_analytics.domain.TenantName;
+import java.util.Random;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -151,6 +153,47 @@ class EventIngestionIntegrationTest {
         .param("id", eventId)
         .query(String.class)
         .single();
+  }
+
+  /**
+   * Every limit at once, in random three-byte characters PostgreSQL cannot compress: the widest
+   * entries validation lets into the primary key and the composite index. Random ASCII a tenth
+   * longer than the user ID limit already broke the 2,704-byte B-tree limit when probed, so this
+   * fails if a limit is raised past what the indexes hold.
+   */
+  @Test
+  void storesTheWidestValuesValidationAccepts() throws Exception {
+    var eventId = randomThreeByteText(EventRequest.MAX_EVENT_ID_LENGTH);
+    var widest =
+        """
+        {
+          "event_id": "%s",
+          "user_id": "%s",
+          "event_type": "%s",
+          "timestamp": "9999-12-31T23:59:59.999999999Z"
+        }
+        """
+            .formatted(
+                eventId,
+                randomThreeByteText(EventRequest.MAX_USER_ID_LENGTH),
+                randomThreeByteText(EventRequest.MAX_EVENT_TYPE_LENGTH));
+
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(randomThreeByteText(TenantName.MAX_LENGTH)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(widest))
+        .andExpect(status().isAccepted());
+
+    assertThat(countByEventId(eventId)).isEqualTo(1L);
+  }
+
+  private static String randomThreeByteText(int length) {
+    return new Random(length)
+        .ints(length, 0x4E00, 0xA000)
+        .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+        .toString();
   }
 
   private long countByEventId(String eventId) {
