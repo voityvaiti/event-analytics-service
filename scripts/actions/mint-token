@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Mint a tenant token using the pinned Node container; requires Docker. The tenant
-# scopes ingestion and stats.
+# scopes ingestion and stats; an optional scope, e.g. persistence:control, grants the
+# service endpoints.
 #
 # TOKEN=$(scripts/actions/mint-token acme)
 #
@@ -10,8 +11,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
-if [ $# -ne 1 ]; then
-  echo "Usage: scripts/actions/mint-token <tenant>" >&2
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: scripts/actions/mint-token <tenant> [scope]" >&2
   exit 1
 fi
 
@@ -19,4 +20,4 @@ NODE_IMAGE=${NODE_IMAGE:-node:22-alpine}
 
 docker run --rm \
   --volume "$PWD":/work --workdir /work \
-  "$NODE_IMAGE" node perf/lib/mint-token.mjs "$1"
+  "$NODE_IMAGE" node perf/lib/mint-token.mjs "$@"

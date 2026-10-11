@@ -52,6 +52,9 @@ spring:
 app:
   ingestion:
     publication-timeout: 3s
+  persistence-consumer:
+    control:
+      enabled: false
 
 management:
   endpoints:
