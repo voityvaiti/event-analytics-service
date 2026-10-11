@@ -8,13 +8,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.JWSObject;
+import com.nimbusds.jose.Payload;
+import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import dev.rymarovych.event_analytics.DevKeyTokens;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
+import dev.rymarovych.event_analytics.domain.TenantName;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -97,6 +105,42 @@ class AuthenticationIntegrationTest {
   @Test
   void blankTenantClaimIsUnauthorized() throws Exception {
     mockMvc.perform(windowQuery().with(bearerTokenFor("   "))).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void tenantClaimTooLongToStoreIsUnauthorized() throws Exception {
+    mockMvc
+        .perform(windowQuery().with(bearerTokenFor("t".repeat(TenantName.MAX_LENGTH + 1))))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void tenantClaimWithNulIsUnauthorized() throws Exception {
+    mockMvc
+        .perform(windowQuery().with(bearerTokenFor("ac\u0000me")))
+        .andExpect(status().isUnauthorized());
+  }
+
+  /** Signs the JSON escape verbatim so UTF-8 encoding cannot replace it before JWT decoding. */
+  @ParameterizedTest
+  @ValueSource(strings = {"ac\\ud800me", "ac\\udc00me"})
+  void tenantClaimWithAnUnpairedSurrogateIsUnauthorized(String escapedTenant) throws Exception {
+    var token =
+        new JWSObject(
+            new JWSHeader(JWSAlgorithm.RS256),
+            new Payload("{\"tenant\":\"%s\"}".formatted(escapedTenant)));
+    token.sign(new RSASSASigner(DevKeyTokens.developmentPrivateKey()));
+
+    mockMvc
+        .perform(windowQuery().with(bearerToken(token.serialize())))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void tenantClaimWithACompleteSurrogatePairIsAccepted() throws Exception {
+    mockMvc
+        .perform(windowQuery().with(bearerTokenFor("ac\uD83D\uDE00me")))
+        .andExpect(status().isOk());
   }
 
   /**
