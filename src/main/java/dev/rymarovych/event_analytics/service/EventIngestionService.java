@@ -3,19 +3,12 @@ package dev.rymarovych.event_analytics.service;
 import dev.rymarovych.event_analytics.domain.NewEvent;
 import java.util.List;
 
-/** Ingests events into the append-only event log. */
+/** Accepts events for storage: a call returns once the broker holds them, storage follows. */
 public interface EventIngestionService {
 
-  /**
-   * Ingests a single event. Idempotent on {@code event_id}: a duplicate is accepted as a no-op
-   * rather than reported as an error.
-   */
+  /** Accepts a single event; re-sending its {@code event_id} later is a no-op. */
   void ingest(NewEvent event);
 
-  /**
-   * Persist a batch atomically. Duplicate event_id values, including duplicates within the batch,
-   * are skipped as in single-event ingestion. A caller can safely retry the whole batch without
-   * per-event results.
-   */
+  /** Accepts a batch as one unit, stored whole or set aside whole; duplicates are no-ops. */
   void ingestBatch(List<NewEvent> events);
 }

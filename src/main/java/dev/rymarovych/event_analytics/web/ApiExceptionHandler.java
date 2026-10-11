@@ -4,6 +4,8 @@ import static java.util.Objects.requireNonNullElse;
 
 import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
+import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
+import dev.rymarovych.event_analytics.domain.PublicationFailedException;
 import java.net.URI;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -51,6 +53,29 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             "The query took too long to run and was cancelled. Retry over a narrower time window.");
     return handleExceptionInternal(
         ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
+
+  /** The events may or may not have been accepted, so the client retries with the same IDs. */
+  @ExceptionHandler(PublicationFailedException.class)
+  @Nullable ResponseEntity<Object> handlePublicationFailed(
+      PublicationFailedException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "Acceptance could not be confirmed in time, so the events may or may not have been"
+                + " accepted. Retry with the same event_id values.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
+
+  @ExceptionHandler(MessageTooLargeException.class)
+  @Nullable ResponseEntity<Object> handleMessageTooLarge(
+      MessageTooLargeException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONTENT_TOO_LARGE, "The events are too large to accept in one request.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.CONTENT_TOO_LARGE, request);
   }
 
   /**

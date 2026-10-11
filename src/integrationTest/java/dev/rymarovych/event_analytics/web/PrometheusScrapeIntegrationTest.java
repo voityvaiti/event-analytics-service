@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.rymarovych.event_analytics.PersistenceBacklog;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Arrays;
@@ -19,6 +20,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -37,9 +39,11 @@ class PrometheusScrapeIntegrationTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private MeterRegistry meterRegistry;
   @Autowired private JdbcClient jdbcClient;
+  @Autowired private KafkaAdmin kafkaAdmin;
 
   @AfterEach
   void cleanUp() {
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
     jdbcClient.sql("DELETE FROM events").update();
   }
 
