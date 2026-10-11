@@ -10,8 +10,4 @@ public class MessageTooLargeException extends PermanentException {
   public MessageTooLargeException(String message) {
     super(message, null);
   }
-
-  public MessageTooLargeException(String message, Throwable cause) {
-    super(message, cause);
-  }
 }
