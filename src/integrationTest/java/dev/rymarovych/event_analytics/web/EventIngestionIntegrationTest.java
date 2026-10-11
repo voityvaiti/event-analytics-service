@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.rymarovych.event_analytics.PersistenceBacklog;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import dev.rymarovych.event_analytics.domain.TenantName;
 import java.util.Random;
@@ -19,6 +20,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -48,9 +50,11 @@ class EventIngestionIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
+  @Autowired private KafkaAdmin kafkaAdmin;
 
   @AfterEach
   void cleanUp() {
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
     jdbcClient.sql("DELETE FROM events").update();
   }
 
@@ -63,6 +67,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
   }
@@ -83,6 +88,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
   }
@@ -97,6 +103,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
@@ -126,6 +133,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(claimingAnotherTenant))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
@@ -183,6 +191,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(widest))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId(eventId)).isEqualTo(1L);
   }
@@ -217,6 +226,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(precise))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(
             jdbcClient

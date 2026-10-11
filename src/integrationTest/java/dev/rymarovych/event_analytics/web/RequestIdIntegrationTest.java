@@ -4,13 +4,15 @@ import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
+import dev.rymarovych.event_analytics.service.EventIngestionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +22,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -41,7 +43,7 @@ class RequestIdIntegrationTest {
   private static final String STATS_PATH = "/api/v1/stats/event-counts";
 
   @Autowired private MockMvc mockMvc;
-  @Autowired private JdbcClient jdbcClient;
+  @MockitoBean private EventIngestionService ingestionService;
 
   @Test
   void mintsAnIdentifierWhenTheRequestBringsNone() throws Exception {
@@ -96,33 +98,27 @@ class RequestIdIntegrationTest {
         .doesNotContain("at dev.rymarovych.event_analytics.web.StatsController");
   }
 
-  /** A database failure exercises the fallback exception handler. */
+  /** A failure no handler claims; with ingestion asynchronous only a mock can still raise one. */
   @Test
   void logsAFailureNothingClaimsWithItsStackTrace(CapturedOutput output) throws Exception {
-    var refusedEvent =
-        """
-        {
-          "event_id": "%s",
-          "user_id": "user_42",
-          "event_type": "page_view",
-          "timestamp": "2026-05-24T10:15:30Z"
-        }
-        """
-            .formatted(InjectedDatabaseFailure.FAILING_EVENT_ID);
+    doThrow(new IllegalStateException("unclaimed")).when(ingestionService).ingest(any());
 
-    InjectedDatabaseFailure.install(jdbcClient);
-    try {
-      mockMvc
-          .perform(
-              post("/api/v1/events")
-                  .with(bearerTokenFor(TENANT))
-                  .header(RequestIdFilter.HEADER, "unclaimed-1b7de4")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(refusedEvent))
-          .andExpect(status().isInternalServerError());
-    } finally {
-      InjectedDatabaseFailure.remove(jdbcClient);
-    }
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .header(RequestIdFilter.HEADER, "unclaimed-1b7de4")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "event_id": "evt_unclaimed",
+                      "user_id": "user_42",
+                      "event_type": "page_view",
+                      "timestamp": "2026-05-24T10:15:30Z"
+                    }
+                    """))
+        .andExpect(status().isInternalServerError());
 
     assertThat(output.getAll())
         .contains("unclaimed-1b7de4")
