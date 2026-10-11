@@ -7,10 +7,6 @@ public class PublicationFailedException extends RecoverableException {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  public PublicationFailedException(String message) {
-    super(message, null);
-  }
-
   public PublicationFailedException(String message, Throwable cause) {
     super(message, cause);
   }
