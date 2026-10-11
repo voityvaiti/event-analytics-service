@@ -49,7 +49,7 @@ perf_mixed_spike_cell() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "$request_metrics" "$scrape" "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" \
+    "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
     "$timeouts_before" "$timeouts_after" <<'PY'
 import json, sys
 

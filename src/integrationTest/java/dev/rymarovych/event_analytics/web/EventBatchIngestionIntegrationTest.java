@@ -10,7 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
+import dev.rymarovych.event_analytics.PersistenceBacklog;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
+import dev.rymarovych.event_analytics.TopicRecords;
+import dev.rymarovych.event_analytics.messaging.EventTopics;
+import java.nio.charset.StandardCharsets;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
@@ -21,6 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -40,9 +45,11 @@ class EventBatchIngestionIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
+  @Autowired private KafkaAdmin kafkaAdmin;
 
   @AfterEach
   void cleanUp() {
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
     jdbcClient.sql("DELETE FROM events").update();
   }
 
@@ -50,6 +57,7 @@ class EventBatchIngestionIntegrationTest {
   void acceptsValidBatchAndPersistsEveryRow() throws Exception {
     postBatch(batchOf(eventJson("evt_1"), eventJson("evt_2"), eventJson("evt_3")))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countAll()).isEqualTo(3L);
   }
@@ -60,6 +68,7 @@ class EventBatchIngestionIntegrationTest {
 
     postBatch(batch).andExpect(status().isAccepted());
     postBatch(batch).andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countAll()).isEqualTo(2L);
   }
@@ -67,6 +76,7 @@ class EventBatchIngestionIntegrationTest {
   @Test
   void duplicateWithinOneBatchCollapsesToOneRow() throws Exception {
     postBatch(batchOf(eventJson("evt_1"), eventJson("evt_1"))).andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countAll()).isEqualTo(1L);
   }
@@ -164,13 +174,7 @@ class EventBatchIngestionIntegrationTest {
     assertThat(countAll()).isZero();
   }
 
-  /**
-   * The database refuses the second event after the first was sent. Assert no rows remain and the
-   * error has a problem body.
-   *
-   * <p>This also passes without the service transaction today because of pgjdbc batching behavior;
-   * the service annotation makes the guarantee explicit.
-   */
+  /** The database refuses the second event: the batch is set aside whole, nothing is written. */
   @Test
   void midBatchDatabaseFailureLeavesNothingWritten() throws Exception {
     InjectedDatabaseFailure.install(jdbcClient);
@@ -180,13 +184,18 @@ class EventBatchIngestionIntegrationTest {
                   eventJson("evt_1"),
                   eventJson(InjectedDatabaseFailure.FAILING_EVENT_ID),
                   eventJson("evt_3")))
-          .andExpect(status().isInternalServerError())
-          .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+          .andExpect(status().isAccepted());
+      PersistenceBacklog.awaitEmpty(kafkaAdmin);
     } finally {
       InjectedDatabaseFailure.remove(jdbcClient);
     }
 
     assertThat(countAll()).isZero();
+    assertThat(TopicRecords.read(kafkaAdmin, EventTopics.DEAD_LETTERS))
+        .anySatisfy(
+            record ->
+                assertThat(new String(record.value(), StandardCharsets.UTF_8))
+                    .contains("\"evt_1\"", InjectedDatabaseFailure.FAILING_EVENT_ID, "\"evt_3\""));
   }
 
   private ResultActions postBatch(String body) throws Exception {

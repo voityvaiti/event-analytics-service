@@ -1,21 +1,22 @@
 package dev.rymarovych.event_analytics.persistence;
 
+import dev.rymarovych.event_analytics.domain.EventsRefusedByStorageException;
 import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * JdbcClient-backed event persistence. One INSERT serves single and batch writes; ON CONFLICT DO
- * NOTHING skips duplicate event_id values and the database supplies created_at.
- *
- * <p>Use NamedParameterJdbcTemplate for batching because JdbcClient has no batch API; both share
- * the datasource and statement.
+ * Event persistence through one batched INSERT; ON CONFLICT DO NOTHING skips duplicate event_id
+ * values and the database supplies created_at.
  */
 @Repository
 class JdbcEventRepository implements EventRepository {
@@ -34,24 +35,46 @@ class JdbcEventRepository implements EventRepository {
       ON CONFLICT (event_id) DO NOTHING
       """;
 
-  private final JdbcClient jdbcClient;
+  /**
+   * Data exception (22), integrity constraint (23), program limit such as the B-tree entry size
+   * (54), and an error raised by a trigger (P0).
+   */
+  private static final Set<String> REFUSED_EVENT_STATE_CLASSES = Set.of("22", "23", "54", "P0");
+
   private final NamedParameterJdbcTemplate jdbcTemplate;
 
-  JdbcEventRepository(JdbcClient jdbcClient, NamedParameterJdbcTemplate jdbcTemplate) {
-    this.jdbcClient = jdbcClient;
+  JdbcEventRepository(NamedParameterJdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = jdbcTemplate;
   }
 
   @Override
-  public void save(NewEvent event) {
-    jdbcClient.sql(INSERT).paramSource(parameters(event)).update();
+  public void saveAll(List<NewEvent> events) {
+    try {
+      jdbcTemplate.batchUpdate(
+          INSERT,
+          events.stream().map(JdbcEventRepository::parameters).toArray(SqlParameterSource[]::new));
+    } catch (DataAccessException failure) {
+      throw translated(failure);
+    }
   }
 
-  @Override
-  public void saveAll(List<NewEvent> events) {
-    jdbcTemplate.batchUpdate(
-        INSERT,
-        events.stream().map(JdbcEventRepository::parameters).toArray(SqlParameterSource[]::new));
+  private static RuntimeException translated(DataAccessException failure) {
+    return refusesTheEvents(failure)
+        ? new EventsRefusedByStorageException("The database refused the events", failure)
+        : new StorageUnavailableException("The database could not store the events", failure);
+  }
+
+  /**
+   * Only SQLSTATE classes that blame the rows count as refusal; anything else, including a broken
+   * statement after a bad deploy, is left recoverable so it stalls rather than discards events.
+   */
+  private static boolean refusesTheEvents(Throwable failure) {
+    for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+      if (cause instanceof SQLException sql && sql.getSQLState() != null) {
+        return REFUSED_EVENT_STATE_CLASSES.contains(sql.getSQLState().substring(0, 2));
+      }
+    }
+    return false;
   }
 
   private static SqlParameterSource parameters(NewEvent event) {

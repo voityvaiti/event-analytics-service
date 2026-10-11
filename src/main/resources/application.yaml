@@ -20,12 +20,41 @@ spring:
   docker:
     compose:
       lifecycle-management: start-only
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        # Fit send() blocking and delivery inside app.ingestion.publication-timeout.
+        max.block.ms: 3000
+        delivery.timeout.ms: 3000
+        request.timeout.ms: 2500
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.ByteArrayDeserializer
+      # A new group must start from the oldest record, not skip what was already accepted.
+      auto-offset-reset: earliest
+      max-poll-records: 500
+    listener:
+      type: batch
+      ack-mode: manual
+      # A paused consumer resumes only on its next poll, so this bounds the retry interval.
+      poll-timeout: 500ms
   datasource:
     hikari:
       # Set statement_timeout once per physical connection. The 10s bound exceeds
       # measured reads (5.9s over 180 days, 3.6s over 30 days) while limiting stuck
       # queries and lock waits on both paths.
       connection-init-sql: SET statement_timeout = '10s'
+
+app:
+  ingestion:
+    publication-timeout: 3s
+  persistence-consumer:
+    control:
+      enabled: false
 
 management:
   endpoints:

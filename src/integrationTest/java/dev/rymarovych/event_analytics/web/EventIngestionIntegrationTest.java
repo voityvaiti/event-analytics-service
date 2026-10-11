@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import dev.rymarovych.event_analytics.PersistenceBacklog;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import dev.rymarovych.event_analytics.domain.TenantName;
 import java.util.Random;
@@ -19,7 +20,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * End-to-end ingestion tests driving the real controller → service → repository → Postgres path.
@@ -48,9 +51,11 @@ class EventIngestionIntegrationTest {
 
   @Autowired private MockMvc mockMvc;
   @Autowired private JdbcClient jdbcClient;
+  @Autowired private KafkaAdmin kafkaAdmin;
 
   @AfterEach
   void cleanUp() {
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
     jdbcClient.sql("DELETE FROM events").update();
   }
 
@@ -63,6 +68,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
   }
@@ -83,6 +89,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId("evt_abc123")).isEqualTo(1L);
   }
@@ -97,6 +104,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(EVENT_JSON))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
@@ -126,6 +134,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(claimingAnotherTenant))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(tenantNameOf("evt_abc123")).isEqualTo("acme");
   }
@@ -183,6 +192,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(widest))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(countByEventId(eventId)).isEqualTo(1L);
   }
@@ -217,6 +227,7 @@ class EventIngestionIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(precise))
         .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
 
     assertThat(
             jdbcClient
@@ -286,6 +297,42 @@ class EventIngestionIntegrationTest {
         .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
 
     assertThat(countByEventId("evt_extreme_exponent")).isZero();
+  }
+
+  @Test
+  void acceptsABodyJustUnderTheLimit() throws Exception {
+    mockMvc
+        .perform(ingest(eventWithLabelPaddedTo("evt_at_body_limit", 512 * 1024 - 1)))
+        .andExpect(status().isAccepted());
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
+
+    assertThat(countByEventId("evt_at_body_limit")).isEqualTo(1L);
+  }
+
+  @Test
+  void refusesABodyOverTheLimitAsTooLarge() throws Exception {
+    mockMvc
+        .perform(ingest(eventWithLabelPaddedTo("evt_over_body_limit", 512 * 1024 + 1)))
+        .andExpect(status().isContentTooLarge())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+    PersistenceBacklog.awaitEmpty(kafkaAdmin);
+
+    assertThat(countByEventId("evt_over_body_limit")).isZero();
+  }
+
+  private MockHttpServletRequestBuilder ingest(String body) {
+    return post("/api/v1/events")
+        .with(bearerTokenFor(TENANT))
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(body);
+  }
+
+  private static String eventWithLabelPaddedTo(String eventId, int bodyBytes) {
+    var template =
+        """
+        {"event_id": "%s", "user_id": "user_42", "event_type": "page_view",         "timestamp": "2026-05-24T10:15:30Z", "properties": {"label": "%s"}}"""
+            .formatted(eventId, "%s");
+    return template.formatted("x".repeat(bodyBytes - (template.length() - 2)));
   }
 
   private long countByEventId(String eventId) {

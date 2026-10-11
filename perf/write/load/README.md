@@ -23,7 +23,7 @@ Every row records the configuration needed for comparison:
 - **`scenario`:** `ingest-single` or `ingest-batch`, stamped by the scenario.
 - **`batch_size`:** reported by batch scenarios, alongside derived `events` and `events_per_sec`. Single-event rows omit these because `requests` and `throughput_rps` already represent events and event rate.
 - **`duration`:** a constant-VU measurement after a separate warm-up. Longer windows can capture more rare pauses; compare matching durations.
-- **`ingest_path`:** `sync` means `202` follows persistence. With buffering, throughput measures acceptance before persistence. Set `INGEST_PATH` manually; the app does not expose this value yet.
+- **`ingest_path`:** `async`, the default since Stage 3, means `202` follows the broker's acknowledgement, so throughput measures acceptance, not persistence. `sync` rows predate it, when `202` followed persistence; set `INGEST_PATH=sync` only to label a run of such a build.
 - **`schema_version`:** latest applied Flyway migration, read from the database; identifies schema changes that may affect write cost.
 - **`request_metrics` / `scrape`:** instrumentation state; see the [suite README](../../README.md#running).
 

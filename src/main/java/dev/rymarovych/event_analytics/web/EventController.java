@@ -41,7 +41,8 @@ public class EventController {
   @ResponseStatus(HttpStatus.ACCEPTED)
   @ApiResponse(
       responseCode = "202",
-      description = "Stored, or already present — a duplicate is a no-op")
+      description = "Accepted; it reaches the stats once stored, and a duplicate is a no-op")
+  @AcceptanceProblemResponses
   public void ingest(@Valid @RequestBody EventRequest request, Principal principal) {
     ingestionService.ingest(eventMapper.toNewEvent(request, tenantOf(principal)));
   }
@@ -53,7 +54,10 @@ public class EventController {
    */
   @PostMapping("/batch")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  @ApiResponse(responseCode = "202", description = "Every event stored, or already present")
+  @ApiResponse(
+      responseCode = "202",
+      description = "Accepted as one unit; stored whole once the consumer reaches it")
+  @AcceptanceProblemResponses
   public void ingestBatch(@Valid @RequestBody EventBatchRequest request, Principal principal) {
     ingestionService.ingestBatch(eventMapper.toNewEvents(request.events(), tenantOf(principal)));
   }

@@ -4,6 +4,8 @@ import static java.util.Objects.requireNonNullElse;
 
 import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
+import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
+import dev.rymarovych.event_analytics.domain.PublicationFailedException;
 import java.net.URI;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -14,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -53,6 +56,29 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
   }
 
+  /** The events may or may not have been accepted, so the client retries with the same IDs. */
+  @ExceptionHandler(PublicationFailedException.class)
+  @Nullable ResponseEntity<Object> handlePublicationFailed(
+      PublicationFailedException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "Acceptance could not be confirmed in time, so the events may or may not have been"
+                + " accepted. Retry with the same event_id values.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
+
+  @ExceptionHandler(MessageTooLargeException.class)
+  @Nullable ResponseEntity<Object> handleMessageTooLarge(
+      MessageTooLargeException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONTENT_TOO_LARGE, "The events are too large to accept in one request.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.CONTENT_TOO_LARGE, request);
+  }
+
   /**
    * Return 500 for an invalid stored reporting zone: retrying cannot fix the setting. Include the
    * offending value in the problem detail so the tenant can correct it.
@@ -83,6 +109,23 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatus.INTERNAL_SERVER_ERROR, "The service failed to handle this request.");
     return handleExceptionInternal(
         ex, body, new HttpHeaders(), HttpStatus.INTERNAL_SERVER_ERROR, request);
+  }
+
+  /** A body cut off at its byte limit surfaces as unreadable; answer it as too large instead. */
+  @Override
+  protected @Nullable ResponseEntity<Object> handleHttpMessageNotReadable(
+      HttpMessageNotReadableException ex,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
+    for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+      if (cause instanceof RequestBodyTooLargeException tooLarge) {
+        var body =
+            ProblemDetail.forStatusAndDetail(HttpStatus.CONTENT_TOO_LARGE, tooLarge.getMessage());
+        return handleExceptionInternal(ex, body, headers, HttpStatus.CONTENT_TOO_LARGE, request);
+      }
+    }
+    return super.handleHttpMessageNotReadable(ex, headers, status, request);
   }
 
   @Override
