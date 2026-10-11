@@ -3,7 +3,7 @@ package dev.rymarovych.event_analytics.persistence;
 import dev.rymarovych.event_analytics.domain.NewEvent;
 import java.util.List;
 
-/** Append-only persistence for raw events. */
+/** Append-only persistence for raw events; failures are recoverable unless the rows are refused. */
 public interface EventRepository {
 
   /**
