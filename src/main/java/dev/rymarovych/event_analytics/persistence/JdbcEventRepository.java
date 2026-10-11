@@ -8,7 +8,6 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
-import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -70,19 +69,12 @@ class JdbcEventRepository implements EventRepository {
    * statement after a bad deploy, is left recoverable so it stalls rather than discards events.
    */
   private static boolean refusesTheEvents(Throwable failure) {
-    for (Throwable cause = failure; cause != null; cause = nextCause(cause)) {
+    for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
       if (cause instanceof SQLException sql && sql.getSQLState() != null) {
         return REFUSED_EVENT_STATE_CLASSES.contains(sql.getSQLState().substring(0, 2));
       }
     }
     return false;
-  }
-
-  private static @Nullable Throwable nextCause(Throwable failure) {
-    if (failure instanceof SQLException sql && sql.getNextException() != null) {
-      return sql.getNextException();
-    }
-    return failure.getCause();
   }
 
   private static SqlParameterSource parameters(NewEvent event) {
