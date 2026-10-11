@@ -48,7 +48,7 @@ perf_write_load_cell() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "$request_metrics" "$scrape" "${INGEST_PATH:-sync}" "$schema_version" "$start_rows" <<'PY'
+    "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" <<'PY'
 import json, sys
 
 (
