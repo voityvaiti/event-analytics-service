@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
+import dev.rymarovych.event_analytics.domain.StorableCharacters;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import org.jspecify.annotations.Nullable;
@@ -15,12 +16,12 @@ public class StorableJsonValidator implements ConstraintValidator<StorableJson, 
 
   private static boolean isStorable(JsonNode json) {
     if (json.isString()) {
-      return StorableTextValidator.isStorable(json.stringValue());
+      return StorableCharacters.isStorable(json.stringValue());
     }
     if (json.isFloatingPointNumber()) {
       return Double.isFinite(json.doubleValue());
     }
-    return json.propertyNames().stream().allMatch(StorableTextValidator::isStorable)
+    return json.propertyNames().stream().allMatch(StorableCharacters::isStorable)
         && json.values().stream().allMatch(StorableJsonValidator::isStorable);
   }
 }

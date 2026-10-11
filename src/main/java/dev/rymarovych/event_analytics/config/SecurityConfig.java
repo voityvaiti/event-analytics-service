@@ -1,5 +1,7 @@
 package dev.rymarovych.event_analytics.config;
 
+import dev.rymarovych.event_analytics.domain.TenantName;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -59,13 +61,24 @@ class SecurityConfig {
   }
 
   /**
-   * Reject missing or blank tenant claims with 401. Boot adds {@code OAuth2TokenValidator<Jwt>}
-   * beans to its decoder alongside default validators; integration tests pin that wiring.
+   * Reject missing or invalid tenant names with 401. Boot adds this validator alongside its default
+   * JWT validators; integration tests cover that wiring.
    */
   @Bean
   OAuth2TokenValidator<Jwt> tenantClaimValidator() {
-    return new JwtClaimValidator<String>(
-        TENANT_CLAIM, tenant -> tenant != null && !tenant.isBlank());
+    return new JwtClaimValidator<String>(TENANT_CLAIM, SecurityConfig::isTenantName);
+  }
+
+  private static boolean isTenantName(@Nullable String tenant) {
+    if (tenant == null) {
+      return false;
+    }
+    try {
+      new TenantName(tenant);
+      return true;
+    } catch (IllegalArgumentException notATenantName) {
+      return false;
+    }
   }
 
   private static JwtAuthenticationConverter tenantPrincipalConverter() {
