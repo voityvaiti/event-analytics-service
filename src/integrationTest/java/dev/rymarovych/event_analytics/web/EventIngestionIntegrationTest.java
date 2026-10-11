@@ -3,6 +3,7 @@ package dev.rymarovych.event_analytics.web;
 import static dev.rymarovych.event_analytics.DevKeyTokens.bearerTokenFor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
@@ -10,6 +11,8 @@ import dev.rymarovych.event_analytics.domain.TenantName;
 import java.util.Random;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -155,12 +158,7 @@ class EventIngestionIntegrationTest {
         .single();
   }
 
-  /**
-   * Every limit at once, in random three-byte characters PostgreSQL cannot compress: the widest
-   * entries validation lets into the primary key and the composite index. Random ASCII a tenth
-   * longer than the user ID limit already broke the 2,704-byte B-tree limit when probed, so this
-   * fails if a limit is raised past what the indexes hold.
-   */
+  /** Random three-byte characters exercise index size limits without relying on compression. */
   @Test
   void storesTheWidestValuesValidationAccepts() throws Exception {
     var eventId = randomThreeByteText(EventRequest.MAX_EVENT_ID_LENGTH);
@@ -194,6 +192,100 @@ class EventIngestionIntegrationTest {
         .ints(length, 0x4E00, 0xA000)
         .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
         .toString();
+  }
+
+  /**
+   * Pins the HTTP mapper's decimal configuration against the value actually stored in PostgreSQL.
+   */
+  @Test
+  void storesNumbersExactlyUpToTheirDigitLimits() throws Exception {
+    var precise =
+        """
+        {
+          "event_id": "evt_precise",
+          "user_id": "user_42",
+          "event_type": "purchase",
+          "timestamp": "2026-05-24T10:15:30Z",
+          "properties": {"amount": 0.1234567890123456789, "largest": 1E+999}
+        }
+        """;
+
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(precise))
+        .andExpect(status().isAccepted());
+
+    assertThat(
+            jdbcClient
+                .sql("SELECT properties ->> 'amount' FROM events WHERE event_id = :eventId")
+                .param("eventId", "evt_precise")
+                .query(String.class)
+                .single())
+        .isEqualTo("0.1234567890123456789");
+  }
+
+  @Test
+  void rejectsANumberLiteralTooLongForTheParser() throws Exception {
+    var tooLong =
+        """
+        {
+          "event_id": "evt_long_number",
+          "user_id": "user_42",
+          "event_type": "purchase",
+          "timestamp": "2026-05-24T10:15:30Z",
+          "properties": {"amount": %s}
+        }
+        """
+            .formatted("1".repeat(1001));
+
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(tooLong))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+
+    assertThat(countByEventId("evt_long_number")).isZero();
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {
+        "1E+2147483647",
+        "10E+2147483647",
+        "100E+2147483647",
+        "0E+2147483647",
+        "-0E+2147483647",
+        "0E-20000"
+      })
+  void rejectsExtremeExponentsWithoutAServerError(String number) throws Exception {
+    var request =
+        """
+        {
+          "event_id": "evt_extreme_exponent",
+          "user_id": "user_42",
+          "event_type": "purchase",
+          "timestamp": "2026-05-24T10:15:30Z",
+          "properties": {"amounts": [1, {"value": %s}]}
+        }
+        """
+            .formatted(number);
+
+    mockMvc
+        .perform(
+            post("/api/v1/events")
+                .with(bearerTokenFor(TENANT))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(request))
+        .andExpect(status().isBadRequest())
+        .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+
+    assertThat(countByEventId("evt_extreme_exponent")).isZero();
   }
 
   private long countByEventId(String eventId) {
