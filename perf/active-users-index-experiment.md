@@ -19,7 +19,7 @@ Only C shipped, as V7. The rewritten measurement commits `7ff9d71` and `c92df02`
 | batch ingest vs A's 125,771 events/s | **119,182 (−5.2%)** | 121,942 (−3.0%) |
 | secondary index disk | **2,182 MB** | 1,288 MB |
 
-B and C differ by at most 0.4% on `active-users`, within measurement spread. B preserves narrower `event-counts` entries, saving ~3% on wide windows but nothing measurable at 1h/1d. C is preferred for its lower write cost and 894 MB less storage. Stage 4 rollups target the wide windows where C is slower.
+B and C differ by at most 0.4% on `active-users`, within measurement spread. B preserves narrower `event-counts` entries, saving ~3% on wide windows but nothing measurable at 1h/1d. C is preferred for its lower write cost and 894 MB less storage. The wide windows where C is slower are Stage 4's read-performance baseline.
 
 ## What `user_id` in the index bought
 
@@ -38,7 +38,7 @@ B and C used the `user_id` index with zero heap fetches and sequential scans. Th
 
 The tested index shapes missed Stage 1's proposed 30d p95 target of 1s. Arm B's `EXPLAIN (ANALYZE, BUFFERS)` showed an index-only scan returning 3,333,333 rows in **0.87s**, with zero heap fetches. The distinct-count sort spilled 94 MB beyond `work_mem` and consumed the remaining **~2.6s**.
 
-The ~3.4s result is Stage 4's rollup baseline. Cheaper, unmeasured alternatives are increasing `work_mem` and grouping by `bucket, user_id` first to enable hash aggregation. Both target sorting cost; neither is scheduled yet.
+The ~3.4s result is Stage 4's read-performance baseline, with no remedy chosen. The cheapest unmeasured candidates are increasing `work_mem` and grouping by `bucket, user_id` first to enable hash aggregation; both target sorting cost.
 
 ## The first write tax this suite has resolved
 
@@ -66,6 +66,6 @@ The `active-users` surge stays `STILL DRAINING` in all nine rounds: the 1d ceili
 
 ## Follow-ups
 
-- Stage 4 rollups own the remaining 2.6s of the 30d window; the measured post-index number to beat is ~3.4s p95, of which 0.9s is the scan.
-- `work_mem` and the hash-friendly query shape, above — cheaper than rollups, unmeasured, and attacking the same 2.6s.
+- Stage 4 owns the 30d window; the number to beat is C's ~3.4s p95. The 0.9s scan / 2.6s sort split comes from arm B's plan, not C's.
+- `work_mem` and the hash-friendly query shape, above — the cheapest candidates, unmeasured, both attacking the sort.
 - `SPIKE_WINDOW` sweeps for `active-users` now describe a different curve: the 1h window nearly halved while 1d moved 14%, so the ceiling-vs-window curve from the first index experiment no longer holds above this migration.
