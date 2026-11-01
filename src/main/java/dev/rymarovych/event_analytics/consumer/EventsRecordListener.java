@@ -160,6 +160,7 @@ class EventsRecordListener {
     }
     try {
       metrics.countStored(events.size(), persistence.persist(events));
+      group.forEach(record -> metrics.timeVisibility(record.record()));
       return true;
     } catch (PermanentException refused) {
       return false;
@@ -173,6 +174,7 @@ class EventsRecordListener {
       case ReadableRecord readable -> {
         try {
           metrics.countStored(readable.eventCount(), persistence.persist(readable.events()));
+          metrics.timeVisibility(readable.record());
         } catch (PermanentException refused) {
           publishToDeadLetter(readable.record(), refused);
         }
