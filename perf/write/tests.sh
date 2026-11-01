@@ -9,6 +9,8 @@ source perf/write/load/batch/measure.sh
 source perf/write/spike/measure-cell.sh
 source perf/write/spike/single/measure.sh
 source perf/write/spike/batch/measure.sh
+source perf/write/steady/measure-cell.sh
+source perf/write/steady/single/measure.sh
 
 WRITE_LOAD_TESTS=(
   "write load single:perf_write_load_single"
@@ -20,4 +22,8 @@ WRITE_SPIKE_TESTS=(
   "write spike batch:perf_write_spike_batch"
 )
 
-WRITE_TESTS=("${WRITE_LOAD_TESTS[@]}" "${WRITE_SPIKE_TESTS[@]}")
+WRITE_STEADY_TESTS=(
+  "write steady single:perf_write_steady_single"
+)
+
+WRITE_TESTS=("${WRITE_LOAD_TESTS[@]}" "${WRITE_SPIKE_TESTS[@]}" "${WRITE_STEADY_TESTS[@]}")
