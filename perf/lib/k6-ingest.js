@@ -4,7 +4,21 @@
 // writes reach the cleanup tenant.
 
 import http from 'k6/http';
+import { Counter } from 'k6/metrics';
 import { generateEvent } from './event-generator.js';
+
+// What the harness reconciles the table against once the consumer has drained: the
+// events answered 202, and the ID of every event that was not. A request k6 gave up on
+// may still have been stored, so its IDs are logged for the harness to leave out.
+const acceptedEvents = new Counter('accepted_events');
+
+function recordOutcome(response, eventIds) {
+  if (response.status === 202) {
+    acceptedEvents.add(eventIds.length);
+  } else {
+    eventIds.forEach((eventId) => console.log(`unaccepted ${eventId}`));
+  }
+}
 
 function buildEvent(eventId, seq) {
   const event = generateEvent(seq);
@@ -34,7 +48,9 @@ function requestParams({ tags, token = __ENV.TOKEN, timeout } = {}) {
 export function postEvent(baseUrl, eventId, seq, request) {
   const body = JSON.stringify(buildEvent(eventId, seq));
 
-  return http.post(`${baseUrl}/api/v1/events`, body, requestParams(request));
+  const response = http.post(`${baseUrl}/api/v1/events`, body, requestParams(request));
+  recordOutcome(response, [eventId]);
+  return response;
 }
 
 // Every event in the batch gets its own event_id and its own sequence number, so
@@ -47,5 +63,7 @@ export function postEventBatch(baseUrl, idPrefix, seqStart, size, request) {
   }
   const body = JSON.stringify({ events });
 
-  return http.post(`${baseUrl}/api/v1/events/batch`, body, requestParams(request));
+  const response = http.post(`${baseUrl}/api/v1/events/batch`, body, requestParams(request));
+  recordOutcome(response, events.map((event) => event.event_id));
+  return response;
 }
