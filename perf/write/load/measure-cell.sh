@@ -17,6 +17,7 @@ perf_write_load_cell() {
   local saturation=perf/write/load/last-saturation-samples.jsonl
   local batch=()
   [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
+  mkdir -p "$(dirname "$journal")"
 
   # Discard warm-up metrics and rows. Measure at full VUs against a warmed app and the
   # restored corpus.

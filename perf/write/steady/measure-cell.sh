@@ -27,6 +27,7 @@ perf_write_steady_cell() {
   local saturation_curves=${journal%journal.jsonl}saturation.jsonl
   local shape=single
   [ "$batch_size" -gt 1 ] && shape=batch
+  mkdir -p "$(dirname "$journal")"
 
   restore_seed_baseline || return 1
 

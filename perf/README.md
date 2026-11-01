@@ -53,6 +53,7 @@ scripts/actions/perf/write/load/all           # every write load cell
 scripts/actions/perf/write/spike/<shape>      # one request shape's surge
 scripts/actions/perf/write/spike/all          # every write spike cell
 scripts/actions/perf/write/steady/<shape>     # one fixed offered rate, lag judged
+scripts/actions/perf/write/steady/ladder      # climb steady rates until the consumer falls behind
 scripts/actions/perf/write/restart/<shape>    # the consumer stopped for 60 s under intake
 scripts/actions/perf/write/all                # every write cell, every workload
 scripts/actions/perf/read/load/<endpoint>     # one read endpoint's latency
@@ -90,6 +91,10 @@ Read a limit off these figures in order:
 3. If nothing is near a ceiling but lag grows, the limit is waiting. Look at a busy consumer, pending connections, and sessions waiting on `Lock` or `IO`.
 
 Steady and restart rows also record `start_index_mb`, the events indexes' size before the run. Heavy write runs grow it (see [The floor between runs](#the-floor-between-runs)), and later steps of a series inherit the growth.
+
+### Experiments
+
+`JOURNAL` points the steady, restart and single-event load cells at another journal, so an experiment's rows never mix with a cell's series. `scripts/actions/perf/write/steady/ladder` climbs the steady stream through `LADDER_RATES` and stops at the first rate whose verdict is not `kept up`, writing to `perf/experiments/async-capacity/ladder/<single|batch>/` by default. `BATCH_SIZE` above 1 sends batches. The ladder caps `MAX_VUS` at 4,000, because the steady cell's 1.1 VUs per request/s would need tens of thousands at the top rates. A rate k6 cannot fully offer then ends the ladder as `RATE NOT OFFERED`, not as the server's limit.
 
 ## Rounds and the noise floor
 

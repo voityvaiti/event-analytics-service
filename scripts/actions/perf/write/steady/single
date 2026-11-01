@@ -5,7 +5,7 @@
 # scripts/actions/perf/app.
 #
 # Tunables: RATE (3700), WRITE_TIMEOUT_SECONDS (1), MAX_VUS, PHASES, ROUNDS (1),
-# SATURATION (on).
+# SATURATION (on), JOURNAL (this cell's; point an experiment elsewhere).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1

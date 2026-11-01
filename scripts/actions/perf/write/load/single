@@ -4,7 +4,8 @@
 # perf/write/load/single/journal.jsonl. Requires scripts/actions/perf/app. Repeated
 # rounds report spread.
 #
-# Tunables: VUS, DURATION, ROUNDS (1), SATURATION (off).
+# Tunables: VUS, DURATION, ROUNDS (1), SATURATION (off), JOURNAL (this cell's; point an
+# experiment elsewhere).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1

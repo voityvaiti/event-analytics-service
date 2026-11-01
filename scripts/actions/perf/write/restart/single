@@ -5,7 +5,8 @@
 # to lag.jsonl. Requires scripts/actions/perf/app, which enables consumer control.
 #
 # Tunables: RATE (1000), WRITE_TIMEOUT_SECONDS (1), BASELINE_SECONDS, DOWNTIME_SECONDS,
-# AFTER_SECONDS, DRAIN_BUDGET_SECONDS, ROUNDS (1), SATURATION (on).
+# AFTER_SECONDS, DRAIN_BUDGET_SECONDS, ROUNDS (1), SATURATION (on), JOURNAL (this cell's;
+# point an experiment elsewhere).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1

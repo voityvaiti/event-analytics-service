@@ -6,8 +6,8 @@
 # closed-model load cell's question.
 #
 # Tunables: RATE (3700), WRITE_TIMEOUT_SECONDS (1), MAX_VUS (derived),
-# PHASES (warmup:30,measure:180).
+# PHASES (warmup:30,measure:180), JOURNAL (this cell's; point an experiment elsewhere).
 
 perf_write_steady_single() {
-  perf_write_steady_cell perf/write/steady/single/journal.jsonl "${RATE:-3700}"
+  perf_write_steady_cell "${JOURNAL:-perf/write/steady/single/journal.jsonl}" "${RATE:-3700}"
 }

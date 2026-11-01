@@ -150,6 +150,7 @@ perf_write_restart_cell() {
   local saturation=perf/write/restart/last-saturation-samples.jsonl
   local curves=${journal%journal.jsonl}lag.jsonl
   local saturation_curves=${journal%journal.jsonl}saturation.jsonl
+  mkdir -p "$(dirname "$journal")"
 
   require_consumer_control || return 1
   restore_seed_baseline || return 1

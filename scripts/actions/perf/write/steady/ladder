@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Climb the steady stream through LADDER_RATES, lowest first, and stop at the first rate
+# whose verdict is not "kept up": the sustained write limit lies between the last rate
+# kept up and that one. Narrow it with a second ladder between the two, then repeat the
+# boundary with ROUNDS=3. Rows go to an experiment journal, never the steady cells' own.
+# Requires scripts/actions/perf/app.
+#
+# Tunables: LADDER_RATES in events/s ("3700 7500 15000 30000"), BATCH_SIZE (1; above 1
+# sends batches and every rate must divide by it), ROUNDS per rate (1), MAX_VUS (4000),
+# JOURNAL (perf/experiments/async-capacity/ladder/<single|batch>/journal.jsonl),
+# DRAIN_TIMEOUT_SECONDS (900), WRITE_TIMEOUT_SECONDS, PHASES.
+#
+# MAX_VUS is capped because the derived 1.1 VUs per request/s would need tens of
+# thousands of VUs at the top rates. A step k6 cannot offer in full ends the ladder as
+# "RATE NOT OFFERED", not as the server's limit. A step that falls behind leaves a
+# backlog, hence the longer drain timeout.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/steady/measure-cell.sh
+
+rates=${LADDER_RATES:-3700 7500 15000 30000}
+batch_size=${BATCH_SIZE:-1}
+rounds=${ROUNDS:-1}
+shape=single
+if ! [[ $batch_size =~ ^[1-9][0-9]*$ ]]; then
+  echo "BATCH_SIZE must be a whole number of at least 1, got '$batch_size'." >&2
+  exit 1
+fi
+[ "$batch_size" -gt 1 ] && shape=batch
+if ! [[ $rounds =~ ^[1-9][0-9]*$ ]]; then
+  echo "ROUNDS must be a whole number of at least 1, got '$rounds'." >&2
+  exit 1
+fi
+for rate in $rates; do
+  if ! [[ $rate =~ ^[1-9][0-9]*$ ]] || ((rate % batch_size != 0)); then
+    echo "Every rate in LADDER_RATES must be a whole number of events/s divisible by BATCH_SIZE ($batch_size), got '$rate'." >&2
+    exit 1
+  fi
+done
+
+journal=${JOURNAL:-perf/experiments/async-capacity/ladder/$shape/journal.jsonl}
+export MAX_VUS=${MAX_VUS:-4000}
+export DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-900}
+
+perf_bootstrap
+
+last_kept_up="" stopped_by="" status=0
+for rate in $rates; do
+  for ((round = 1; round <= rounds; round++)); do
+    echo
+    echo ">>> perf: write steady ladder $shape at $rate events/s (round $round of $rounds)"
+    if ! perf_write_steady_cell "$journal" "$rate" "$batch_size"; then
+      stopped_by="the cell failed at $rate events/s"
+      status=1
+      break 2
+    fi
+    verdict=$(tail -n 1 "$journal" | python3 -c 'import json, sys; print(json.load(sys.stdin)["verdict"])')
+    if [ "$verdict" != "kept up" ]; then
+      stopped_by="$verdict at $rate events/s"
+      break 2
+    fi
+  done
+  last_kept_up=$rate
+done
+
+perf_result "write steady ladder $shape: kept up through ${last_kept_up:-no rate}; stopped by ${stopped_by:-nothing, every rate kept up}"
+perf_report
+echo "Rows are in $journal."
+exit "$status"
