@@ -10,7 +10,8 @@ import com.tngtech.archunit.lang.ArchRule;
 
 /**
  * Holds the layers apart: web and consumer are the entry points, service sits behind them, and
- * persistence and messaging are what service reaches out through. Domain depends on none of them.
+ * persistence and messaging are what service reaches out through. Domain depends on none of them;
+ * inside it, ingestion and analytics share only the root package's types.
  */
 @AnalyzeClasses(
     packages = "dev.rymarovych.event_analytics",
@@ -22,6 +23,19 @@ class LayerDependencyTest {
   @ArchTest
   static final ArchRule packagesAreFreeOfCycles =
       slices().matching(ROOT + ".(*)..").should().beFreeOfCycles();
+
+  @ArchTest
+  static final ArchRule domainConcernsDoNotDependOnEachOther =
+      slices().matching(ROOT + ".domain.(*)..").should().notDependOnEachOther();
+
+  @ArchTest
+  static final ArchRule sharedDomainTypesDependOnNoConcern =
+      noClasses()
+          .that()
+          .resideInAPackage(ROOT + ".domain")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage(ROOT + ".domain.ingestion..", ROOT + ".domain.analytics..");
 
   @ArchTest
   static final ArchRule domainDependsOnNoLayer =
