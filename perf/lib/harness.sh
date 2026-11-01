@@ -254,10 +254,44 @@ seed_corpus() {
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
 
-# Delete only test writes, then VACUUM for dead rows and visibility maps. ANALYZE
-# removes row-count estimates that autoanalyze may have captured mid-write; otherwise
-# following reads can plan for a larger corpus.
+# The persistence group's lag in records, read from the app. Prints "nan" while the
+# broker does not answer, so an outage never reads as an empty backlog.
+read_consumer_lag() {
+  curl -sf "$BASE_URL/actuator/metrics/persistence.consumer.lag" \
+    | python3 -c '
+import json, sys
+
+lag = float(json.load(sys.stdin)["measurements"][0]["value"])
+print("nan" if lag != lag else int(lag))
+'
+}
+
+# Wait until the consumer has committed every record on events.raw: a 202 means the
+# broker holds the events, not the table, so a count or a DELETE straight after k6
+# would miss rows still on their way. Sets DRAIN_SECONDS, the wait after the caller's
+# k6 run exited. Gives up after DRAIN_TIMEOUT_SECONDS rather than delete under a
+# consumer that is stopped or stalled.
+DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-300}
+wait_until_persisted() {
+  local started_ns lag
+  started_ns=$(date +%s%N)
+  lag=$(read_consumer_lag)
+  while [ "$lag" != 0 ]; do
+    if (($(date +%s%N) - started_ns >= DRAIN_TIMEOUT_SECONDS * 1000000000)); then
+      echo "The persistence consumer still lags (${lag:-unreadable} records) after ${DRAIN_TIMEOUT_SECONDS}s — is it stopped or stalled?" >&2
+      return 1
+    fi
+    sleep 0.5
+    lag=$(read_consumer_lag)
+  done
+  DRAIN_SECONDS=$(python3 -c "print(round(($(date +%s%N) - $started_ns) / 1e9, 1))")
+}
+
+# Once the consumer has drained, delete only test writes, then VACUUM for dead rows and
+# visibility maps. ANALYZE removes row-count estimates that autoanalyze may have
+# captured mid-write; otherwise following reads can plan for a larger corpus.
 restore_seed_baseline() {
+  wait_until_persisted || return 1
   psql_events -qc "DELETE FROM events WHERE tenant_name = '$WRITE_BATCH_SOURCE';" || return 1
   psql_events -qc 'VACUUM ANALYZE events;' || return 1
 }
