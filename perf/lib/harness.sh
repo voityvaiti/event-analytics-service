@@ -458,6 +458,79 @@ read_pool() {
   }
 }
 
+# The Kafka settings the running app uses, as a JSON object for a journal row.
+#
+# linger_ms comes from the process's command line and is null when left to the packaged
+# config or the client's default. Setting linger any other way fails the run, because
+# the row could not say what the producer used. consumer_concurrency and partitions come
+# from the app's own consumer metrics: how many persistence consumers run, and how many
+# partitions they hold between them. A remote app records linger_ms as null.
+read_kafka_settings() {
+  local pid=""
+  case "$BASE_URL" in
+    *localhost*|*127.0.0.1*) pid=$(app_pid) || pid="" ;;
+  esac
+  python3 - "$BASE_URL" "$pid" <<'PY'
+import json, re, sys, urllib.parse, urllib.request
+
+base_url, pid = sys.argv[1:3]
+LINGER_ARGUMENT = re.compile(r"^--spring\.kafka\.producer\.properties\.linger\.ms=(\d+)$")
+PERSISTENCE_CONSUMER = re.compile(r"^consumer-persistence-\d+$")
+ASSIGNED_PARTITIONS = "kafka.consumer.coordinator.assigned.partitions"
+EXPLICIT_LINGER = "pass --spring.kafka.producer.properties.linger.ms=<ms> so the row can record it"
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def metric(name, tag=None):
+    url = base_url + "/actuator/metrics/" + name
+    if tag:
+        url += "?tag=" + urllib.parse.quote(tag)
+    with urllib.request.urlopen(url, timeout=5) as response:
+        return json.load(response)
+
+
+linger_ms = None
+if pid:
+    with open("/proc/%s/cmdline" % pid, "rb") as f:
+        arguments = f.read().decode(errors="replace").split("\0")
+    with open("/proc/%s/environ" % pid, "rb") as f:
+        environment = f.read().decode(errors="replace").split("\0")
+    for argument in arguments:
+        match = LINGER_ARGUMENT.match(argument)
+        if match:
+            linger_ms = int(match.group(1))
+        elif "linger" in argument.lower():
+            fail("The app sets linger as '%s'; %s." % (argument, EXPLICIT_LINGER))
+    if any("linger" in variable.lower() for variable in environment):
+        fail("The app's environment sets linger; %s." % EXPLICIT_LINGER)
+
+try:
+    clients = [
+        client
+        for tag in metric(ASSIGNED_PARTITIONS)["availableTags"]
+        if tag["tag"] == "client.id"
+        for client in tag["values"]
+        if PERSISTENCE_CONSUMER.match(client)
+    ]
+    partitions = sum(
+        metric(ASSIGNED_PARTITIONS, "client.id:" + client)["measurements"][0]["value"]
+        for client in clients
+    )
+except (OSError, ValueError, KeyError, IndexError) as error:
+    fail("Could not read the persistence consumers from the app's metrics (%s); is the consumer running?" % error)
+
+print(json.dumps({
+    "linger_ms": linger_ms,
+    "consumer_concurrency": len(clients),
+    "partitions": round(partitions),
+}))
+PY
+}
+
 # Read cumulative Hikari connection timeouts; cells journal the run's delta. This
 # distinguishes pool-wait 500s from other write failures with the same status.
 read_connection_timeouts() {

@@ -24,10 +24,11 @@ perf_mixed_spike_cell() {
     -e VUS=10 -e DURATION=15s -e SUMMARY_OUT=/dev/null >/dev/null 2>&1 || true
   restore_seed_baseline || return 1
 
-  local start_rows timeouts_before timeouts_after
+  local start_rows timeouts_before timeouts_after kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+  kafka_settings=$(read_kafka_settings) || return 1
   timeouts_before=$(read_connection_timeouts) || return 1
 
   rm -f "$summary" "$unaccepted"
@@ -67,7 +68,7 @@ perf_mixed_spike_cell() {
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
     "$timeouts_before" "$timeouts_after" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
-    "$samples" "$curves" <<'PY'
+    "$samples" "$curves" "$kafka_settings" <<'PY'
 import json, sys
 
 sys.path.insert(0, "perf/lib")
@@ -77,7 +78,8 @@ import lag_samples
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, timeouts_before, timeouts_after,
     accepted_events, missing_events, drain_seconds, samples_path, curves_path,
-) = sys.argv[1:20]
+    kafka_settings,
+) = sys.argv[1:21]
 
 MAX_UNACCEPTED_SHARE = 0.001
 MIN_VALID_SHARE = 0.8
@@ -106,6 +108,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    **json.loads(kafka_settings),
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),

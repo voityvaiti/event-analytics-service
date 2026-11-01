@@ -21,10 +21,11 @@ perf_write_load_cell() {
     -e VUS="$vus" -e DURATION=30s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
-  local start_rows
+  local start_rows kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+  kafka_settings=$(read_kafka_settings) || return 1
 
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
@@ -57,16 +58,17 @@ perf_write_load_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" <<'PY'
+    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$kafka_settings" <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, accepted_events, missing_events,
-    drain_seconds,
-) = sys.argv[1:16]
+    drain_seconds, kafka_settings,
+) = sys.argv[1:17]
 with open(summary_path) as f:
     s = json.load(f)
+settings = json.loads(kafka_settings)
 
 # Derive events and events/s only for batches. Single-event requests and throughput
 # already represent those values, so duplicate fields are unnecessary.
@@ -86,6 +88,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    **settings,
     "request_metrics": request_metrics,
     "scrape": scrape,
     "vus": s["vus"],
@@ -103,7 +106,7 @@ row = {
     "missing_events": int(missing_events),
     "drain_seconds": float(drain_seconds),
 }
-row = {name: value for name, value in row.items() if value is not None}
+row = {name: value for name, value in row.items() if value is not None or name in settings}
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")

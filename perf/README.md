@@ -68,6 +68,13 @@ scripts/actions/perf/journals                 # browse every journal on a local 
 
 Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you. `scripts/actions/perf/journals` shows them as a table per cell on `127.0.0.1:8765`, filtered by commit, ingest path and the cell's dimensions; a row opens every field and, for lag-sampling cells, its curve with phase bands and the lag bound.
 
+### Kafka settings
+
+Every write and mixed row records the Kafka settings the running app used:
+
+- `linger_ms` comes from the app's command line, `--spring.kafka.producer.properties.linger.ms=<ms>`. It is null when the packaged config or the client's default decides. Setting linger any other way fails the run, because the row could not say what the producer used.
+- `consumer_concurrency` and `partitions` come from the app's consumer metrics: how many persistence consumers run, and how many partitions they hold between them.
+
 ## Rounds and the noise floor
 
 Set `ROUNDS` to repeat each cell (default **1**). Repeated load cells report:
@@ -201,7 +208,7 @@ Write and read paths split by workload, then request shape or endpoint. Mixed ce
 
 Scenarios and measurement routines live at workload level. Read cells share a scenario; write shapes need separate scenarios for their request bodies. All cells within a workload use the same measurement routine.
 
-- `lib/harness.sh`: dependencies, app/image checks, seeding, drain, reconciliation, cleanup, and stamps for pool, schema, CPU, running build, metrics, and scraping.
+- `lib/harness.sh`: dependencies, app/image checks, seeding, drain, reconciliation, cleanup, and stamps for pool, Kafka settings, schema, CPU, running build, metrics, and scraping.
 - `lib/k6-ingest.js`: shared ingest request contracts.
 - `lib/event-generator.js`: event contents for scenarios and the corpus.
 - `<workload>/measure-cell.sh`: warm-up, measurement, journal, and digest entry; expects the harness to be sourced.

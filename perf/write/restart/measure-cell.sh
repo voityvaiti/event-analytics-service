@@ -151,10 +151,11 @@ perf_write_restart_cell() {
   require_consumer_control || return 1
   restore_seed_baseline || return 1
 
-  local start_rows
+  local start_rows kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+  kafka_settings=$(read_kafka_settings) || return 1
 
   rm -f "$summary" "$unaccepted"
   : >"$timeline"
@@ -200,7 +201,8 @@ perf_write_restart_cell() {
     "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$drain_budget" <<'PY'
+    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$drain_budget" \
+    "$kafka_settings" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 
@@ -210,8 +212,8 @@ import lag_samples
 (
     summary_path, samples_path, timeline_path, journal_path, curves_path, date, commit, cpu,
     cores, pool, request_metrics, scrape, ingest_path, schema_version, start_rows,
-    accepted_events, missing_events, drain_seconds, drain_budget,
-) = sys.argv[1:20]
+    accepted_events, missing_events, drain_seconds, drain_budget, kafka_settings,
+) = sys.argv[1:21]
 
 MAX_UNACCEPTED_SHARE = 0.001
 MIN_VALID_SHARE = 0.8
@@ -269,6 +271,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    **json.loads(kafka_settings),
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),

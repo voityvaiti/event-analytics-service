@@ -21,10 +21,11 @@ perf_write_steady_cell() {
 
   restore_seed_baseline || return 1
 
-  local start_rows
+  local start_rows kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+  kafka_settings=$(read_kafka_settings) || return 1
 
   rm -f "$summary" "$unaccepted"
   start_lag_sampler "$samples"
@@ -58,7 +59,8 @@ perf_write_steady_cell() {
   out=$(python3 - "$summary" "$samples" "$journal" "$curves" "$(date -u +%Y-%m-%d)" \
     "$ARTIFACT_COMMIT" "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" \
     "$pool" "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" \
-    "$start_rows" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" <<'PY'
+    "$start_rows" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
+    "$kafka_settings" <<'PY'
 import json, sys
 
 sys.path.insert(0, "perf/lib")
@@ -67,8 +69,8 @@ import lag_samples
 (
     summary_path, samples_path, journal_path, curves_path, date, commit, cpu, cores, pool,
     request_metrics, scrape, ingest_path, schema_version, start_rows, accepted_events,
-    missing_events, drain_seconds,
-) = sys.argv[1:18]
+    missing_events, drain_seconds, kafka_settings,
+) = sys.argv[1:19]
 
 SEGMENT_SECONDS = 30
 MIN_VALID_SAMPLES = 25
@@ -115,6 +117,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    **json.loads(kafka_settings),
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),

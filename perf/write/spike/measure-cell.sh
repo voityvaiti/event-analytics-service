@@ -24,10 +24,11 @@ perf_write_spike_cell() {
     -e VUS=10 -e DURATION=20s -e SUMMARY_OUT=/dev/null || true
   restore_seed_baseline || return 1
 
-  local start_rows
+  local start_rows kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
+  kafka_settings=$(read_kafka_settings) || return 1
 
   rm -f "$summary" "$unaccepted"
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
@@ -58,16 +59,18 @@ perf_write_spike_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$baseline_max_p95_ms" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" <<'PY'
+    "$baseline_max_p95_ms" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
+    "$kafka_settings" <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, baseline_max_p95_ms, accepted_events,
-    missing_events, drain_seconds,
-) = sys.argv[1:17]
+    missing_events, drain_seconds, kafka_settings,
+) = sys.argv[1:18]
 with open(summary_path) as f:
     s = json.load(f)
+settings = json.loads(kafka_settings)
 
 spike = s["phases"]["spike"]
 recovery = s["phases"]["recovery"]
@@ -119,6 +122,7 @@ row = {
     "cpu": cpu,
     "cores": int(cores),
     "pool": int(pool),
+    **settings,
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),
@@ -150,7 +154,7 @@ row = {
     "missing_events": int(missing_events),
     "drain_seconds": float(drain_seconds),
 }
-row = {name: value for name, value in row.items() if value is not None}
+row = {name: value for name, value in row.items() if value is not None or name in settings}
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
