@@ -22,7 +22,7 @@ const SCENARIO = __ENV.SCENARIO || 'ingest-at-rate';
 
 const RATE = Number(__ENV.RATE || 3700);
 const WRITE_TIMEOUT_SECONDS = Number(__ENV.WRITE_TIMEOUT_SECONDS || 1);
-const MAX_VUS = Number(__ENV.MAX_VUS || Math.ceil(RATE * WRITE_TIMEOUT_SECONDS * 1.1));
+const MAX_VUS = Number(__ENV.MAX_VUS || Math.ceil((RATE * WRITE_TIMEOUT_SECONDS * 11) / 10));
 
 // Phases in order as "name:seconds,…".
 const SECONDS = Object.fromEntries(
