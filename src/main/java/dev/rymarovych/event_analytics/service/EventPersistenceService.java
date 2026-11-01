@@ -6,6 +6,10 @@ import java.util.List;
 /** Stores accepted events, possibly from several requests, as one unit. */
 public interface EventPersistenceService {
 
-  /** Stores every event or none; an event ID already stored is a no-op. */
-  void persist(List<NewEvent> events);
+  /**
+   * Stores every event or none; an event ID already stored is a no-op.
+   *
+   * @return how many events were new, returned only once they are committed
+   */
+  int persist(List<NewEvent> events);
 }
