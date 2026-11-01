@@ -1,8 +1,8 @@
 {
-  "about": "Pool and CPU figures for the runs perf/mixed/spike/README.md cites, read from the local Prometheus (2s scrape) on 2026-10-04, because it keeps 15 days. Each value is a query below evaluated at the end of its phase over that phase's length.",
+  "about": "Pool and CPU figures for the runs perf/mixed/spike/README.md cites, read from the local Prometheus (2s scrape) on the day of each run, because it keeps 15 days: 2026-10-04 for the sync rounds, 2026-11-01 for the async ones. Each value is a query below evaluated at the end of its phase over that phase's length.",
   "caveats": [
     "acquire_max_seconds is Micrometer's decaying max, so a phase can carry an earlier peak: the baselines of rounds 2 and 3 show the previous round's surge.",
-    "The pool figures cover reads and writes together: Hikari does not tell them apart.",
+    "The pool figures cover reads and writes together: Hikari does not tell them apart. On the async path the writes are the consumer's batch inserts.",
     "host_cpu_share includes everything on the rig, k6 and Postgres among it."
   ],
   "queries": {
@@ -19,6 +19,7 @@
     {
       "run_id": "1791143469696",
       "commit": "ab1f425",
+      "ingest_path": "sync",
       "phases": {
         "baseline": {
           "started_at": "2026-10-04T19:49:49.589Z",
@@ -67,6 +68,7 @@
     {
       "run_id": "1791143569202",
       "commit": "ab1f425",
+      "ingest_path": "sync",
       "phases": {
         "baseline": {
           "started_at": "2026-10-04T19:51:29.142Z",
@@ -115,6 +117,7 @@
     {
       "run_id": "1791143668701",
       "commit": "ab1f425",
+      "ingest_path": "sync",
       "phases": {
         "baseline": {
           "started_at": "2026-10-04T19:53:08.594Z",
@@ -156,6 +159,153 @@
             "hold_mean_seconds": 0.005173,
             "app_cpu_share": 0.025501,
             "host_cpu_share": 0.361594
+          }
+        }
+      }
+    },
+    {
+      "run_id": "1793547476584",
+      "commit": "a0d9a74",
+      "ingest_path": "async",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-11-01T15:37:58.055Z",
+          "finished_at": "2026-11-01T15:38:18.055Z",
+          "figures": {
+            "pending_max": 0.0,
+            "active_avg": 3.2,
+            "acquire_mean_seconds": 2e-06,
+            "acquire_max_seconds": 0.002468,
+            "connections_handed_out": 3985.555556,
+            "hold_mean_seconds": 0.012572,
+            "app_cpu_share": 0.033242,
+            "host_cpu_share": 0.315278
+          }
+        },
+        "spike": {
+          "started_at": "2026-11-01T15:38:18.055Z",
+          "finished_at": "2026-11-01T15:38:48.055Z",
+          "figures": {
+            "pending_max": 491.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 5.920554,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 2091.428571,
+            "hold_mean_seconds": 0.143053,
+            "app_cpu_share": 0.030716,
+            "host_cpu_share": 0.68626
+          }
+        },
+        "recovery": {
+          "started_at": "2026-11-01T15:38:48.055Z",
+          "finished_at": "2026-11-01T15:39:18.055Z",
+          "figures": {
+            "pending_max": 439.0,
+            "active_avg": 5.533333,
+            "acquire_mean_seconds": 0.794498,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 4737.857143,
+            "hold_mean_seconds": 0.029529,
+            "app_cpu_share": 0.028349,
+            "host_cpu_share": 0.370676
+          }
+        }
+      }
+    },
+    {
+      "run_id": "1793547577034",
+      "commit": "a0d9a74",
+      "ingest_path": "async",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-11-01T15:39:38.512Z",
+          "finished_at": "2026-11-01T15:39:58.512Z",
+          "figures": {
+            "pending_max": 0.0,
+            "active_avg": 2.4,
+            "acquire_mean_seconds": 0.0,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 4004.444444,
+            "hold_mean_seconds": 0.012306,
+            "app_cpu_share": 0.026817,
+            "host_cpu_share": 0.293146
+          }
+        },
+        "spike": {
+          "started_at": "2026-11-01T15:39:58.512Z",
+          "finished_at": "2026-11-01T15:40:28.512Z",
+          "figures": {
+            "pending_max": 491.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 5.91755,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 2117.142857,
+            "hold_mean_seconds": 0.1413,
+            "app_cpu_share": 0.025964,
+            "host_cpu_share": 0.665366
+          }
+        },
+        "recovery": {
+          "started_at": "2026-11-01T15:40:28.512Z",
+          "finished_at": "2026-11-01T15:40:58.512Z",
+          "figures": {
+            "pending_max": 463.0,
+            "active_avg": 4.933333,
+            "acquire_mean_seconds": 0.859671,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 4681.071429,
+            "hold_mean_seconds": 0.030767,
+            "app_cpu_share": 0.02473,
+            "host_cpu_share": 0.375382
+          }
+        }
+      }
+    },
+    {
+      "run_id": "1793547677169",
+      "commit": "a0d9a74",
+      "ingest_path": "async",
+      "phases": {
+        "baseline": {
+          "started_at": "2026-11-01T15:41:18.661Z",
+          "finished_at": "2026-11-01T15:41:38.661Z",
+          "figures": {
+            "pending_max": 0.0,
+            "active_avg": 2.3,
+            "acquire_mean_seconds": 0.0,
+            "acquire_max_seconds": 14.118267,
+            "connections_handed_out": 4021.111111,
+            "hold_mean_seconds": 0.012041,
+            "app_cpu_share": 0.023726,
+            "host_cpu_share": 0.260798
+          }
+        },
+        "spike": {
+          "started_at": "2026-11-01T15:41:38.661Z",
+          "finished_at": "2026-11-01T15:42:08.661Z",
+          "figures": {
+            "pending_max": 491.0,
+            "active_avg": 10.0,
+            "acquire_mean_seconds": 5.884602,
+            "acquire_max_seconds": 9.171292,
+            "connections_handed_out": 2113.928571,
+            "hold_mean_seconds": 0.1414,
+            "app_cpu_share": 0.024785,
+            "host_cpu_share": 0.659892
+          }
+        },
+        "recovery": {
+          "started_at": "2026-11-01T15:42:08.661Z",
+          "finished_at": "2026-11-01T15:42:38.661Z",
+          "figures": {
+            "pending_max": 470.0,
+            "active_avg": 4.866667,
+            "acquire_mean_seconds": 0.884175,
+            "acquire_max_seconds": 9.171292,
+            "connections_handed_out": 4662.857143,
+            "hold_mean_seconds": 0.031108,
+            "app_cpu_share": 0.024865,
+            "host_cpu_share": 0.374019
           }
         }
       }
