@@ -15,3 +15,9 @@ Ten VUs against a pool of ten. Blocking JDBC on virtual threads means each in-fl
 ## Every request is a real insert
 
 `event_id` is salted with the run id, so no request lands as an `ON CONFLICT DO NOTHING` no-op. At the default 60s window that adds ~250k rows to the corpus — about 1.2% — which the cell then deletes again by `tenant_name`, so the next cell starts where this one did.
+
+## The async rows: a timer, not the server
+
+Three rounds on `a0d9a74` (2026-11-01): **1,749 req/s**, p95 5.7 ms, p99 5.9–6.0 ms, 0.03% peak-to-peak, against the sync rows' ~3,740 req/s. The producer waits `linger.ms` for more records before it sends, 5 ms by default in kafka-clients 4.x and not overridden here, so each request takes ~5.7 ms and ten VUs make 10 / 5.7 ms ≈ 1,750 requests a second. The near-zero spread says the same: the cell now measures that wait.
+
+At ten VUs this cell therefore no longer finds the maximum. Stage 3's throughput check is the open-model [steady cell](../../steady/single), which keeps ~21 requests in flight at 3,700/s and is accepted and persisted at that rate. One scratch round with the app launched with `--spring.kafka.producer.properties.linger.ms=0`, not journalled, reached 18,122 req/s at p99 1.1 ms and drained in 0 s, which confirms the wait as the bound. Whether to journal with more VUs or set linger explicitly is not yet decided. Every round drained in 0 s: the consumer keeps up with what ten VUs offer.

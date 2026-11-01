@@ -51,6 +51,21 @@ One reading is an inference rather than a measurement: **a request whose client 
 
 This is the baseline Stage 3 is measured against: the same cell with `ingest_path: async` has to accept the surge's writes as it accepts the baseline's.
 
+## What the async rows measured
+
+Three rounds on `a0d9a74` (2026-11-01), same corpus, rig and scrape; all three `survived`. Sync ranges in brackets; pool figures for both series are in [`pool-metrics.json`](./pool-metrics.json).
+
+| Phase | Writes not accepted within 5 s | Accepted write p99 | Lag, median / max | Wait for a connection, mean | Read p95 |
+|---|---|---|---|---|---|
+| baseline | 0% | 5.9–7.4 ms | 5 / 6 | ~0 | 137–143 ms (115–117 ms) |
+| spike | 0% (93.7–94.1%) | 6.9–7.6 ms | 14.4k–14.6k / 27.6k–28.4k | 5.9 s (7.3–7.7 s) | 7.2–7.3 s (8.5–8.6 s) |
+| recovery | 0% (19.8–21.1%) | 5.8–5.9 ms | 3–6 / 35.9k–36.4k | 0.8–0.9 s (3.1–3.3 s) | 6.0–6.1 s (7.6–7.8 s) |
+
+- **The surge no longer reaches ingest.** Every write k6 sent was accepted within milliseconds in every phase; one round's baseline had one write k6 never sent.
+- **The wait moved to the consumer.** During the surge it inserted one poll of 500 records about once every 7 s (the curves' inserted counter), so lag grew at ~93% of intake for the whole surge. It kept growing until 8.5 s into recovery, while the queue for a connection ran down from 491 (empty by 12 s); the consumer then cleared ~36,000 records in under 2 s and stayed under 1,000 from 10.5 s on, in every round. Only the surge's length bounds this lag: extrapolated, a surge of minutes would hold back ~55,000 events a minute.
+- **The queue for a connection is now the reads'.** At most 491 requests waited, against 8,081 on sync: the reads' 500 VUs, as writes no longer queue for a connection.
+- **Reads gained less.** Surge and recovery p95 fell by 15–21%, but the baseline's rose by ~20%, from 115–117 to 137–143 ms, while the event-counts rig check before the pass stayed within 1.2% of its September rows. Not investigated; the consumer's batched inserts and the broker are what the baseline added.
+
 ## Verdict
 
 Rows since the lag fields carry Stage 3's verdict. `survived` when:
