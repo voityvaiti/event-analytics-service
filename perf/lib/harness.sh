@@ -294,6 +294,60 @@ wait_until_persisted() {
   DRAIN_SECONDS=$(python3 -c "print(round(($(date +%s%N) - $started_ns) / 1e9, 1))")
 }
 
+# One actuator metric's value, optionally narrowed to a tag such as outcome:inserted.
+# Prints nan when the app does not answer or reports no number, never 0.
+#
+# Usage: read_metric_value <metric> [tag]
+read_metric_value() {
+  local url="$BASE_URL/actuator/metrics/$1" value
+  if [ -n "${2:-}" ]; then
+    url="$url?tag=$2"
+  fi
+  value=$(curl -sf -m 2 "$url" | grep -oP '"value":\K[^,}\]]+') || value=""
+  case "$value" in
+    '' | *[!0-9.eE+-]*) echo nan ;;
+    *) echo "$value" ;;
+  esac
+}
+
+# Sample the consumer's lag and the inserted-events counter in the background, once a
+# second on a fixed schedule, until stop_lag_sampler. Each "<epoch_ms> <lag> <inserted>"
+# line carries the time its sample was taken, because a slow broker can stretch one read
+# past its tick; a late tick moves the schedule rather than bursting to catch up. The
+# loop also ends once the shell that started it is gone, so a killed run leaves no
+# sampler behind. lib/lag_samples.py reads the file.
+#
+# Usage: start_lag_sampler <file>
+LAG_SAMPLER_PID=""
+start_lag_sampler() {
+  local file=$1
+  : >"$file"
+  (
+    next_millis=$(date +%s%3N)
+    while kill -0 $$ 2>/dev/null; do
+      taken_millis=$(date +%s%3N)
+      printf '%s %s %s\n' "$taken_millis" \
+        "$(read_metric_value persistence.consumer.lag)" \
+        "$(read_metric_value events.persisted outcome:inserted)" >>"$file"
+      next_millis=$((next_millis + 1000))
+      wait_millis=$((next_millis - $(date +%s%3N)))
+      if ((wait_millis > 0)); then
+        sleep "$((wait_millis / 1000)).$(printf '%03d' $((wait_millis % 1000)))"
+      else
+        next_millis=$(date +%s%3N)
+      fi
+    done
+  ) &
+  LAG_SAMPLER_PID=$!
+}
+
+stop_lag_sampler() {
+  [ -n "$LAG_SAMPLER_PID" ] || return 0
+  kill "$LAG_SAMPLER_PID" 2>/dev/null || true
+  wait "$LAG_SAMPLER_PID" 2>/dev/null || true
+  LAG_SAMPLER_PID=""
+}
+
 # Reconcile a drained run against the table: ACCEPTED_EVENTS is what k6 saw answered
 # 202, MISSING_EVENTS how many of those have no row. Rows whose ID the run logged as
 # unaccepted are left out of the count: k6 gave up on those requests, yet they may
