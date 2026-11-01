@@ -27,7 +27,7 @@ class KafkaEventPublisherTest {
   private final KafkaEventPublisher publisher =
       new KafkaEventPublisher(
           kafkaTemplate,
-          new EventsMessageCodec(JsonMapper.builder().build()),
+          new JsonEventsMessageCodec(JsonMapper.builder().build()),
           Duration.ofMillis(50));
 
   @Test
