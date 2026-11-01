@@ -18,7 +18,7 @@ class TransactionalEventPersistenceService implements EventPersistenceService {
 
   @Override
   @Transactional
-  public void persist(List<NewEvent> events) {
-    repository.saveAll(events);
+  public int persist(List<NewEvent> events) {
+    return repository.saveAll(events);
   }
 }
