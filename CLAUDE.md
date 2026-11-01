@@ -21,10 +21,12 @@
 Layered architecture; dependencies point one way only:
 
 ```
-controller → service → repository
+web (HTTP) ──┐
+             ├→ service → persistence (Postgres) / messaging (Kafka)
+consumer ────┘
 ```
 
-- **Each layer is consumed through an interface** — `web → service` and `service → repository` depend on the interface, never the concrete class; the implementation is package-private and wired by Spring.
-- **Implementations are named `<Specific><Interface>`** — end the class with the interface name; the prefix states what is specific to this implementation (`JdbcEventRepository`, `SynchronousEventIngestionService`). No `Impl` suffix, no vague `Default` prefix.
-- Repositories never import from `web`.
+- **Each layer is consumed through an interface** — `web → service`, `consumer → service` and `service → persistence/messaging` depend on the interface, never the concrete class; the implementation is package-private and wired by Spring.
+- **Implementations are named `<Specific><Interface>`** — end the class with the interface name; the prefix states what is specific to this implementation (`JdbcEventRepository`, `PublishingEventIngestionService`). No `Impl` suffix, no vague `Default` prefix.
+- `persistence` and `messaging` depend only on `domain`; `web` reaches `consumer` only for the control endpoint. `LayerDependencyTest` (ArchUnit) enforces the direction and no cycles.
 - Controllers never expose JPA entities directly — map to DTOs.
