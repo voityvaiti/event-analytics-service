@@ -37,6 +37,8 @@ Two fields record instrumentation automatically after each run:
 
 The [local stack](../README.md#observability) scrapes every 2s. Rows predating these fields were measured without it.
 
+A `202` means the broker holds the events, not the table, so write and mixed cells wait for the consumer before they count or delete anything: the harness polls `persistence.consumer.lag` until it reads 0 and fails after `DRAIN_TIMEOUT_SECONDS` (default 300). It then reconciles the measured run. k6 counts the events answered 202 and logs the ID of every other event to `last-unaccepted.log`; the run's rows, less those IDs, must equal the accepted count, because a request k6 gave up on may still have been stored. Rows record `accepted_events`, `missing_events` (anything but 0 fails the cell) and `drain_seconds`, the wait after k6 exited.
+
 k6 and the seeder run in pinned containers (`K6_IMAGE`, default `grafana/k6:0.50.0`, and `NODE_IMAGE`). The shared startup script brings up Compose dependencies. Requests use bearer tokens; see [Tenants and tokens](#tenants-and-tokens).
 
 IDE configurations in `.run/` wrap the actions below. Use _PERF - App_ to start the app; _APP - Start_ is for development.
@@ -181,7 +183,7 @@ Write and read paths split by workload, then request shape or endpoint. Mixed ce
 
 Scenarios and measurement routines live at workload level. Read cells share a scenario; write shapes need separate scenarios for their request bodies. All cells within a workload use the same measurement routine.
 
-- `lib/harness.sh`: dependencies, app/image checks, seeding, cleanup, and stamps for pool, schema, CPU, running build, metrics, and scraping.
+- `lib/harness.sh`: dependencies, app/image checks, seeding, drain, reconciliation, cleanup, and stamps for pool, schema, CPU, running build, metrics, and scraping.
 - `lib/k6-ingest.js`: shared ingest request contracts.
 - `lib/event-generator.js`: event contents for scenarios and the corpus.
 - `<workload>/measure-cell.sh`: warm-up, measurement, journal, and digest entry; expects the harness to be sourced.
