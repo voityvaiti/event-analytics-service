@@ -1,8 +1,10 @@
-// One open-model stream of single events at RATE, split into named phases by the time a
-// request starts. The steady cell judges its measure phase; the restart cell runs one
-// phase while it stops and restarts the consumer underneath.
+// One open-model stream of RATE events a second, split into named phases by the time a
+// request starts. BATCH_SIZE (default 1) events go in each request; above 1 they go to the
+// batch endpoint at RATE / BATCH_SIZE requests a second, and RATE must divide evenly. The
+// steady cell judges its measure phase; the restart cell runs one phase while it stops
+// and restarts the consumer underneath. Request counts in the summary count requests.
 //
-// Preallocate 1.1 * RATE * deadline VUs so k6 keeps the rate even if every request
+// Preallocate 1.1 * requests/s * deadline VUs so k6 keeps the rate even if every request
 // waits out the deadline: an unaccepted write is then the server's, never k6 running out
 // of VUs. Growing VUs during the run can itself drop work.
 //
@@ -10,9 +12,9 @@
 
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
-import { postEvent } from '../../lib/k6-ingest.js';
+import { postEvent, postEventBatch } from '../../lib/k6-ingest.js';
 import { metric, phaseWindows, runWindow } from '../../lib/k6-summary.js';
-import { LOAD_SEQ_BASE } from '../../lib/seq-space.js';
+import { BATCH_LOAD_SEQ_BASE, LOAD_SEQ_BASE } from '../../lib/seq-space.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 const RUN_ID = __ENV.RUN_ID || `${Date.now()}`;
@@ -21,8 +23,15 @@ const SUMMARY_OUT = __ENV.SUMMARY_OUT || 'perf/write/steady/last-summary.json';
 const SCENARIO = __ENV.SCENARIO || 'ingest-at-rate';
 
 const RATE = Number(__ENV.RATE || 3700);
+const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 1);
+const REQUEST_RATE = RATE / BATCH_SIZE;
+if (!Number.isInteger(BATCH_SIZE) || BATCH_SIZE < 1 || !Number.isInteger(REQUEST_RATE)) {
+  throw new Error(`RATE (${RATE}) must be a whole multiple of BATCH_SIZE (${BATCH_SIZE})`);
+}
 const WRITE_TIMEOUT_SECONDS = Number(__ENV.WRITE_TIMEOUT_SECONDS || 1);
-const MAX_VUS = Number(__ENV.MAX_VUS || Math.ceil((RATE * WRITE_TIMEOUT_SECONDS * 11) / 10));
+const MAX_VUS = Number(
+  __ENV.MAX_VUS || Math.ceil((REQUEST_RATE * WRITE_TIMEOUT_SECONDS * 11) / 10),
+);
 
 // Phases in order as "name:seconds,…".
 const SECONDS = Object.fromEntries(
@@ -60,7 +69,7 @@ export const options = {
     write: {
       executor: 'constant-arrival-rate',
       exec: 'write',
-      rate: RATE,
+      rate: REQUEST_RATE,
       timeUnit: '1s',
       duration: `${TOTAL_SECONDS}s`,
       gracefulStop: `${WRITE_TIMEOUT_SECONDS + 5}s`,
@@ -100,17 +109,23 @@ function outcomeOf(response) {
 export function write() {
   const iteration = exec.scenario.iterationInTest;
   const phase = phaseAt(Date.now() - exec.scenario.startTime);
+  const eventId = `evt_${RUN_ID}_steady_${iteration}`;
+  const request = {
+    tags: { phase },
+    token: __ENV.TOKEN,
+    timeout: `${WRITE_TIMEOUT_SECONDS}s`,
+  };
 
-  const response = postEvent(
-    BASE_URL,
-    `evt_${RUN_ID}_steady_${iteration}`,
-    LOAD_SEQ_BASE + iteration,
-    {
-      tags: { phase },
-      token: __ENV.TOKEN,
-      timeout: `${WRITE_TIMEOUT_SECONDS}s`,
-    },
-  );
+  const response =
+    BATCH_SIZE === 1
+      ? postEvent(BASE_URL, eventId, LOAD_SEQ_BASE + iteration, request)
+      : postEventBatch(
+          BASE_URL,
+          eventId,
+          BATCH_LOAD_SEQ_BASE + iteration * BATCH_SIZE,
+          BATCH_SIZE,
+          request,
+        );
   writeOutcomes[outcomeOf(response)].add(1, { phase });
 }
 
@@ -123,7 +138,7 @@ function phaseSummary(data, phase) {
   const accepted = `http_req_duration{phase:${phase},expected_response:true}`;
   return Object.assign(
     {
-      scheduled: RATE * SECONDS[phase],
+      scheduled: REQUEST_RATE * SECONDS[phase],
       sent: count(data, `http_reqs{phase:${phase}}`),
     },
     Object.fromEntries(
@@ -153,6 +168,8 @@ export function handleSummary(data) {
     finished_at: run.finished_at,
     base_url: BASE_URL,
     rate: RATE,
+    batch_size: BATCH_SIZE,
+    request_rate: REQUEST_RATE,
     write_timeout_seconds: WRITE_TIMEOUT_SECONDS,
     max_vus: MAX_VUS,
     dropped: count(data, 'dropped_iterations{scenario:write}'),
@@ -166,7 +183,11 @@ export function handleSummary(data) {
   const text = [
     '',
     `${SCENARIO}  (run ${RUN_ID})`,
-    line('writes', `${RATE} req/s, ${WRITE_TIMEOUT_SECONDS}s deadline, ${MAX_VUS} VUs`),
+    line(
+      'writes',
+      `${RATE} events/s in ${REQUEST_RATE} req/s, ${WRITE_TIMEOUT_SECONDS}s deadline, ` +
+        `${MAX_VUS} VUs`,
+    ),
     ...PHASES.flatMap((phase) => {
       const p = phases[phase];
       return [

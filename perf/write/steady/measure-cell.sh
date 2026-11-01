@@ -1,19 +1,23 @@
 #!/bin/bash
 
-# Offer single events at a fixed rate, sample the consumer's lag and the rig's saturation
-# every second, then drain, reconcile, clean up and journal one row with its verdict. The
-# lag curve goes to lag.jsonl and the saturation curve to saturation.jsonl beside the
-# journal. The warm-up is the stream's first phase, so the consumer reaches the measure
-# phase already running at the offered rate.
+# Offer events at a fixed rate, one per request or in batches, sample the consumer's lag
+# and the rig's saturation every second, then drain, reconcile, clean up and journal one
+# row with its verdict. The lag curve goes to lag.jsonl and the saturation curve to
+# saturation.jsonl beside the journal. The warm-up is the stream's first phase, so the
+# consumer reaches the measure phase already running at the offered rate.
 #
-# Verdict: every 30 s segment of the measure phase has at least 25 valid samples and a
-# median lag under one second of intake, and under 0.1% of its writes went unaccepted.
+# Verdict, judged on the measure phase:
+# - every 30 s segment has at least 25 valid lag samples and a median lag under one
+#   second of intake, counted in records: a batch request is one record;
+# - k6 sent all but under 0.1% of the scheduled requests, so the rate was really offered;
+# - under 0.1% of the writes went unaccepted.
 # A median, because lag saw-tooths between commits and short spikes are fluctuation.
 #
-# Requires perf/lib/harness.sh. Usage: perf_write_steady_cell <journal> <rate>
+# Requires perf/lib/harness.sh.
+# Usage: perf_write_steady_cell <journal> <events_per_second> [batch_size]
 
 perf_write_steady_cell() {
-  local journal=$1 rate=$2
+  local journal=$1 rate=$2 batch_size=${3:-1}
   local script=perf/write/steady/ingest-at-rate.js
   local summary=perf/write/steady/last-summary.json
   local unaccepted=perf/write/steady/last-unaccepted.log
@@ -21,6 +25,8 @@ perf_write_steady_cell() {
   local saturation=perf/write/steady/last-saturation-samples.jsonl
   local curves=${journal%journal.jsonl}lag.jsonl
   local saturation_curves=${journal%journal.jsonl}saturation.jsonl
+  local shape=single
+  [ "$batch_size" -gt 1 ] && shape=batch
 
   restore_seed_baseline || return 1
 
@@ -36,7 +42,8 @@ perf_write_steady_cell() {
   start_saturation_sampler "$saturation" on
   k6_run "$script" \
     --env WRITE_TIMEOUT_SECONDS --env MAX_VUS --env PHASES \
-    -e TOKEN="$WRITE_TOKEN" -e RATE="$rate" -e SCENARIO=steady-single \
+    -e TOKEN="$WRITE_TOKEN" -e RATE="$rate" -e BATCH_SIZE="$batch_size" \
+    -e SCENARIO="steady-$shape" \
     -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
   stop_saturation_sampler
@@ -83,6 +90,7 @@ import saturation_samples
 SEGMENT_SECONDS = 30
 MIN_VALID_SAMPLES = 25
 MAX_UNACCEPTED_SHARE = 0.001
+MAX_UNSENT_SHARE = 0.001
 
 with open(summary_path) as f:
     s = json.load(f)
@@ -94,7 +102,8 @@ def r(value, digits=2):
     return round(value, digits) if isinstance(value, (int, float)) else value
 
 
-lag_bound = s["rate"]
+batch_size = s.get("batch_size", 1)
+lag_bound = s.get("request_rate", s["rate"])
 measure = s["phases"]["measure"]
 measure_start = lag_samples.epoch_millis(measure["started_at"])
 measure_end = lag_samples.epoch_millis(measure["finished_at"])
@@ -104,11 +113,14 @@ segments = [
 ]
 whole = lag_samples.describe(lag_samples.between(samples, measure_start, measure_end))
 measure_unaccepted = max(0.0, 1 - measure["accepted"] / measure["scheduled"])
+measure_unsent = max(0.0, 1 - measure["sent"] / measure["scheduled"])
 
 if any(segment["samples"] < MIN_VALID_SAMPLES for segment in segments):
     verdict = "TOO FEW SAMPLES"
 elif any(segment["median"] >= lag_bound for segment in segments):
     verdict = "FELL BEHIND"
+elif measure_unsent >= MAX_UNSENT_SHARE:
+    verdict = "RATE NOT OFFERED"
 elif measure_unaccepted >= MAX_UNACCEPTED_SHARE:
     verdict = "WRITES NOT ACCEPTED"
 else:
@@ -132,9 +144,10 @@ row = {
     "start_rows": int(start_rows),
     "start_index_mb": int(start_index_mb),
     "rate": s["rate"],
-    "write_timeout_seconds": s["write_timeout_seconds"],
-    "max_vus": s["max_vus"],
 }
+if batch_size > 1:
+    row.update({"batch_size": batch_size, "request_rate": s["request_rate"]})
+row.update({"write_timeout_seconds": s["write_timeout_seconds"], "max_vus": s["max_vus"]})
 
 for phase, p in s["phases"].items():
     scheduled = p["scheduled"]
@@ -191,7 +204,7 @@ busy = (row["measure_saturation"] or {}).get("consumer_busy") or {}
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT write steady %s: %s | %d/s offered, %s/s persisted | lag medians %s "
+    "PERF_RESULT write steady %s: %s | %d events/s offered, %s/s persisted | lag medians %s "
     "(bound %d, max %s) | %.3f%% not accepted, p99 %sms | busiest consumer %s"
     % (
         row["scenario"],

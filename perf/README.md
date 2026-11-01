@@ -197,7 +197,7 @@ perf/
       measure-cell.sh   the routine the spike cells share, verdict included
       single/  batch/
     steady/
-      ingest-at-rate.js the open-model scenario, single events in named phases
+      ingest-at-rate.js the open-model scenario, single events or batches in named phases
       measure-cell.sh   the routine the steady cells share, verdict included
       single/
     restart/
