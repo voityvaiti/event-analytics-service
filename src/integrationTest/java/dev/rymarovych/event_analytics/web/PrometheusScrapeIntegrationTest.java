@@ -111,6 +111,19 @@ class PrometheusScrapeIntegrationTest {
     scrape().andExpect(content().string(containsString("events_ingested_total")));
   }
 
+  /**
+   * What the asynchronous path is judged by: committed events beside accepted ones, lag in records
+   * and the delay buckets a percentile needs. Every one is registered at startup, before traffic.
+   */
+  @Test
+  void persistenceProgressIsScrapeable() throws Exception {
+    scrape()
+        .andExpect(content().string(containsString("events_persisted_total")))
+        .andExpect(content().string(containsString("persistence_consumer_dead_letters_total")))
+        .andExpect(content().string(containsString("persistence_consumer_lag_records")))
+        .andExpect(content().string(containsString("events_visibility_delay_seconds_bucket")));
+  }
+
   private double ingestedCount(String path) {
     return meterRegistry.get("events.ingested").tag("path", path).counter().count();
   }
