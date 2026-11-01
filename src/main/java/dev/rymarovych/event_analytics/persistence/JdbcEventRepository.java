@@ -6,6 +6,7 @@ import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.springframework.dao.DataAccessException;
@@ -44,12 +45,17 @@ class JdbcEventRepository implements EventRepository {
     this.jdbcTemplate = jdbcTemplate;
   }
 
+  /** Each row count is 1 for an inserted event and 0 for one ON CONFLICT skipped. */
   @Override
-  public void saveAll(List<NewEvent> events) {
+  public int saveAll(List<NewEvent> events) {
     try {
-      jdbcTemplate.batchUpdate(
-          INSERT,
-          events.stream().map(JdbcEventRepository::parameters).toArray(SqlParameterSource[]::new));
+      int[] rowCounts =
+          jdbcTemplate.batchUpdate(
+              INSERT,
+              events.stream()
+                  .map(JdbcEventRepository::parameters)
+                  .toArray(SqlParameterSource[]::new));
+      return Arrays.stream(rowCounts).sum();
     } catch (DataAccessException failure) {
       throw translated(failure);
     }
