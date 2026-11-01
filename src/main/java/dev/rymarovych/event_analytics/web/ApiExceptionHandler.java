@@ -6,6 +6,7 @@ import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
 import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
 import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
 import dev.rymarovych.event_analytics.domain.PublicationFailedException;
+import dev.rymarovych.event_analytics.domain.RedriveIncompleteException;
 import java.net.URI;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -65,6 +66,19 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpStatus.SERVICE_UNAVAILABLE,
             "Acceptance could not be confirmed in time, so the events may or may not have been"
                 + " accepted. Retry with the same event_id values.");
+    return handleExceptionInternal(
+        ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
+  }
+
+  /** Republished records are already recorded, so calling again picks up where this stopped. */
+  @ExceptionHandler(RedriveIncompleteException.class)
+  @Nullable ResponseEntity<Object> handleRedriveIncomplete(
+      RedriveIncompleteException ex, WebRequest request) {
+    var body =
+        ProblemDetail.forStatusAndDetail(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "The redrive stopped before every dead letter was republished. Those republished are"
+                + " recorded, so call it again.");
     return handleExceptionInternal(
         ex, body, new HttpHeaders(), HttpStatus.SERVICE_UNAVAILABLE, request);
   }
