@@ -14,10 +14,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.stereotype.Repository;
 
-/**
- * Event persistence through one batched INSERT; ON CONFLICT DO NOTHING skips duplicate event_id
- * values and the database supplies created_at.
- */
+/** One batched INSERT; ON CONFLICT DO NOTHING skips event IDs already stored. */
 @Repository
 class JdbcEventRepository implements EventRepository {
 
