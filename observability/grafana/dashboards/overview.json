@@ -1,7 +1,7 @@
 {
   "uid": "event-analytics-overview",
   "title": "Event Analytics \u2014 overview",
-  "description": "API traffic, latency, errors, resource usage, and scrape health for the selected window or perf run.",
+  "description": "API traffic, persistence progress, latency, errors, resource usage, and scrape health for the selected window or perf run.",
   "tags": [
     "event-analytics"
   ],
@@ -277,7 +277,7 @@
       "id": 10,
       "type": "stat",
       "title": "Events/s",
-      "description": "Average accepted events/s across both ingest paths in the selected window. Includes duplicates skipped by the database. See Ingest rate — events/s for counting limitations.",
+      "description": "Average events/s answered 202 across both ingest paths in the selected window, duplicates included. Committed events are under Asynchronous persistence.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -550,7 +550,7 @@
       "id": 1,
       "type": "timeseries",
       "title": "Ingest rate \u2014 events/s",
-      "description": "Accepted events/s by ingest path, including duplicates skipped by ON CONFLICT. This is not a count of new rows. Single-event counters increment after commit; batch counters increment before commit and can include a batch whose commit fails.",
+      "description": "Events/s answered 202 by ingest path, duplicates included. Rows reach the table later; compare Accepted vs persisted.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1100,6 +1100,282 @@
       }
     },
     {
+      "id": 105,
+      "type": "row",
+      "title": "Asynchronous persistence",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Accepted vs persisted \u2014 events/s",
+      "description": "Events/s answered 202 against events/s in committed transactions, split into new rows and duplicates. While persisted stays below accepted, a backlog builds; Consumer lag shows how much.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(events_ingested_total[$__rate_interval]))",
+          "legendFormat": "accepted",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (rate(events_persisted_total[$__rate_interval]))",
+          "legendFormat": "persisted {{outcome}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "min": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Consumer lag \u2014 records",
+      "description": "Records on events.raw the persistence group has not committed, read from the broker, so it keeps reporting while the consumer is stopped. A batch request is one record however many events it holds. A gap means the broker did not answer.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 6,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "persistence_consumer_lag_records{job=\"event-analytics\"}",
+          "legendFormat": "lag",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Acceptance to visibility",
+      "description": "Per record, from publication to the commit that makes its events readable. Percentiles come from buckets up to 5 minutes; max is the largest recent record.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 12,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(events_visibility_delay_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(events_visibility_delay_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(events_visibility_delay_seconds_max{job=\"event-analytics\"})",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Dead-lettered records",
+      "description": "Records set aside on events.raw.dead-letter since the app started, counted once the topic confirmed them. Their events stay out of the table until redriven.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 36
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(persistence_consumer_dead_letters_total{job=\"event-analytics\"})",
+          "legendFormat": "dead-lettered",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 104,
       "type": "row",
       "title": "Perf runs",
@@ -1108,7 +1384,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 45
       },
       "panels": [
         {
@@ -1124,7 +1400,7 @@
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 36
+            "y": 46
           },
           "options": {
             "onlyFromThisDashboard": false,
