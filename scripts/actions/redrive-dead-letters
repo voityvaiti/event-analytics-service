@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# Send dead-lettered records back to the persistence consumer once whatever refused
+# them is fixed:
+#
+# scripts/actions/redrive-dead-letters [base_url]
+#
+# Each record goes back once; one refused again is dead-lettered anew and waits for the
+# next call. The app must run with app.persistence-consumer.control.enabled=true, as
+# scripts/actions/perf/app does; the token carries the persistence:control scope.
+
+set -euo pipefail
+cd "$(dirname "$0")/../.." || exit 1
+
+if [ $# -gt 1 ]; then
+  echo "Usage: scripts/actions/redrive-dead-letters [base_url]" >&2
+  exit 1
+fi
+base_url=${1:-http://localhost:8080}
+
+token=$(scripts/actions/mint-token operator persistence:control)
+response=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $token" \
+  "$base_url/internal/persistence-consumer/dead-letters/redrive" || true)
+status=${response##*$'\n'}
+body=${response%$'\n'*}
+
+case $status in
+  200)
+    echo "$body"
+    ;;
+  000)
+    echo "No answer from $base_url; is the app running?" >&2
+    exit 1
+    ;;
+  404)
+    echo "The control endpoints are off; start the app with" \
+      "--app.persistence-consumer.control.enabled=true." >&2
+    exit 1
+    ;;
+  *)
+    echo "Redrive failed with HTTP $status: $body" >&2
+    exit 1
+    ;;
+esac
