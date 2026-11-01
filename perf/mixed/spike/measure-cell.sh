@@ -1,8 +1,12 @@
 #!/bin/bash
 
 # Measure a mixed surge, restore the write tenant, and append phase acceptance and
-# failure counts. Pool-timeout deltas identify 5xx caused by connection waits. Reports
-# have no verdict yet; tolerate k6 failures to record them.
+# failure counts. Pool-timeout deltas identify 5xx caused by connection waits. Tolerate
+# k6 failures to record them. Lag is sampled every second; the curve goes to lag.jsonl.
+#
+# Verdict, Stage 3's: under 0.1% of writes unaccepted in every phase, a baseline median
+# lag under one second of intake, and lag back under that bound for good before the
+# recovery phase ends. Each phase needs valid samples for 80% of its seconds.
 #
 # Requires perf/lib/harness.sh. Usage: perf_mixed_spike_cell <journal> <endpoint>
 # <group_by>
@@ -12,6 +16,8 @@ perf_mixed_spike_cell() {
   local script=perf/mixed/spike/ingest-under-read-spike.js
   local summary=perf/mixed/spike/last-summary.json
   local unaccepted=perf/mixed/spike/last-unaccepted.log
+  local samples=perf/mixed/spike/last-lag-samples.txt
+  local curves=${journal%journal.jsonl}lag.jsonl
 
   warm_reads "$endpoint" "$group_by"
   k6_run perf/write/load/ingest-events.js -e TOKEN="$WRITE_TOKEN" \
@@ -25,6 +31,7 @@ perf_mixed_spike_cell() {
   timeouts_before=$(read_connection_timeouts) || return 1
 
   rm -f "$summary" "$unaccepted"
+  start_lag_sampler "$samples"
   k6_run "$script" \
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS --env SPIKE_WINDOW \
     --env READ_BASELINE_RATE --env READ_SPIKE_RATE --env READ_MAX_VUS \
@@ -34,6 +41,7 @@ perf_mixed_spike_cell() {
     -e READ_TOKEN="$SEED_TOKEN" -e WRITE_TOKEN="$WRITE_TOKEN" \
     -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
+  stop_lag_sampler
   timeouts_after=$(read_connection_timeouts) || return 1
   local drain_seconds
   wait_until_persisted || return 1
@@ -59,17 +67,24 @@ perf_mixed_spike_cell() {
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
     "$timeouts_before" "$timeouts_after" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
-    <<'PY'
+    "$samples" "$curves" <<'PY'
 import json, sys
+
+sys.path.insert(0, "perf/lib")
+import lag_samples
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, timeouts_before, timeouts_after,
-    accepted_events, missing_events, drain_seconds,
-) = sys.argv[1:18]
+    accepted_events, missing_events, drain_seconds, samples_path, curves_path,
+) = sys.argv[1:20]
+
+MAX_UNACCEPTED_SHARE = 0.001
+MIN_VALID_SHARE = 0.8
 
 with open(summary_path) as f:
     s = json.load(f)
+samples = lag_samples.load(samples_path)
 
 
 def r(value, digits=2):
@@ -105,7 +120,8 @@ row = {
 # A phase's drops are what it scheduled minus what it sent, because k6 counts
 # drops per scenario and the writes are one scenario. Attribution by start time
 # can move a handful of requests across a boundary, so a phase that dropped
-# nothing may send a few more than it scheduled; that reads as 0, not negative.
+# nothing may send and accept a few more than it scheduled; its drops and unaccepted
+# share read as 0, not negative.
 for phase, p in s["phases"].items():
     write, read = p["write"], p["read"]
     scheduled = write["scheduled"]
@@ -113,7 +129,7 @@ for phase, p in s["phases"].items():
         {
             phase + "_started_at": p["started_at"],
             phase + "_finished_at": p["finished_at"],
-            phase + "_write_unaccepted_share": r(1 - write["accepted"] / scheduled, 4),
+            phase + "_write_unaccepted_share": r(max(0.0, 1 - write["accepted"] / scheduled), 4),
             phase + "_write_scheduled": scheduled,
             phase + "_write_sent": round(write["sent"]),
             phase + "_write_dropped": max(0, scheduled - round(write["sent"])),
@@ -139,8 +155,49 @@ row["accepted_events"] = int(accepted_events)
 row["missing_events"] = int(missing_events)
 row["drain_seconds"] = float(drain_seconds)
 
+lag_bound = s["write_rate"]
+row["lag_bound"] = lag_bound
+lag_windows = {}
+for phase, p in s["phases"].items():
+    start = lag_samples.epoch_millis(p["started_at"])
+    end = lag_samples.epoch_millis(p["finished_at"])
+    lags = lag_samples.describe(lag_samples.between(samples, start, end))
+    lag_windows[phase] = (start, end, lags)
+    row.update(
+        {
+            phase + "_lag_median": r(lags["median"], 1),
+            phase + "_lag_max": r(lags["max"], 0),
+            phase + "_lag_samples": lags["samples"],
+            phase + "_lag_failed_samples": lags["failed_samples"],
+        }
+    )
+
+recovery_start, recovery_end, _ = lag_windows["recovery"]
+settled = lag_samples.settled_below(samples, recovery_start, recovery_end, lag_bound)
+row["recovery_lag_settled_seconds"] = (
+    None if settled is None else round((settled - recovery_start) / 1000, 1)
+)
+
+if any(
+    lags["samples"] < MIN_VALID_SHARE * (end - start) / 1000
+    for start, end, lags in lag_windows.values()
+):
+    verdict = "TOO FEW SAMPLES"
+elif any(row[phase + "_write_unaccepted_share"] >= MAX_UNACCEPTED_SHARE for phase in s["phases"]):
+    verdict = "WRITES NOT ACCEPTED"
+elif lag_windows["baseline"][2]["median"] >= lag_bound:
+    verdict = "BASELINE LAGGED"
+elif settled is None:
+    verdict = "LAG NOT RECOVERED"
+else:
+    verdict = "survived"
+row["verdict"] = verdict
+
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
+with open(curves_path, "a") as f:
+    curve = lag_samples.curve(samples, lag_samples.epoch_millis(s["started_at"]))
+    f.write(json.dumps({"run_id": row["run_id"], "commit": commit, "samples": curve}) + "\n")
 
 
 def share(phase):
@@ -153,12 +210,14 @@ query = row["endpoint"] + (" groupBy=" + row["group_by"] if row["group_by"] else
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
-    "PERF_RESULT mixed spike (%s %s): writes %d/s not accepted: baseline %s | "
+    "PERF_RESULT mixed spike (%s %s): %s | writes %d/s not accepted: baseline %s | "
     "spike %s (dropped %d, 5xx %d, timeouts %d, accepted p99 %sms) | recovery %s | "
+    "lag max %s/%s/%s, under %d %ss into recovery | "
     "reads spike p99 %sms, recovery p95 %sms (baseline %sms) | pool timeouts %d"
     % (
         query,
         row["window"],
+        verdict,
         row["write_rate"],
         share("baseline"),
         share("spike"),
@@ -167,6 +226,11 @@ print(
         row["spike_write_timeouts"],
         row["spike_write_p99_ms"],
         share("recovery"),
+        row["baseline_lag_max"],
+        row["spike_lag_max"],
+        row["recovery_lag_max"],
+        lag_bound,
+        row["recovery_lag_settled_seconds"],
         row["spike_read_p99_ms"],
         row["recovery_read_p95_ms"],
         row["baseline_read_p95_ms"],
