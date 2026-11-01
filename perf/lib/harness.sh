@@ -183,11 +183,14 @@ MESSAGE
   printf '%s\n' "$stamp"
 }
 
-# Sign a tenant token with the pinned Node image; only Docker is required.
+# Sign a tenant token with the pinned Node image; only Docker is required. An optional
+# second argument adds a scope, such as persistence:control.
+#
+# Usage: mint_token <tenant> [scope]
 mint_token() {
   docker run --rm \
     --volume "$PWD":/work --workdir /work \
-    "$NODE_IMAGE" node perf/lib/mint-token.mjs "$1" || {
+    "$NODE_IMAGE" node perf/lib/mint-token.mjs "$@" || {
     echo "Could not mint a token for '$1' — is dev-keys/ still present?" >&2
     return 1
   }
