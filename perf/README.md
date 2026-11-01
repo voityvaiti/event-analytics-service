@@ -8,6 +8,8 @@ Tests are grouped by path, workload, and request shape or endpoint. Each leaf is
 | Write | [`write/load/batch/`](./write/load/batch) | Batch ingest throughput and per-request overhead |
 | Write | [`write/spike/single/`](./write/spike/single) | Single-event surge and recovery |
 | Write | [`write/spike/batch/`](./write/spike/batch) | Batch surge and recovery |
+| Write | [`write/steady/single/`](./write/steady/single) | Whether the consumer persists a fixed offered rate as it arrives |
+| Write | [`write/restart/single/`](./write/restart/single) | Whether a 60 s consumer outage drains within its downtime |
 | Read | [`read/load/event-counts/`](./read/load/event-counts) | Event-count latency by grouping |
 | Read | [`read/load/active-users/`](./read/load/active-users) | Distinct-user count latency |
 | Read | [`read/load/top-pages/`](./read/load/top-pages) | JSONB page-ranking latency |
@@ -16,7 +18,7 @@ Tests are grouped by path, workload, and request shape or endpoint. Each leaf is
 | Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Page-ranking surge and queue recovery |
 | Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Write acceptance and failures during a read surge |
 
-Each cell owns a `journal.jsonl` stamped with its machine and configuration; compare only compatible runs. Cell READMEs explain individual results. Shared methodology lives in [`write/load`](./write/load), [`write/spike`](./write/spike), [`read`](./read), and [`read/spike`](./read/spike).
+Each cell owns a `journal.jsonl` stamped with its machine and configuration; compare only compatible runs. Cell READMEs explain individual results. Shared methodology lives in [`write/load`](./write/load), [`write/spike`](./write/spike), [`write/steady`](./write/steady), [`write/restart`](./write/restart), [`read`](./read), and [`read/spike`](./read/spike).
 
 ## Running
 
@@ -39,6 +41,8 @@ The [local stack](../README.md#observability) scrapes every 2s. Rows predating t
 
 A `202` means the broker holds the events, not the table, so write and mixed cells wait for the consumer before they count or delete anything: the harness polls `persistence.consumer.lag` until it reads 0 and fails after `DRAIN_TIMEOUT_SECONDS` (default 300). It then reconciles the measured run. k6 counts the events answered 202 and logs the ID of every other event to `last-unaccepted.log`; the run's rows, less those IDs, must equal the accepted count, because a request k6 gave up on may still have been stored. Rows record `accepted_events`, `missing_events` (anything but 0 fails the cell) and `drain_seconds`, the wait after k6 exited.
 
+Steady, restart and mixed cells also sample the lag once a second while k6 runs (`start_lag_sampler`, read by `lib/lag_samples.py`) and judge it against one second of intake. Each run's curve goes to `lag.jsonl` beside the journal.
+
 k6 and the seeder run in pinned containers (`K6_IMAGE`, default `grafana/k6:0.50.0`, and `NODE_IMAGE`). The shared startup script brings up Compose dependencies. Requests use bearer tokens; see [Tenants and tokens](#tenants-and-tokens).
 
 IDE configurations in `.run/` wrap the actions below. Use _PERF - App_ to start the app; _APP - Start_ is for development.
@@ -48,7 +52,9 @@ scripts/actions/perf/write/load/<shape>       # one request shape's throughput
 scripts/actions/perf/write/load/all           # every write load cell
 scripts/actions/perf/write/spike/<shape>      # one request shape's surge
 scripts/actions/perf/write/spike/all          # every write spike cell
-scripts/actions/perf/write/all                # every write cell, both workloads
+scripts/actions/perf/write/steady/<shape>     # one fixed offered rate, lag judged
+scripts/actions/perf/write/restart/<shape>    # the consumer stopped for 60 s under intake
+scripts/actions/perf/write/all                # every write cell, every workload
 scripts/actions/perf/read/load/<endpoint>     # one read endpoint's latency
 scripts/actions/perf/read/load/all            # every read load cell
 scripts/actions/perf/read/spike/<endpoint>    # one read surge
@@ -149,6 +155,7 @@ perf/
     k6-summary.js       shared k6 summary reader
     compare-runs.mjs    the main-vs-PR comparison CI renders, over every load cell
     annotate-runs.sh    puts the window each row was measured in on the dashboard
+    lag_samples.py      reads the once-a-second lag samples the harness takes
   write/
     tests.sh            the write cell list, per workload and combined
     load/
@@ -161,6 +168,13 @@ perf/
       spike-batches.js  the surge scenario, batches at a surging request rate
       measure-cell.sh   the routine the spike cells share, verdict included
       single/  batch/
+    steady/
+      ingest-at-rate.js the open-model scenario, single events in named phases
+      measure-cell.sh   the routine the steady cells share, verdict included
+      single/
+    restart/
+      measure-cell.sh   stops and restarts the consumer under the steady scenario
+      single/
   read/
     tests.sh            the read cell list, per workload and combined
     load/
@@ -203,4 +217,4 @@ Use `<path>/<workload>/<cell>/` and a matching function name, e.g. `read/load/to
 
 The per-PR comparison (`.github/workflows/perf.yml`) runs every load cell; see [What CI compares](#what-ci-compares). CI writes no journal rows.
 
-Spike and mixed cells run locally: shared runners cannot reliably sustain their offered rates, and spike recovery is a compound verdict. Their journals track regressions on a fixed rig.
+Spike, steady, restart and mixed cells run locally: shared runners cannot reliably sustain their offered rates, and their verdicts are compound. Their journals track regressions on a fixed rig.
