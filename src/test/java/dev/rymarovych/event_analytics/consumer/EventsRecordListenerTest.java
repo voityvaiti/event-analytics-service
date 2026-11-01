@@ -15,6 +15,8 @@ import dev.rymarovych.event_analytics.messaging.DeadLetterPublisher;
 import dev.rymarovych.event_analytics.messaging.EventTopics;
 import dev.rymarovych.event_analytics.messaging.EventsMessageCodec;
 import dev.rymarovych.event_analytics.service.EventPersistenceService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
@@ -29,8 +31,10 @@ class EventsRecordListenerTest {
   private final EventsMessageCodec codec = mock(EventsMessageCodec.class);
   private final DeadLetterPublisher deadLetters = mock(DeadLetterPublisher.class);
   private final Acknowledgment acknowledgment = mock(Acknowledgment.class);
+  private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final EventsRecordListener listener =
-      new EventsRecordListener(persistence, codec, deadLetters);
+      new EventsRecordListener(
+          persistence, codec, deadLetters, new PersistenceConsumerMetrics(meterRegistry));
 
   @Test
   void keepsGroupingValidRecordsOnBothSidesOfAMalformedRecord() {

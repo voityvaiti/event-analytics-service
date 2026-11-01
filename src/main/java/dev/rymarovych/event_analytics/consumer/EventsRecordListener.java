@@ -31,14 +31,17 @@ class EventsRecordListener {
   private final EventPersistenceService persistence;
   private final EventsMessageCodec codec;
   private final DeadLetterPublisher deadLetters;
+  private final PersistenceConsumerMetrics metrics;
 
   EventsRecordListener(
       EventPersistenceService persistence,
       EventsMessageCodec codec,
-      DeadLetterPublisher deadLetters) {
+      DeadLetterPublisher deadLetters,
+      PersistenceConsumerMetrics metrics) {
     this.persistence = persistence;
     this.codec = codec;
     this.deadLetters = deadLetters;
+    this.metrics = metrics;
   }
 
   /**
@@ -156,7 +159,7 @@ class EventsRecordListener {
       events.addAll(readable.events());
     }
     try {
-      persistence.persist(events);
+      metrics.countStored(events.size(), persistence.persist(events));
       return true;
     } catch (PermanentException refused) {
       return false;
@@ -169,7 +172,7 @@ class EventsRecordListener {
           publishToDeadLetter(unreadable.record(), unreadable.reason());
       case ReadableRecord readable -> {
         try {
-          persistence.persist(readable.events());
+          metrics.countStored(readable.eventCount(), persistence.persist(readable.events()));
         } catch (PermanentException refused) {
           publishToDeadLetter(readable.record(), refused);
         }
@@ -180,6 +183,7 @@ class EventsRecordListener {
   private void publishToDeadLetter(
       ConsumerRecord<String, byte[]> record, PermanentException reason) {
     deadLetters.publish(record, reason);
+    metrics.countDeadLetter();
     log.error(
         "Dead-lettered {}-{}@{}: {}",
         record.topic(),
