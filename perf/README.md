@@ -16,7 +16,7 @@ Tests are grouped by path, workload, and request shape or endpoint. Each leaf is
 | Read | [`read/spike/event-counts/`](./read/spike/event-counts) | Event-count surge and queue recovery |
 | Read | [`read/spike/active-users/`](./read/spike/active-users) | Active-user surge and queue recovery |
 | Read | [`read/spike/top-pages/`](./read/spike/top-pages) | Page-ranking surge and queue recovery |
-| Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Write acceptance and failures during a read surge |
+| Mixed | [`mixed/spike/active-users/`](./mixed/spike/active-users) | Write acceptance and consumer lag during a read surge |
 
 Each cell owns a `journal.jsonl` stamped with its machine and configuration; compare only compatible runs. Cell READMEs explain individual results. Shared methodology lives in [`write/load`](./write/load), [`write/spike`](./write/spike), [`write/steady`](./write/steady), [`write/restart`](./write/restart), [`read`](./read), and [`read/spike`](./read/spike).
 
