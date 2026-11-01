@@ -104,7 +104,9 @@ scripts/actions/observability down   # stop them, leaving Postgres running
 
 Start the application separately; Prometheus reaches it through the host gateway. The stack uses an opt-in `observability` Compose profile, stays outside `scripts/actions/dependencies`, and publishes both services to loopback only.
 
-Grafana at <http://localhost:3000> includes the _Event Analytics — overview_ dashboard. Summary tiles show scrape state, requests/s, security rejections, events/s, p95 latency, server error rate, and peak connection queue depth. Charts cover throughput, latency, errors, pool usage, host CPU, and scrape cost.
+Grafana at <http://localhost:3000> includes the _Event Analytics — overview_ dashboard. Summary tiles show scrape state, requests/s, security rejections, events/s, p95 latency, server error rate, and peak connection queue depth. Charts cover throughput, latency, errors, asynchronous persistence, pool usage, host CPU, and scrape cost.
+
+`events.ingested` counts events the broker accepted, duplicates included. `events.persisted` counts events in committed transactions, tagged `inserted` or `duplicate`, and `persistence.consumer.dead.letters` the records set aside. `persistence.consumer.lag` comes from the group's committed offsets, so it keeps reporting while the consumer is stopped; it counts records, and a batch request is one record. `events.visibility.delay` times each record from publication to commit.
 
 Select a run in _Perf runs_ to view its time range. Journal rows with measurement timestamps appear as regions; spikes have separate baseline, surge, and recovery regions. The harness adds annotations through [`perf/lib/annotate-runs.sh`](./perf/lib/annotate-runs.sh), and stack startup imports existing journals. Runs recorded without scraping are hidden from the list; show their regions with _Perf runs measured with no scraper_. Prometheus has no metrics for those windows.
 

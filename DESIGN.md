@@ -128,7 +128,7 @@ It replaced `(occurred_at, event_type)`, which tenancy broke: the tenant was not
 
 ## Planned evolution
 
-**Stage 3 — asynchronous persistence.** Acceptance and storage are split (see the decisions above). Still to come: lag and persisted-event metrics, and async measurements including a 60 s stop and restart of the consumer.
+**Stage 3 — asynchronous persistence.** Acceptance and storage are split (see the decisions above). Still to come: async measurements including a 60 s stop and restart of the consumer.
 
 **Stage 4 — data usage and storage design.** First establish the service's purpose, who uses its data, the questions and workflows it supports, and the required history, detail, freshness and exactness. Preserve current read endpoints as the starting point; adapt or replace them when those needs show they no longer fit the service, documenting the reason, resulting contract and client migration. Use the requirements and comparable measurements to select storage that balances latency, cost and operational effort. PostgreSQL is the initial baseline. Rollups, replication to a read database, ClickHouse, S3-compatible object storage and caching are examples in an open set of options; requirements may lead to other approaches or combinations, with no technology preferred in advance. Retention, delivery, migration and recovery follow the selected design. Stage 3 does not depend on this selection; Stage 5 deploys and sizes the chosen architecture.
 
