@@ -1,6 +1,7 @@
 HELP.md
 notes/
 perf/**/last-summary.json
+perf/**/last-unaccepted.log
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

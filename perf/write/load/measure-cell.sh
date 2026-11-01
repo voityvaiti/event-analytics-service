@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Warm, measure, clean up, and journal one write load cell. Requires
+# Warm, measure, reconcile, clean up, and journal one write load cell. Requires
 # perf/lib/harness.sh. Cleanup restores the corpus for the next cell.
 #
 # Pass scenario, VUs, and duration explicitly to avoid leaking one cell's settings into
@@ -11,6 +11,7 @@
 perf_write_load_cell() {
   local journal=$1 script=$2 vus=$3 duration=$4 batch_size=${5:-}
   local summary=perf/write/load/last-summary.json
+  local unaccepted=perf/write/load/last-unaccepted.log
   local batch=()
   [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
 
@@ -27,9 +28,16 @@ perf_write_load_cell() {
 
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
-  rm -f "$summary"
+  rm -f "$summary" "$unaccepted"
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
-    -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary"
+    -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
+    -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw
+  local drain_seconds
+  wait_until_persisted || return 1
+  drain_seconds=$DRAIN_SECONDS
+  if [ -s "$summary" ]; then
+    reconcile_accepted "$summary" "$unaccepted" || return 1
+  fi
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Measured run produced no summary at $summary — did the app stay up?" >&2
@@ -48,13 +56,15 @@ perf_write_load_cell() {
   local out
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
-    "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" <<'PY'
+    "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
+    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
-    scrape, ingest_path, schema_version, start_rows,
-) = sys.argv[1:13]
+    scrape, ingest_path, schema_version, start_rows, accepted_events, missing_events,
+    drain_seconds,
+) = sys.argv[1:16]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -89,6 +99,9 @@ row = {
     "p95_ms": round(s["latency_ms"]["p95"], 2),
     "p99_ms": round(s["latency_ms"]["p99"], 2),
     "failed_rate": s["failed_rate"],
+    "accepted_events": int(accepted_events),
+    "missing_events": int(missing_events),
+    "drain_seconds": float(drain_seconds),
 }
 row = {name: value for name, value in row.items() if value is not None}
 
@@ -121,4 +134,5 @@ PY
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
   perf_journalled "$journal"
+  require_nothing_missing
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Warm, measure, clean up, and journal a write surge. Requires perf/lib/harness.sh.
+# Warm, measure, reconcile, clean up, and journal a write surge. Requires perf/lib/harness.sh.
 # Tolerate k6 failure long enough to record results; failed recovery returns non-zero.
 #
 # Each cell supplies its scenario, matching warm-up, calibrated surge rate,
@@ -13,6 +13,7 @@ perf_write_spike_cell() {
   local journal=$1 script=$2 warmup_script=$3 spike_rate=$4 baseline_max_p95_ms=$5
   local batch_size=${6:-}
   local summary=perf/write/spike/last-summary.json
+  local unaccepted=perf/write/spike/last-unaccepted.log
   local batch=()
   [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
 
@@ -28,11 +29,18 @@ perf_write_spike_cell() {
   start_rows=$CORPUS_ROWS
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
 
-  rm -f "$summary"
+  rm -f "$summary" "$unaccepted"
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
     --env BASELINE_RATE \
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS --env MAX_VUS \
-    -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" || true
+    -e SPIKE_RATE="$spike_rate" -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
+    -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
+  local drain_seconds
+  wait_until_persisted || return 1
+  drain_seconds=$DRAIN_SECONDS
+  if [ -s "$summary" ]; then
+    reconcile_accepted "$summary" "$unaccepted" || return 1
+  fi
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Spike run produced no summary at $summary — did the app stay up?" >&2
@@ -50,13 +58,14 @@ perf_write_spike_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$baseline_max_p95_ms" <<'PY'
+    "$baseline_max_p95_ms" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
-    scrape, ingest_path, schema_version, start_rows, baseline_max_p95_ms,
-) = sys.argv[1:14]
+    scrape, ingest_path, schema_version, start_rows, baseline_max_p95_ms, accepted_events,
+    missing_events, drain_seconds,
+) = sys.argv[1:17]
 with open(summary_path) as f:
     s = json.load(f)
 
@@ -137,6 +146,9 @@ row = {
     "baseline_achieved_rps": r(baseline["achieved_rps"], 1),
     "baseline_p95_ms": r(baseline["p95_ms"]),
     "recovered": recovered,
+    "accepted_events": int(accepted_events),
+    "missing_events": int(missing_events),
+    "drain_seconds": float(drain_seconds),
 }
 row = {name: value for name, value in row.items() if value is not None}
 
@@ -181,5 +193,6 @@ PY
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
   perf_journalled "$journal"
+  require_nothing_missing || return 1
   [ "$(printf '%s\n' "$out" | sed -n 's/^PERF_STATUS //p')" = ok ]
 }
