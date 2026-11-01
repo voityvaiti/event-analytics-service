@@ -63,9 +63,10 @@ scripts/actions/perf/read/all                 # every read cell, both workloads
 scripts/actions/perf/mixed/spike/<endpoint>   # steady ingest under one read surge
 scripts/actions/perf/mixed/all                # every mixed cell
 scripts/actions/perf/all                      # everything, one combined digest
+scripts/actions/perf/journals                 # browse every journal on a local page
 ```
 
-Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you.
+Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you. `scripts/actions/perf/journals` shows them as a table per cell on `127.0.0.1:8765`, filtered by commit, ingest path and the cell's dimensions; a row opens every field and, for lag-sampling cells, its curve with phase bands and the lag bound.
 
 ## Rounds and the noise floor
 
@@ -156,6 +157,9 @@ perf/
     compare-runs.mjs    the main-vs-PR comparison CI renders, over every load cell
     annotate-runs.sh    puts the window each row was measured in on the dashboard
     lag_samples.py      reads the once-a-second lag samples the harness takes
+  viewer/
+    server.py           serves the journals read-only to the page, 127.0.0.1 only
+    index.html          the page: tables, filters, row details, lag curves
   write/
     tests.sh            the write cell list, per workload and combined
     load/
