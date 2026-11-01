@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.service;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.util.List;
 
 /** Stores accepted events, possibly from several requests, as one unit. */

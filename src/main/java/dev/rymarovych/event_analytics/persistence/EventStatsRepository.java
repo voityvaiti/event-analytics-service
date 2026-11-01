@@ -1,10 +1,10 @@
 package dev.rymarovych.event_analytics.persistence;
 
-import dev.rymarovych.event_analytics.domain.ActiveUsersBucket;
-import dev.rymarovych.event_analytics.domain.EventCount;
 import dev.rymarovych.event_analytics.domain.TenantName;
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
-import dev.rymarovych.event_analytics.domain.TopPagesReport;
+import dev.rymarovych.event_analytics.domain.analytics.ActiveUsersBucket;
+import dev.rymarovych.event_analytics.domain.analytics.EventCount;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TopPagesReport;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;

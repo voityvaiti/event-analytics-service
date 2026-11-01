@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.messaging;
 
-import dev.rymarovych.event_analytics.domain.RedriveIncompleteException;
+import dev.rymarovych.event_analytics.domain.ingestion.RedriveIncompleteException;
 
 /** Returns dead-lettered records to events.raw once whatever refused them has been fixed. */
 public interface DeadLetterRedriver {

@@ -1,14 +1,14 @@
 package dev.rymarovych.event_analytics.web;
 
-import dev.rymarovych.event_analytics.domain.ActiveUsersBucket;
-import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
-import dev.rymarovych.event_analytics.domain.EventCount;
-import dev.rymarovych.event_analytics.domain.EventCountBucket;
-import dev.rymarovych.event_analytics.domain.EventCountGrouping;
-import dev.rymarovych.event_analytics.domain.EventCountReport;
-import dev.rymarovych.event_analytics.domain.PageCount;
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
-import dev.rymarovych.event_analytics.domain.TopPagesReport;
+import dev.rymarovych.event_analytics.domain.analytics.ActiveUsersBucket;
+import dev.rymarovych.event_analytics.domain.analytics.ActiveUsersReport;
+import dev.rymarovych.event_analytics.domain.analytics.EventCount;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountBucket;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountReport;
+import dev.rymarovych.event_analytics.domain.analytics.PageCount;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TopPagesReport;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.List;

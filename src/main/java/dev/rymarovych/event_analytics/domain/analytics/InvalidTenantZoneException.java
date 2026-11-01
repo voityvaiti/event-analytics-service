@@ -1,5 +1,6 @@
-package dev.rymarovych.event_analytics.domain;
+package dev.rymarovych.event_analytics.domain.analytics;
 
+import dev.rymarovych.event_analytics.domain.TenantName;
 import java.io.Serial;
 
 /**

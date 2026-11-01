@@ -2,11 +2,11 @@ package dev.rymarovych.event_analytics.web;
 
 import static java.util.Objects.requireNonNullElse;
 
-import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
-import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
-import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
-import dev.rymarovych.event_analytics.domain.PublicationFailedException;
-import dev.rymarovych.event_analytics.domain.RedriveIncompleteException;
+import dev.rymarovych.event_analytics.domain.analytics.AnalyticsQueryTimeoutException;
+import dev.rymarovych.event_analytics.domain.analytics.InvalidTenantZoneException;
+import dev.rymarovych.event_analytics.domain.ingestion.MessageTooLargeException;
+import dev.rymarovych.event_analytics.domain.ingestion.PublicationFailedException;
+import dev.rymarovych.event_analytics.domain.ingestion.RedriveIncompleteException;
 import java.net.URI;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;

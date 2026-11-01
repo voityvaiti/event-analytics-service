@@ -9,8 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
-import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import dev.rymarovych.event_analytics.messaging.EventPublisher;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;

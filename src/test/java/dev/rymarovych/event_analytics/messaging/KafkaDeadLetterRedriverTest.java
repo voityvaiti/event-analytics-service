@@ -10,7 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import dev.rymarovych.event_analytics.domain.RedriveIncompleteException;
+import dev.rymarovych.event_analytics.domain.ingestion.RedriveIncompleteException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.List;

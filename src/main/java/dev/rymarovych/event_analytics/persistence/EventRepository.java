@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.persistence;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.util.List;
 
 /** Append-only persistence for raw events; failures are recoverable unless the rows are refused. */

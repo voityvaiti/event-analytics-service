@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.service;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.util.List;
 
 /** Accepts events for storage: a call returns once the broker holds them, storage follows. */

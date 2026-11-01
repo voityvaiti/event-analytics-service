@@ -1,8 +1,8 @@
 package dev.rymarovych.event_analytics.web;
 
-import dev.rymarovych.event_analytics.domain.EventCountGrouping;
 import dev.rymarovych.event_analytics.domain.TenantName;
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
 import dev.rymarovych.event_analytics.service.AnalyticsService;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;

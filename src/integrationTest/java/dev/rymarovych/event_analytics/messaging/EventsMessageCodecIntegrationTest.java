@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
-import dev.rymarovych.event_analytics.domain.MalformedMessageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.MalformedMessageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;

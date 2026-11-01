@@ -1,4 +1,4 @@
-package dev.rymarovych.event_analytics.domain;
+package dev.rymarovych.event_analytics.domain.ingestion;
 
 import java.io.Serial;
 import org.jspecify.annotations.Nullable;

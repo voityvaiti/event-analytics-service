@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.messaging;
 
-import dev.rymarovych.event_analytics.domain.RedriveIncompleteException;
+import dev.rymarovych.event_analytics.domain.ingestion.RedriveIncompleteException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;

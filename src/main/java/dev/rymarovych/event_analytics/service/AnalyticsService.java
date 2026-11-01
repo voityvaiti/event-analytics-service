@@ -1,11 +1,11 @@
 package dev.rymarovych.event_analytics.service;
 
-import dev.rymarovych.event_analytics.domain.ActiveUsersReport;
-import dev.rymarovych.event_analytics.domain.EventCountGrouping;
-import dev.rymarovych.event_analytics.domain.EventCountReport;
 import dev.rymarovych.event_analytics.domain.TenantName;
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
-import dev.rymarovych.event_analytics.domain.TopPagesReport;
+import dev.rymarovych.event_analytics.domain.analytics.ActiveUsersReport;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountReport;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TopPagesReport;
 import java.time.Instant;
 
 /**
