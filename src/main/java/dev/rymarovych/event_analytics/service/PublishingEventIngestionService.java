@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.service;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import dev.rymarovych.event_analytics.messaging.EventPublisher;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;

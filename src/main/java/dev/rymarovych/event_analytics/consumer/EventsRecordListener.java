@@ -1,8 +1,8 @@
 package dev.rymarovych.event_analytics.consumer;
 
-import dev.rymarovych.event_analytics.domain.MalformedMessageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
-import dev.rymarovych.event_analytics.domain.PermanentException;
+import dev.rymarovych.event_analytics.domain.ingestion.MalformedMessageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.PermanentException;
 import dev.rymarovych.event_analytics.messaging.DeadLetterPublisher;
 import dev.rymarovych.event_analytics.messaging.EventTopics;
 import dev.rymarovych.event_analytics.messaging.EventsMessageCodec;

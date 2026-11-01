@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.service;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import dev.rymarovych.event_analytics.persistence.EventRepository;
 import java.util.List;
 import org.springframework.stereotype.Service;

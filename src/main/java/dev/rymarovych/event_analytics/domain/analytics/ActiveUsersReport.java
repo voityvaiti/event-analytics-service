@@ -1,4 +1,4 @@
-package dev.rymarovych.event_analytics.domain;
+package dev.rymarovych.event_analytics.domain.analytics;
 
 import java.time.ZoneId;
 import java.util.List;

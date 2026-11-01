@@ -1,5 +1,6 @@
-package dev.rymarovych.event_analytics.domain;
+package dev.rymarovych.event_analytics.domain.ingestion;
 
+import dev.rymarovych.event_analytics.domain.TenantName;
 import java.time.Instant;
 import tools.jackson.databind.JsonNode;
 

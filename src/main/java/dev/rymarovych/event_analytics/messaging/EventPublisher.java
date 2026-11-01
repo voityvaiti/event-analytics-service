@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.messaging;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.util.List;
 
 /** Hands one request's events to the broker as a single message. */

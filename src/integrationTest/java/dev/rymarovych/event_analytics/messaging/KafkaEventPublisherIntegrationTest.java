@@ -5,9 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import dev.rymarovych.event_analytics.TopicRecords;
-import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.MessageTooLargeException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;

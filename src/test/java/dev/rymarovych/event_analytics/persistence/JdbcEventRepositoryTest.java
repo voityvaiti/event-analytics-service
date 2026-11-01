@@ -6,9 +6,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import dev.rymarovych.event_analytics.domain.NewEvent;
-import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.StorageUnavailableException;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;

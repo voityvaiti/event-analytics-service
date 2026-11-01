@@ -7,8 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import dev.rymarovych.event_analytics.domain.MalformedMessageException;
-import dev.rymarovych.event_analytics.domain.PublicationFailedException;
+import dev.rymarovych.event_analytics.domain.ingestion.MalformedMessageException;
+import dev.rymarovych.event_analytics.domain.ingestion.PublicationFailedException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.consumer.ConsumerRecord;

@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.web;
 
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
 import java.util.Locale;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.stereotype.Component;

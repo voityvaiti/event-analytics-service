@@ -1,7 +1,7 @@
 package dev.rymarovych.event_analytics.persistence;
 
-import dev.rymarovych.event_analytics.domain.InvalidTenantZoneException;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.analytics.InvalidTenantZoneException;
 import java.time.ZoneId;
 import java.util.Optional;
 

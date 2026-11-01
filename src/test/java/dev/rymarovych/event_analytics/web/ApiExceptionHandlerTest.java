@@ -2,7 +2,7 @@ package dev.rymarovych.event_analytics.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import dev.rymarovych.event_analytics.domain.MessageTooLargeException;
+import dev.rymarovych.event_analytics.domain.ingestion.MessageTooLargeException;
 import java.net.URI;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

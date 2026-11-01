@@ -1,6 +1,6 @@
 package dev.rymarovych.event_analytics.messaging;
 
-import dev.rymarovych.event_analytics.domain.PublicationFailedException;
+import dev.rymarovych.event_analytics.domain.ingestion.PublicationFailedException;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;

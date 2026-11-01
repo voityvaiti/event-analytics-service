@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
-import dev.rymarovych.event_analytics.domain.EventsRefusedByStorageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
-import dev.rymarovych.event_analytics.domain.PermanentException;
-import dev.rymarovych.event_analytics.domain.RecoverableException;
-import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.EventsRefusedByStorageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.PermanentException;
+import dev.rymarovych.event_analytics.domain.ingestion.RecoverableException;
+import dev.rymarovych.event_analytics.domain.ingestion.StorageUnavailableException;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;

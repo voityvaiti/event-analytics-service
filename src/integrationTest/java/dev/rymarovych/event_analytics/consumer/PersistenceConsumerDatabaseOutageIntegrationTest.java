@@ -5,8 +5,8 @@ import static org.awaitility.Awaitility.await;
 
 import dev.rymarovych.event_analytics.TestcontainersConfiguration;
 import dev.rymarovych.event_analytics.TopicRecords;
-import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import dev.rymarovych.event_analytics.messaging.EventPublisher;
 import dev.rymarovych.event_analytics.messaging.EventTopics;
 import java.time.Duration;

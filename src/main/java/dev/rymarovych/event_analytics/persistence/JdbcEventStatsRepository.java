@@ -1,13 +1,13 @@
 package dev.rymarovych.event_analytics.persistence;
 
-import dev.rymarovych.event_analytics.domain.ActiveUsersBucket;
-import dev.rymarovych.event_analytics.domain.AnalyticsQueryTimeoutException;
-import dev.rymarovych.event_analytics.domain.EventCount;
-import dev.rymarovych.event_analytics.domain.EventCountBucket;
-import dev.rymarovych.event_analytics.domain.PageCount;
 import dev.rymarovych.event_analytics.domain.TenantName;
-import dev.rymarovych.event_analytics.domain.TimeGrouping;
-import dev.rymarovych.event_analytics.domain.TopPagesReport;
+import dev.rymarovych.event_analytics.domain.analytics.ActiveUsersBucket;
+import dev.rymarovych.event_analytics.domain.analytics.AnalyticsQueryTimeoutException;
+import dev.rymarovych.event_analytics.domain.analytics.EventCount;
+import dev.rymarovych.event_analytics.domain.analytics.EventCountBucket;
+import dev.rymarovych.event_analytics.domain.analytics.PageCount;
+import dev.rymarovych.event_analytics.domain.analytics.TimeGrouping;
+import dev.rymarovych.event_analytics.domain.analytics.TopPagesReport;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;

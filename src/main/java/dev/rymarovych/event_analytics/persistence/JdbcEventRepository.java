@@ -1,8 +1,8 @@
 package dev.rymarovych.event_analytics.persistence;
 
-import dev.rymarovych.event_analytics.domain.EventsRefusedByStorageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
-import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
+import dev.rymarovych.event_analytics.domain.ingestion.EventsRefusedByStorageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.StorageUnavailableException;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;

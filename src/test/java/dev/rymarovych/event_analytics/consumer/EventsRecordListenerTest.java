@@ -7,11 +7,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import dev.rymarovych.event_analytics.domain.EventsRefusedByStorageException;
-import dev.rymarovych.event_analytics.domain.MalformedMessageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
-import dev.rymarovych.event_analytics.domain.StorageUnavailableException;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.EventsRefusedByStorageException;
+import dev.rymarovych.event_analytics.domain.ingestion.MalformedMessageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
+import dev.rymarovych.event_analytics.domain.ingestion.StorageUnavailableException;
 import dev.rymarovych.event_analytics.messaging.DeadLetterPublisher;
 import dev.rymarovych.event_analytics.messaging.EventTopics;
 import dev.rymarovych.event_analytics.messaging.EventsMessageCodec;

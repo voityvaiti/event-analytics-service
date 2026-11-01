@@ -1,8 +1,8 @@
 package dev.rymarovych.event_analytics.messaging;
 
-import dev.rymarovych.event_analytics.domain.MalformedMessageException;
-import dev.rymarovych.event_analytics.domain.NewEvent;
 import dev.rymarovych.event_analytics.domain.TenantName;
+import dev.rymarovych.event_analytics.domain.ingestion.MalformedMessageException;
+import dev.rymarovych.event_analytics.domain.ingestion.NewEvent;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
