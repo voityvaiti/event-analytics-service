@@ -6,6 +6,7 @@ Measures steady ingestion during a read surge to establish a baseline for pool i
 
 - **Reads** repeat [read/spike](../../read/spike)'s surge against the seeded corpus: 20 s at 20 req/s, 30 s at the cell's surge rate, 30 s back at 20, with that cell's budget of 500 VUs.
 - **Writes** are one open-model stream of single events at `WRITE_RATE` across all three phases, into the write tenant the harness deletes afterwards. A request counts in the phase it started in.
+- **Lag** is sampled by the harness once a second from `persistence.consumer.lag`; each run's curve goes to `lag.jsonl`, as in [write steady](../../write/steady).
 
 Separate tenants keep writes from changing read results; both streams share the app, ten connections, CPU, and disk. Run with observability enabled (`scrape: on`) to correlate waits with pool metrics.
 
@@ -19,6 +20,7 @@ Fields are `<phase>_write_*` and `<phase>_read_*`, for `baseline`, `spike` and `
 - The rest of each phase's writes say how they ended: `timeouts` (not answered within the deadline, so the producer gave up, although the server may still have written it), `server_errors`, `rejected` (any other status, which is a harness fault rather than the app's), `transport_errors`, and `dropped` (never sent, which the budget below leaves only for k6 itself falling behind).
 - **`connection_timeouts`** is how often the pool failed to hand out a connection within Hikari's 30 s during the run. The write path answers that with the same 500 as any other failure, so this is what says whether `server_errors` waited out the pool.
 - **Write latency is of accepted writes only**, so it never exceeds the deadline.
+- **`<phase>_lag_median`, `<phase>_lag_max`** and their sample counts, against `lag_bound` (`WRITE_RATE` records, one second of intake). `recovery_lag_settled_seconds` is how far into recovery lag fell under the bound for good; empty if it never did.
 
 ## The deadline
 
@@ -49,6 +51,13 @@ One reading is an inference rather than a measurement: **a request whose client 
 
 This is the baseline Stage 3 is measured against: the same cell with `ingest_path: async` has to accept the surge's writes as it accepts the baseline's.
 
-## No verdict yet
+## Verdict
 
-A row records numbers and no pass or fail. The thresholds belong to Stage 3, which states them against these rows, and a verdict here would judge the sync path by a target set for the async one. The cell stays out of the CI comparison for the reason every spike cell does.
+Rows since the lag fields carry Stage 3's verdict. `survived` when:
+
+- every phase has valid lag samples for 80% of its seconds, otherwise `TOO FEW SAMPLES`;
+- under 0.1% of writes went unaccepted in every phase, otherwise `WRITES NOT ACCEPTED`;
+- the baseline's median lag is under the bound, otherwise `BASELINE LAGGED`;
+- lag is back under the bound for good before recovery ends, otherwise `LAG NOT RECOVERED`. The surge holds the pool the consumer writes through, so lag rising during it is expected.
+
+The sync rows above predate the verdict. The cell stays out of the CI comparison for the reason every spike cell does.
