@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# Browse the perf journals on a local page: one table per cell, filters by commit,
+# ingest path and the cell's dimensions, and each row's every field and lag curve.
+# Journals are re-read on every load; nothing is written. Serves 127.0.0.1 only and
+# opens a browser tab; runs in the foreground until Ctrl-C.
+#
+# Pass server arguments directly, e.g. scripts/actions/perf/journals --port 8800
+# or --no-browser.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../.." || exit 1
+
+exec python3 perf/viewer/server.py "$@"
