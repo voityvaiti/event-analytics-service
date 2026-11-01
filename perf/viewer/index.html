@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perf journals</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc;
+  --accent: #2f6fde; --accent-soft: #e5eefc; --good: #1f8a4c; --bad: #c4352b;
+  --band: rgba(47, 111, 222, 0.07); --band-alt: rgba(196, 140, 43, 0.09); --row-hover: #f1f0ec;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993; --line: #34332f;
+    --accent: #7aa7ff; --accent-soft: #233150; --good: #5cc98a; --bad: #ff7a6e;
+    --band: rgba(122, 167, 255, 0.10); --band-alt: rgba(230, 180, 90, 0.10); --row-hover: #2a2926;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, sans-serif; }
+header { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; }
+header h1 { font-size: 15px; margin: 0; }
+header .hint { color: var(--muted); }
+#errors { display: none; background: var(--bad); color: #fff; padding: 8px 16px; white-space: pre-wrap; }
+.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100vh - 42px); }
+nav { border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
+nav button { display: block; width: 100%; text-align: left; border: 0; background: none; color: inherit;
+  padding: 7px 14px; cursor: pointer; font: inherit; border-bottom: 1px solid var(--line); }
+nav button:hover { background: var(--row-hover); }
+nav button.active { background: var(--accent-soft); }
+nav .meta { color: var(--muted); font-size: 11px; }
+main { padding: 12px 16px; min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.toolbar label { color: var(--muted); }
+.toolbar select { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+details.columns { position: relative; }
+details.columns summary { cursor: pointer; color: var(--accent); }
+details.columns .list { position: absolute; z-index: 5; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 8px; max-height: 360px; overflow-y: auto; width: 340px; box-shadow: 0 4px 16px rgba(0,0,0,.15); }
+details.columns .list label { display: block; color: var(--text); white-space: nowrap; }
+.count { color: var(--muted); margin-left: auto; }
+.table-wrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; font-weight: 600; }
+th.text, td.text { text-align: left; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--row-hover); }
+tbody tr.selected { background: var(--accent-soft); }
+.good { color: var(--good); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.blank { color: var(--muted); }
+#detail { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: none; }
+#detail h2 { font-size: 14px; margin: 0 0 8px; }
+#detail .fields { columns: 3 320px; column-gap: 24px; }
+#detail .field { break-inside: avoid; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--line); padding: 1px 0; }
+#detail .field .key { color: var(--muted); overflow-wrap: anywhere; }
+#detail .field .value { text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+svg.chart { width: 100%; height: auto; margin-bottom: 10px; }
+svg.chart text { fill: var(--muted); font-size: 11px; }
+svg.chart .axis { stroke: var(--line); }
+svg.chart .lag { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+svg.chart .bound { stroke: var(--bad); stroke-dasharray: 4 4; }
+svg.chart .marker { stroke: var(--muted); stroke-dasharray: 2 3; }
+.empty { color: var(--muted); padding: 24px; }
+</style>
+</head>
+<body>
+<header><h1>Perf journals</h1><span class="hint">rows re-read on every load · click a row for every field and its lag curve</span></header>
+<div id="errors"></div>
+<div class="layout">
+  <nav id="cells"></nav>
+  <main>
+    <div class="toolbar" id="toolbar"></div>
+    <div class="table-wrap"><table id="table"></table></div>
+    <section id="detail"></section>
+  </main>
+</div>
+<script>
+"use strict";
+
+const IDENTITY = ["date", "commit", "ingest_path", "start_rows"];
+const DIMENSIONS = ["scenario", "endpoint", "group_by", "window", "limit", "batch_size", "vus", "duration"];
+const HEADLINES = [
+  "verdict", "recovered", "throughput_rps", "events_per_sec", "p95_ms", "p99_ms", /^windows\.[^.]+\.p95_ms$/,
+  "spike_achieved_rps", "spike_p95_ms", "recovery_p95_ms", "baseline_p95_ms",
+  "measure_persisted_events_per_sec", "measure_lag_segment_medians", "measure_lag_max",
+  "measure_unaccepted_share", "measure_p99_ms",
+  "lag_at_restart", "drain_after_restart_seconds", "catch_up_events_per_sec", "unaccepted_share",
+  "baseline_write_unaccepted_share", "spike_write_unaccepted_share", "recovery_write_unaccepted_share",
+  "baseline_lag_median", "spike_lag_max", "recovery_lag_settled_seconds", "spike_read_p95_ms", "recovery_read_p95_ms",
+  "missing_events", "drain_seconds",
+];
+const PASSING = new Set(["survived", "kept up", "drained"]);
+
+const state = { cells: [], cell: null, rows: [], curves: {}, keys: [], columns: [], filters: {}, sort: null, run: null };
+
+/** Shows any script failure on the page itself, so a broken page cannot pass for an empty one. */
+function showError(message) {
+  const box = document.getElementById("errors");
+  box.style.display = "block";
+  box.textContent += message + "\n";
+}
+window.onerror = (message, source, line) => showError(`${message} (${source}:${line})`);
+window.onunhandledrejection = (event) => showError(String(event.reason));
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/** Nested objects become dot keys, so windows.30d.p95_ms is a column of its own; arrays stay whole. */
+function flatten(value, prefix = "", into = {}) {
+  for (const [key, item] of Object.entries(value)) {
+    const name = prefix ? `${prefix}.${key}` : key;
+    if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+      flatten(item, name, into);
+    } else {
+      into[name] = item;
+    }
+  }
+  return into;
+}
+
+function storage(action) {
+  try { return action(window.localStorage); } catch (ignored) { return null; }
+}
+
+function isPercent(key) {
+  return key.endsWith("_share") || key === "failed_rate" || key.endsWith("_failed_rate");
+}
+
+function formatValue(key, value) {
+  if (value === null || value === undefined) return { html: "—", cls: "blank" };
+  if (typeof value === "boolean") return { html: value ? "✓" : "✗", cls: value ? "good" : "bad" };
+  if (key === "verdict") return { html: escapeHtml(value), cls: PASSING.has(value) ? "good" : "bad" };
+  if (Array.isArray(value)) return { html: escapeHtml(value.map((item) => (typeof item === "number" ? round(item) : item)).join(", ")) };
+  if (typeof value === "number") {
+    if (isPercent(key) && Math.abs(value) <= 1) return { html: `${(value * 100).toFixed(3)}%` };
+    return { html: round(value).toLocaleString("en-US") };
+  }
+  return { html: escapeHtml(value), cls: "text" };
+}
+
+function round(value) {
+  return Math.abs(value) >= 100 ? Math.round(value * 10) / 10 : Math.round(value * 100) / 100;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  return response.json();
+}
+
+function readHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return { cell: params.get("cell"), run: params.get("run") };
+}
+
+function writeHash() {
+  const params = new URLSearchParams();
+  if (state.cell) params.set("cell", state.cell);
+  if (state.run) params.set("run", state.run);
+  history.replaceState(null, "", `#${params.toString()}`);
+}
+
+async function loadCells() {
+  state.cells = await fetchJson("/api/cells");
+  const nav = document.getElementById("cells");
+  nav.innerHTML = state.cells.map((cell) =>
+    `<button data-cell="${escapeHtml(cell.cell)}">${escapeHtml(cell.cell)}` +
+    `<div class="meta">${cell.rows} rows · latest ${escapeHtml(cell.latest || "—")}${cell.has_lag ? " · lag curves" : ""}` +
+    `${cell.unparsable ? ` · ${cell.unparsable} unparsable` : ""}</div></button>`).join("");
+  nav.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => selectCell(button.dataset.cell, null)));
+}
+
+async function selectCell(cell, run) {
+  const detail = await fetchJson(`/api/cell?cell=${encodeURIComponent(cell)}`);
+  state.cell = cell;
+  state.run = run;
+  state.rows = detail.rows.map((row, index) => Object.assign(flatten(row), { "#": index + 1 }));
+  state.curves = detail.curves;
+  state.keys = [];
+  for (const row of state.rows) for (const key of Object.keys(row)) if (key !== "#" && !state.keys.includes(key)) state.keys.push(key);
+  state.filters = {};
+  state.sort = null;
+  state.columns = storage((store) => JSON.parse(store.getItem(`journals.columns.${cell}`) || "null")) || defaultColumns();
+  state.columns = state.columns.filter((key) => state.keys.includes(key));
+  document.querySelectorAll("nav button").forEach((button) => button.classList.toggle("active", button.dataset.cell === cell));
+  if (detail.unparsable) showError(`${cell}: ${detail.unparsable} unparsable lines skipped`);
+  render();
+}
+
+function distinct(key) {
+  return [...new Set(state.rows.map((row) => row[key]).filter((value) => value !== undefined && value !== null))];
+}
+
+function defaultColumns() {
+  const columns = IDENTITY.filter((key) => state.keys.includes(key));
+  for (const key of DIMENSIONS) if (state.keys.includes(key) && distinct(key).length > 1) columns.push(key);
+  for (const headline of HEADLINES) {
+    const matches = headline instanceof RegExp ? state.keys.filter((key) => headline.test(key)) : state.keys.filter((key) => key === headline);
+    for (const key of matches) if (!columns.includes(key)) columns.push(key);
+  }
+  return columns;
+}
+
+function filteredRows() {
+  let rows = state.rows.filter((row) => Object.entries(state.filters).every(([key, value]) => value === "" || String(row[key]) === value));
+  if (state.sort) {
+    const { key, direction } = state.sort;
+    rows = [...rows].sort((a, b) => compare(a[key], b[key]) * direction || b["#"] - a["#"]);
+  } else {
+    rows = [...rows].sort((a, b) => b["#"] - a["#"]);
+  }
+  return rows;
+}
+
+function compare(a, b) {
+  const blankA = a === null || a === undefined, blankB = b === null || b === undefined;
+  if (blankA || blankB) return blankA === blankB ? 0 : blankA ? 1 : -1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+function render() {
+  renderToolbar();
+  renderTable();
+  renderDetail();
+  writeHash();
+}
+
+function renderToolbar() {
+  const toolbar = document.getElementById("toolbar");
+  const filterKeys = ["commit", "ingest_path", ...DIMENSIONS].filter((key) => state.keys.includes(key) && distinct(key).length > 1);
+  const filters = filterKeys.map((key) => {
+    const values = distinct(key).map(String);
+    if (key === "commit") values.reverse();
+    return `<label>${escapeHtml(key)} <select data-filter="${escapeHtml(key)}"><option value="">all</option>` +
+      values.map((value) => `<option${state.filters[key] === value ? " selected" : ""}>${escapeHtml(value)}</option>`).join("") +
+      `</select></label>`;
+  }).join("");
+  const picker = `<details class="columns"><summary>columns (${state.columns.length})</summary><div class="list">` +
+    `<label><input type="checkbox" data-reset> defaults</label>` +
+    state.keys.map((key) => `<label><input type="checkbox" data-column="${escapeHtml(key)}"${state.columns.includes(key) ? " checked" : ""}> ${escapeHtml(key)}</label>`).join("") +
+    `</div></details>`;
+  const shown = filteredRows().length;
+  toolbar.innerHTML = filters + picker + `<span class="count">${shown} of ${state.rows.length} rows</span>`;
+  toolbar.querySelectorAll("select[data-filter]").forEach((select) => select.addEventListener("change", () => {
+    state.filters[select.dataset.filter] = select.value;
+    renderTable();
+    toolbar.querySelector(".count").textContent = `${filteredRows().length} of ${state.rows.length} rows`;
+  }));
+  toolbar.querySelectorAll("input[data-column]").forEach((box) => box.addEventListener("change", () => {
+    const key = box.dataset.column;
+    state.columns = box.checked ? state.keys.filter((k) => state.columns.includes(k) || k === key) : state.columns.filter((k) => k !== key);
+    storage((store) => store.setItem(`journals.columns.${state.cell}`, JSON.stringify(state.columns)));
+    renderTable();
+  }));
+  const reset = toolbar.querySelector("input[data-reset]");
+  reset.addEventListener("change", () => {
+    storage((store) => store.removeItem(`journals.columns.${state.cell}`));
+    state.columns = defaultColumns();
+    renderToolbar();
+    renderTable();
+  });
+}
+
+function renderTable() {
+  const table = document.getElementById("table");
+  if (!state.cell) {
+    table.innerHTML = `<tr><td class="empty text">Pick a cell on the left.</td></tr>`;
+    return;
+  }
+  const rows = filteredRows();
+  const textual = (key) => state.rows.every((row) => row[key] === undefined || row[key] === null || typeof row[key] === "string");
+  const head = state.columns.map((key) => {
+    const arrow = state.sort && state.sort.key === key ? (state.sort.direction > 0 ? " ▲" : " ▼") : "";
+    return `<th class="${textual(key) ? "text" : ""}" data-sort="${escapeHtml(key)}">${escapeHtml(key)}${arrow}</th>`;
+  }).join("");
+  const body = rows.map((row) => {
+    const cells = state.columns.map((key) => {
+      const shown = formatValue(key, row[key]);
+      return `<td class="${shown.cls || ""}">${shown.html}</td>`;
+    }).join("");
+    const run = row.run_id === undefined ? "" : String(row.run_id);
+    return `<tr data-index="${row["#"]}" class="${run && run === state.run ? "selected" : ""}">${cells}</tr>`;
+  }).join("");
+  table.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
+  table.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    state.sort = state.sort && state.sort.key === key ? { key, direction: -state.sort.direction } : { key, direction: -1 };
+    renderTable();
+  }));
+  table.querySelectorAll("tbody tr").forEach((tr) => tr.addEventListener("click", () => {
+    const row = state.rows[Number(tr.dataset.index) - 1];
+    state.run = row.run_id === undefined ? `#${row["#"]}` : String(row.run_id);
+    renderTable();
+    renderDetail();
+    writeHash();
+    document.getElementById("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+
+function selectedRow() {
+  if (!state.run) return null;
+  if (state.run.startsWith("#")) return state.rows[Number(state.run.slice(1)) - 1] || null;
+  return state.rows.find((row) => String(row.run_id) === state.run) || null;
+}
+
+function renderDetail() {
+  const panel = document.getElementById("detail");
+  const row = selectedRow();
+  if (!row) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "block";
+  const curve = row.run_id === undefined ? null : state.curves[String(row.run_id)];
+  const fields = Object.keys(row).filter((key) => key !== "#").map((key) => {
+    const shown = formatValue(key, row[key]);
+    return `<div class="field"><span class="key">${escapeHtml(key)}</span><span class="value ${shown.cls || ""}">${shown.html}</span></div>`;
+  }).join("");
+  panel.innerHTML = `<h2>${escapeHtml(row.date || "")} · ${escapeHtml(row.commit || "")} · run ${escapeHtml(row.run_id ?? row["#"])}</h2>` +
+    (curve ? chart(row, curve) : "") + `<div class="fields">${fields}</div>`;
+}
+
+/** Lag over seconds from the run's start, with phase bands, stop and restart markers, and the lag bound. */
+function chart(row, samples) {
+  const width = 860, height = 276, left = 64, right = 16, top = 38, bottom = 30;
+  const origin = Date.parse(row.started_at);
+  const xs = samples.map((sample) => sample[0]);
+  const lags = samples.map((sample) => sample[1]).filter((lag) => lag !== null);
+  const bound = typeof row.lag_bound === "number" ? row.lag_bound : null;
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(1, ...lags, bound || 0) * 1.08;
+  const x = (seconds) => left + ((seconds - xMin) / Math.max(1e-9, xMax - xMin)) * (width - left - right);
+  const y = (lag) => top + (1 - lag / yMax) * (height - top - bottom);
+  const parts = [];
+  const phases = Object.keys(row).filter((key) => key.endsWith("_started_at") && row[key.replace("_started_at", "_finished_at")]);
+  phases.forEach((key, index) => {
+    const name = key.replace("_started_at", "");
+    const from = (Date.parse(row[key]) - origin) / 1000, to = (Date.parse(row[`${name}_finished_at`]) - origin) / 1000;
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+    const x1 = x(Math.max(xMin, from)), x2 = x(Math.min(xMax, to));
+    parts.push(`<rect x="${x1}" y="${top}" width="${Math.max(0, x2 - x1)}" height="${height - top - bottom}" fill="${index % 2 ? "var(--band-alt)" : "var(--band)"}"/>`);
+    parts.push(`<text x="${x1 + 4}" y="${top - 6}">${escapeHtml(name)}</text>`);
+  });
+  for (const key of ["stopped_at", "restarted_at"]) {
+    if (!row[key]) continue;
+    const at = x((Date.parse(row[key]) - origin) / 1000);
+    parts.push(`<line class="marker" x1="${at}" x2="${at}" y1="${top}" y2="${height - bottom}"/><text x="${at + 4}" y="${top + 12}">${key.replace("_at", "")}</text>`);
+  }
+  if (bound !== null) {
+    parts.push(`<line class="bound" x1="${left}" x2="${width - right}" y1="${y(bound)}" y2="${y(bound)}"/><text x="${width - right - 4}" y="${y(bound) - 4}" text-anchor="end">bound ${bound.toLocaleString("en-US")}</text>`);
+  }
+  let path = "", drawing = false;
+  for (const [seconds, lag] of samples) {
+    if (lag === null) { drawing = false; continue; }
+    path += `${drawing ? "L" : "M"}${x(seconds).toFixed(1)},${y(lag).toFixed(1)}`;
+    drawing = true;
+  }
+  parts.push(`<path class="lag" d="${path}"/>`);
+  for (let tick = 0; tick <= 4; tick++) {
+    const lag = (yMax / 1.08) * tick / 4;
+    parts.push(`<line class="axis" x1="${left}" x2="${width - right}" y1="${y(lag)}" y2="${y(lag)}"/><text x="${left - 6}" y="${y(lag) + 4}" text-anchor="end">${Math.round(lag).toLocaleString("en-US")}</text>`);
+    const seconds = xMin + (xMax - xMin) * tick / 4;
+    parts.push(`<text x="${x(seconds)}" y="${height - 10}" text-anchor="middle">${Math.round(seconds)} s</text>`);
+  }
+  const gaps = samples.filter((sample) => sample[1] === null).length;
+  parts.push(`<text x="${left}" y="12">lag, records${gaps ? ` · ${gaps} failed samples shown as gaps` : ""}</text>`);
+  return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="lag curve">${parts.join("")}</svg>`;
+}
+
+(async () => {
+  await loadCells();
+  const hash = readHash();
+  const first = hash.cell && state.cells.some((cell) => cell.cell === hash.cell) ? hash.cell : null;
+  if (first) {
+    await selectCell(first, hash.run);
+  } else {
+    render();
+  }
+  document.body.dataset.ready = "true";
+})();
+</script>
+</body>
+</html>
