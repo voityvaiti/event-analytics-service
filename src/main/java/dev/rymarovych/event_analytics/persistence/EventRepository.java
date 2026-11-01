@@ -9,6 +9,8 @@ public interface EventRepository {
   /**
    * Persists every event in one batched statement; an event ID already stored is skipped. Whether
    * the batch lands as a unit is the caller's to decide: this method opens no transaction.
+   *
+   * @return how many events were new
    */
-  void saveAll(List<NewEvent> events);
+  int saveAll(List<NewEvent> events);
 }
