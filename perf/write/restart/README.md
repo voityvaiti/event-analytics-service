@@ -22,4 +22,5 @@ The endpoint needs `app.persistence-consumer.control.enabled`, which `scripts/ac
 - `lag_at_restart`: the backlog when the start was requested.
 - `drain_after_restart_seconds`: from the start request until lag stayed under the bound.
 - `catch_up_events_per_sec`: events inserted per second over that drain, the consumer's rejoin included.
+- `drain_saturation`: what each part of the rig did over the same drain, and `saturation.jsonl` the run's per-second curve. See [Kafka settings and saturation](../../README.md#kafka-settings-and-saturation).
 - `lag.jsonl`: each run's curve, as in [steady](../steady).

@@ -198,16 +198,19 @@ mint_token() {
 
 # Run pinned k6 with the repo mounted and the host app reachable via --network host
 # (Linux). Docker Desktop needs host.docker.internal routing instead. Use the caller's
-# uid so summaries remain user-owned.
+# uid so summaries remain user-owned. The label lets the saturation sampler find the
+# container, which starts after it.
 #
 # Usage: k6_run <script.js> [extra docker/k6 args...]
 #
 # Forward common base URL, run ID, and summary settings. Later -e arguments override
 # earlier ones. Each cell must pass TOKEN explicitly to select its tenant.
+K6_CONTAINER_LABEL=perf.harness=k6
 k6_run() {
   local script="$1"
   shift
   docker run --rm --network host \
+    --label "$K6_CONTAINER_LABEL" \
     --user "$(id -u):$(id -g)" \
     --volume "$PWD":/work --workdir /work \
     --env BASE_URL --env RUN_ID --env SUMMARY_OUT \
@@ -349,6 +352,34 @@ stop_lag_sampler() {
   kill "$LAG_SAMPLER_PID" 2>/dev/null || true
   wait "$LAG_SAMPLER_PID" 2>/dev/null || true
   LAG_SAMPLER_PID=""
+}
+
+# Sample what each part of the rig is doing once a second until stop_saturation_sampler:
+# CPU of the host, the app and each container, disk, the consumer's busy share, the pool
+# and Postgres sessions. lib/saturation_samples.py takes and reads the samples. SATURATION
+# overrides the cell's default, on or off; off measures what the sampling itself costs.
+# An app whose process cannot be inspected is not sampled, and its row says null.
+#
+# Usage: start_saturation_sampler <file> <default: on|off>
+SATURATION_SAMPLER_PID=""
+start_saturation_sampler() {
+  local file=$1 pid
+  rm -f "$file"
+  [ "${SATURATION:-$2}" = on ] || return 0
+  pid=$(app_pid) || pid=""
+  if [ -z "$pid" ]; then
+    echo "Note: cannot find the process serving $BASE_URL; the run is not sampled for saturation." >&2
+    return 0
+  fi
+  python3 perf/lib/saturation_samples.py "$file" "$BASE_URL" "$pid" $$ "$K6_CONTAINER_LABEL" &
+  SATURATION_SAMPLER_PID=$!
+}
+
+stop_saturation_sampler() {
+  [ -n "$SATURATION_SAMPLER_PID" ] || return 0
+  kill "$SATURATION_SAMPLER_PID" 2>/dev/null || true
+  wait "$SATURATION_SAMPLER_PID" 2>/dev/null || true
+  SATURATION_SAMPLER_PID=""
 }
 
 # Reconcile a drained run against the table: ACCEPTED_EVENTS is what k6 saw answered
@@ -529,6 +560,16 @@ print(json.dumps({
     "partitions": round(partitions),
 }))
 PY
+}
+
+# The events table's index size in MB. Every insert-and-delete cycle grows it (see "The
+# floor between runs" in perf/README.md), so a series of heavy write runs drifts; rows
+# that record it show by how much.
+read_index_mb() {
+  psql_events -tAc "SELECT round(pg_indexes_size('events') / 1048576.0)" | tr -d '[:space:]' || {
+    echo "Could not read the size of the events indexes." >&2
+    return 1
+  }
 }
 
 # Read cumulative Hikari connection timeouts; cells journal the run's delta. This

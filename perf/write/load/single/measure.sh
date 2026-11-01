@@ -4,7 +4,7 @@
 # append one journal row. VUS=10 matches the default pool; higher concurrency adds
 # connection wait.
 #
-# Tunables: VUS (10), DURATION (60s).
+# Tunables: VUS (10), DURATION (60s), SATURATION (off).
 
 perf_write_load_single() {
   perf_write_load_cell perf/write/load/single/journal.jsonl \

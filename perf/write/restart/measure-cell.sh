@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # Stop the persistence consumer for a fixed downtime while single events keep arriving,
-# restart it, and journal how long the backlog took to drain. Lag is sampled every
-# second; the curve goes to lag.jsonl beside the journal.
+# restart it, and journal how long the backlog took to drain. Lag and the rig's saturation
+# are sampled every second; their curves go to lag.jsonl and saturation.jsonl beside the
+# journal, and the row summarises the saturation over the drain.
 #
 # Timeline: wait for the first accepted write, BASELINE_SECONDS, stop, poll until
 # STOPPED, DOWNTIME_SECONDS from that confirmation, start, poll until RUNNING. k6 keeps
@@ -146,14 +147,17 @@ perf_write_restart_cell() {
   local unaccepted=perf/write/restart/last-unaccepted.log
   local samples=perf/write/restart/last-lag-samples.txt
   local timeline=perf/write/restart/last-outage.txt
+  local saturation=perf/write/restart/last-saturation-samples.jsonl
   local curves=${journal%journal.jsonl}lag.jsonl
+  local saturation_curves=${journal%journal.jsonl}saturation.jsonl
 
   require_consumer_control || return 1
   restore_seed_baseline || return 1
 
-  local start_rows kafka_settings
+  local start_rows start_index_mb kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
+  start_index_mb=$(read_index_mb) || return 1
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
   kafka_settings=$(read_kafka_settings) || return 1
 
@@ -162,6 +166,7 @@ perf_write_restart_cell() {
   local ingested_before outage_pid outage_status=0
   ingested_before=$(read_metric_value events.ingested)
   start_lag_sampler "$samples"
+  start_saturation_sampler "$saturation" on
   (run_consumer_outage "$timeline" "$baseline" "$downtime" "$ingested_before") &
   outage_pid=$!
   k6_run "$script" \
@@ -171,6 +176,7 @@ perf_write_restart_cell() {
     -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
   wait "$outage_pid" || outage_status=$?
+  stop_saturation_sampler
   stop_lag_sampler
 
   local drain_seconds
@@ -202,18 +208,20 @@ perf_write_restart_cell() {
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
     "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$drain_budget" \
-    "$kafka_settings" <<'PY'
+    "$kafka_settings" "$start_index_mb" "$saturation" "$saturation_curves" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, "perf/lib")
 import lag_samples
+import saturation_samples
 
 (
     summary_path, samples_path, timeline_path, journal_path, curves_path, date, commit, cpu,
     cores, pool, request_metrics, scrape, ingest_path, schema_version, start_rows,
     accepted_events, missing_events, drain_seconds, drain_budget, kafka_settings,
-) = sys.argv[1:21]
+    start_index_mb, saturation_path, saturation_curves_path,
+) = sys.argv[1:24]
 
 MAX_UNACCEPTED_SHARE = 0.001
 MIN_VALID_SHARE = 0.8
@@ -223,6 +231,7 @@ with open(summary_path) as f:
 with open(timeline_path) as f:
     at = {event: int(millis) for event, millis in (line.split() for line in f if line.strip())}
 samples = lag_samples.load(samples_path)
+saturation = saturation_samples.load(saturation_path)
 drain_budget = float(drain_budget)
 
 
@@ -275,6 +284,7 @@ row = {
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),
+    "start_index_mb": int(start_index_mb),
     "rate": s["rate"],
     "write_timeout_seconds": s["write_timeout_seconds"],
     "max_vus": s["max_vus"],
@@ -311,6 +321,9 @@ row = {
     "accepted_events": int(accepted_events),
     "missing_events": int(missing_events),
     "drain_seconds": float(drain_seconds),
+    "drain_saturation": saturation_samples.summarize(
+        saturation, restart, run_end if drained_at is None else drained_at + 1
+    ),
 }
 
 with open(journal_path, "a") as f:
@@ -318,6 +331,10 @@ with open(journal_path, "a") as f:
 with open(curves_path, "a") as f:
     curve = lag_samples.curve(samples, run_start)
     f.write(json.dumps({"run_id": row["run_id"], "commit": commit, "samples": curve}) + "\n")
+if saturation:
+    with open(saturation_curves_path, "a") as f:
+        curve = saturation_samples.curve(saturation, run_start)
+        f.write(json.dumps({"run_id": row["run_id"], "commit": commit, **curve}) + "\n")
 
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))

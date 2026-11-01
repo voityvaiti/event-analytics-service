@@ -24,3 +24,4 @@ As in every write cell, an accepted event missing after the drain fails the cell
 - `measure_lag_segment_medians` and `measure_lag_segment_samples`: one entry per segment.
 - `measure_persisted_events_per_sec`: `events.persisted{outcome=inserted}` across the window. Recorded, not judged, as are `measure_lag_max`, accepted-write `measure_p95_ms`/`measure_p99_ms`, and `drain_seconds`.
 - `lag.jsonl` keeps each run's curve: `[seconds since the run started, lag, inserted-events counter]` per sample.
+- `measure_saturation`: what each part of the rig did over the measure phase, and `saturation.jsonl` its per-second curve. See [Kafka settings and saturation](../../README.md#kafka-settings-and-saturation).

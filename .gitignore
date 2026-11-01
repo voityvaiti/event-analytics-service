@@ -4,6 +4,7 @@ perf/**/last-summary.json
 perf/**/last-unaccepted.log
 perf/**/last-lag-samples.txt
 perf/**/last-outage.txt
+perf/**/last-saturation-samples.jsonl
 perf/**/__pycache__/
 .gradle
 build/

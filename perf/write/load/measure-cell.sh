@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # Warm, measure, reconcile, clean up, and journal one write load cell. Requires
-# perf/lib/harness.sh. Cleanup restores the corpus for the next cell.
+# perf/lib/harness.sh. Cleanup restores the corpus for the next cell. SATURATION=on also
+# samples the rig during the measured run and journals the summary; it is off by default
+# so the throughput series carries no sampling cost.
 #
 # Pass scenario, VUs, and duration explicitly to avoid leaking one cell's settings into
 # another. Batch metrics use the scenario's reported batch size.
@@ -12,6 +14,7 @@ perf_write_load_cell() {
   local journal=$1 script=$2 vus=$3 duration=$4 batch_size=${5:-}
   local summary=perf/write/load/last-summary.json
   local unaccepted=perf/write/load/last-unaccepted.log
+  local saturation=perf/write/load/last-saturation-samples.jsonl
   local batch=()
   [ -n "$batch_size" ] && batch=(-e BATCH_SIZE="$batch_size")
 
@@ -30,9 +33,11 @@ perf_write_load_cell() {
   # Measured run, from the corpus. Remove the previous summary first so a run
   # that dies produces no file to journal, rather than a stale one.
   rm -f "$summary" "$unaccepted"
+  start_saturation_sampler "$saturation" off
   k6_run "$script" "${batch[@]}" -e TOKEN="$WRITE_TOKEN" \
     -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw
+  stop_saturation_sampler
   local drain_seconds
   wait_until_persisted || return 1
   drain_seconds=$DRAIN_SECONDS
@@ -58,14 +63,18 @@ perf_write_load_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$kafka_settings" <<'PY'
+    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$kafka_settings" "$saturation" <<'PY'
 import json, sys
+
+sys.path.insert(0, "perf/lib")
+import lag_samples
+import saturation_samples
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, accepted_events, missing_events,
-    drain_seconds, kafka_settings,
-) = sys.argv[1:17]
+    drain_seconds, kafka_settings, saturation_path,
+) = sys.argv[1:18]
 with open(summary_path) as f:
     s = json.load(f)
 settings = json.loads(kafka_settings)
@@ -105,6 +114,11 @@ row = {
     "accepted_events": int(accepted_events),
     "missing_events": int(missing_events),
     "drain_seconds": float(drain_seconds),
+    "saturation": saturation_samples.summarize(
+        saturation_samples.load(saturation_path),
+        lag_samples.epoch_millis(s["started_at"]),
+        lag_samples.epoch_millis(s["finished_at"]),
+    ),
 }
 row = {name: value for name, value in row.items() if value is not None or name in settings}
 

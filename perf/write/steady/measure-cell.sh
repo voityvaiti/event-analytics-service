@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Offer single events at a fixed rate, sample the consumer's lag every second, then
-# drain, reconcile, clean up and journal one row with its verdict. The lag curve goes to
-# lag.jsonl beside the journal. The warm-up is the stream's first phase, so the consumer
-# reaches the measure phase already running at the offered rate.
+# Offer single events at a fixed rate, sample the consumer's lag and the rig's saturation
+# every second, then drain, reconcile, clean up and journal one row with its verdict. The
+# lag curve goes to lag.jsonl and the saturation curve to saturation.jsonl beside the
+# journal. The warm-up is the stream's first phase, so the consumer reaches the measure
+# phase already running at the offered rate.
 #
 # Verdict: every 30 s segment of the measure phase has at least 25 valid samples and a
 # median lag under one second of intake, and under 0.1% of its writes went unaccepted.
@@ -17,23 +18,28 @@ perf_write_steady_cell() {
   local summary=perf/write/steady/last-summary.json
   local unaccepted=perf/write/steady/last-unaccepted.log
   local samples=perf/write/steady/last-lag-samples.txt
+  local saturation=perf/write/steady/last-saturation-samples.jsonl
   local curves=${journal%journal.jsonl}lag.jsonl
+  local saturation_curves=${journal%journal.jsonl}saturation.jsonl
 
   restore_seed_baseline || return 1
 
-  local start_rows kafka_settings
+  local start_rows start_index_mb kafka_settings
   count_events || return 1
   start_rows=$CORPUS_ROWS
+  start_index_mb=$(read_index_mb) || return 1
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
   kafka_settings=$(read_kafka_settings) || return 1
 
   rm -f "$summary" "$unaccepted"
   start_lag_sampler "$samples"
+  start_saturation_sampler "$saturation" on
   k6_run "$script" \
     --env WRITE_TIMEOUT_SECONDS --env MAX_VUS --env PHASES \
     -e TOKEN="$WRITE_TOKEN" -e RATE="$rate" -e SCENARIO=steady-single \
     -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
+  stop_saturation_sampler
   stop_lag_sampler
 
   local drain_seconds
@@ -60,17 +66,19 @@ perf_write_steady_cell() {
     "$ARTIFACT_COMMIT" "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" \
     "$pool" "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" \
     "$start_rows" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
-    "$kafka_settings" <<'PY'
+    "$kafka_settings" "$start_index_mb" "$saturation" "$saturation_curves" <<'PY'
 import json, sys
 
 sys.path.insert(0, "perf/lib")
 import lag_samples
+import saturation_samples
 
 (
     summary_path, samples_path, journal_path, curves_path, date, commit, cpu, cores, pool,
     request_metrics, scrape, ingest_path, schema_version, start_rows, accepted_events,
-    missing_events, drain_seconds, kafka_settings,
-) = sys.argv[1:19]
+    missing_events, drain_seconds, kafka_settings, start_index_mb, saturation_path,
+    saturation_curves_path,
+) = sys.argv[1:22]
 
 SEGMENT_SECONDS = 30
 MIN_VALID_SAMPLES = 25
@@ -79,6 +87,7 @@ MAX_UNACCEPTED_SHARE = 0.001
 with open(summary_path) as f:
     s = json.load(f)
 samples = lag_samples.load(samples_path)
+saturation = saturation_samples.load(saturation_path)
 
 
 def r(value, digits=2):
@@ -121,6 +130,7 @@ row = {
     "request_metrics": request_metrics,
     "scrape": scrape,
     "start_rows": int(start_rows),
+    "start_index_mb": int(start_index_mb),
     "rate": s["rate"],
     "write_timeout_seconds": s["write_timeout_seconds"],
     "max_vus": s["max_vus"],
@@ -162,20 +172,27 @@ row.update(
         "accepted_events": int(accepted_events),
         "missing_events": int(missing_events),
         "drain_seconds": float(drain_seconds),
+        "measure_saturation": saturation_samples.summarize(saturation, measure_start, measure_end),
     }
 )
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
+run_start = lag_samples.epoch_millis(s["started_at"])
 with open(curves_path, "a") as f:
-    curve = lag_samples.curve(samples, lag_samples.epoch_millis(s["started_at"]))
+    curve = lag_samples.curve(samples, run_start)
     f.write(json.dumps({"run_id": row["run_id"], "commit": commit, "samples": curve}) + "\n")
+if saturation:
+    with open(saturation_curves_path, "a") as f:
+        curve = saturation_samples.curve(saturation, run_start)
+        f.write(json.dumps({"run_id": row["run_id"], "commit": commit, **curve}) + "\n")
 
+busy = (row["measure_saturation"] or {}).get("consumer_busy") or {}
 print("\nAppended to " + journal_path + ":")
 print(json.dumps(row))
 print(
     "PERF_RESULT write steady %s: %s | %d/s offered, %s/s persisted | lag medians %s "
-    "(bound %d, max %s) | %.3f%% not accepted, p99 %sms"
+    "(bound %d, max %s) | %.3f%% not accepted, p99 %sms | busiest consumer %s"
     % (
         row["scenario"],
         verdict,
@@ -186,6 +203,7 @@ print(
         row["measure_lag_max"],
         row["measure_unaccepted_share"] * 100,
         row["measure_p99_ms"],
+        busy.get("busiest", "n/a"),
     )
 )
 PY

@@ -4,7 +4,8 @@
 # to perf/write/steady/single/journal.jsonl and its lag curve to lag.jsonl. Requires
 # scripts/actions/perf/app.
 #
-# Tunables: RATE (3700), WRITE_TIMEOUT_SECONDS (1), MAX_VUS, PHASES, ROUNDS (1).
+# Tunables: RATE (3700), WRITE_TIMEOUT_SECONDS (1), MAX_VUS, PHASES, ROUNDS (1),
+# SATURATION (on).
 
 set -euo pipefail
 cd "$(dirname "$0")/../../../../.." || exit 1

@@ -68,12 +68,28 @@ scripts/actions/perf/journals                 # browse every journal on a local 
 
 Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you. `scripts/actions/perf/journals` shows them as a table per cell on `127.0.0.1:8765`, filtered by commit, ingest path and the cell's dimensions; a row opens every field and, for lag-sampling cells, its curve with phase bands and the lag bound.
 
-### Kafka settings
+### Kafka settings and saturation
 
 Every write and mixed row records the Kafka settings the running app used:
 
 - `linger_ms` comes from the app's command line, `--spring.kafka.producer.properties.linger.ms=<ms>`. It is null when the packaged config or the client's default decides. Setting linger any other way fails the run, because the row could not say what the producer used.
 - `consumer_concurrency` and `partitions` come from the app's consumer metrics: how many persistence consumers run, and how many partitions they hold between them.
+
+Steady and restart cells also sample what each part of the rig is doing once a second (`start_saturation_sampler`, `lib/saturation_samples.py`). Steady rows summarise the measure phase in `measure_saturation`, and restart rows the drain after the restart in `drain_saturation`. Load cells sample only with `SATURATION=on`, so their throughput series carries no sampling cost. `SATURATION=off` turns it off anywhere, to measure what the sampling costs. Each run's per-second curve goes to `saturation.jsonl` beside the journal.
+
+- **CPU** is in cores, so 1.0 is one whole core and the host's ceiling is `cores`: `host_cores`, `app_cores`, and `postgres_cores`, `kafka_cores` and `k6_cores` from each container's cgroup. Each has its mean and highest second. `sampler_cores` is the sampler's own cost.
+- **`consumer_busy`** is the share of the time each consumer spent processing, from the `spring.kafka.listener` timer, for the busiest consumer and on average. The listener runs on a virtual thread, so no thread's CPU shows it: near 1.0 means the consumer is the limit, whether it computed or waited for Postgres.
+- **`disk_busy`** is the share of the time the Docker disk was busy. `postgres_written_mb_per_sec` and `kafka_written_mb_per_sec` show what each container wrote.
+- **Pool:** `pool_active`, `pool_pending` and `pool_acquire_wait_ms`.
+- **`postgres_sessions`**: the average number of sessions on CPU, waiting by wait class (`IO`, `Lock`, `LWLock` and others), or idle inside a transaction.
+
+Read a limit off these figures in order:
+
+1. A part near its ceiling is the limit.
+2. If the whole host is near `cores`, the machine is: k6 competes for the same cores, so the figure describes the rig, not the service.
+3. If nothing is near a ceiling but lag grows, the limit is waiting. Look at a busy consumer, pending connections, and sessions waiting on `Lock` or `IO`.
+
+Steady and restart rows also record `start_index_mb`, the events indexes' size before the run. Heavy write runs grow it (see [The floor between runs](#the-floor-between-runs)), and later steps of a series inherit the growth.
 
 ## Rounds and the noise floor
 
@@ -164,6 +180,7 @@ perf/
     compare-runs.mjs    the main-vs-PR comparison CI renders, over every load cell
     annotate-runs.sh    puts the window each row was measured in on the dashboard
     lag_samples.py      reads the once-a-second lag samples the harness takes
+    saturation_samples.py  samples and reads what each part of the rig is doing
   viewer/
     server.py           serves the journals read-only to the page, 127.0.0.1 only
     index.html          the page: tables, filters, row details, lag curves
@@ -208,7 +225,7 @@ Write and read paths split by workload, then request shape or endpoint. Mixed ce
 
 Scenarios and measurement routines live at workload level. Read cells share a scenario; write shapes need separate scenarios for their request bodies. All cells within a workload use the same measurement routine.
 
-- `lib/harness.sh`: dependencies, app/image checks, seeding, drain, reconciliation, cleanup, and stamps for pool, Kafka settings, schema, CPU, running build, metrics, and scraping.
+- `lib/harness.sh`: dependencies, app/image checks, seeding, drain, reconciliation, cleanup, saturation sampling, and stamps for pool, Kafka settings, schema, CPU, running build, metrics, and scraping.
 - `lib/k6-ingest.js`: shared ingest request contracts.
 - `lib/event-generator.js`: event contents for scenarios and the corpus.
 - `<workload>/measure-cell.sh`: warm-up, measurement, journal, and digest entry; expects the harness to be sourced.
