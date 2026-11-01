@@ -31,5 +31,8 @@ class PersistenceConsumerControlDisabledIntegrationTest {
     mockMvc
         .perform(post("/internal/persistence-consumer/stop").with(controlToken))
         .andExpect(status().isNotFound());
+    mockMvc
+        .perform(post("/internal/persistence-consumer/dead-letters/redrive").with(controlToken))
+        .andExpect(status().isNotFound());
   }
 }
