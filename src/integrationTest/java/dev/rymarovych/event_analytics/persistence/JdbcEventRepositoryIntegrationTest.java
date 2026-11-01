@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.persistence;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.rymarovych.event_analytics.InjectedDatabaseFailure;
@@ -20,7 +21,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.node.JsonNodeFactory;
 
-/** Pins which database failures the consumer may dead-letter and which it must retry. */
+/** Pins how many events count as new, and which failures may be dead-lettered or retried. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class JdbcEventRepositoryIntegrationTest {
@@ -32,6 +33,12 @@ class JdbcEventRepositoryIntegrationTest {
   void cleanUp() {
     InjectedDatabaseFailure.remove(jdbcClient);
     jdbcClient.sql("DELETE FROM events").update();
+  }
+
+  @Test
+  void countsOnlyEventsNotStoredBeforeAsNew() {
+    assertThat(repository.saveAll(List.of(event("evt_1"), event("evt_2")))).isEqualTo(2);
+    assertThat(repository.saveAll(List.of(event("evt_2"), event("evt_3")))).isEqualTo(1);
   }
 
   @Test
