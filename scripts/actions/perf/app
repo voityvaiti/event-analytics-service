@@ -2,8 +2,9 @@
 
 # Launch the packaged app with unrestricted JIT; bootRun's C1 limit loses ~15% write
 # throughput and is rejected by the harness. Start Compose and configure the datasource
-# explicitly because the jar lacks spring-boot-docker-compose. Run in the foreground
-# until Ctrl-C.
+# explicitly because the jar lacks spring-boot-docker-compose. Enable the consumer
+# control endpoint the restart cell drives; it still needs a persistence:control token.
+# Run in the foreground until Ctrl-C.
 #
 # Pass app arguments directly, e.g. scripts/actions/perf/app --server.port=9090.
 
@@ -35,4 +36,5 @@ exec java -jar "$jar" \
   --spring.datasource.url=jdbc:postgresql://localhost:5432/event_analytics \
   --spring.datasource.username=event_analytics \
   --spring.datasource.password=event_analytics \
+  --app.persistence-consumer.control.enabled=true \
   "$@"
