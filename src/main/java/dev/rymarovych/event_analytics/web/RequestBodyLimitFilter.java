@@ -15,10 +15,7 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/**
- * Caps ingest bodies at 512 KiB by counting the bytes actually read, so a body sent without
- * Content-Length meets the same limit; the overflow reaches the client as a 413.
- */
+/** Caps ingest bodies at 512 KiB by counting bytes read, with or without Content-Length. */
 @Component
 class RequestBodyLimitFilter extends OncePerRequestFilter {
 

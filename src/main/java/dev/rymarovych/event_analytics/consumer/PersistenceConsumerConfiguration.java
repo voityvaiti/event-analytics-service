@@ -10,10 +10,7 @@ import org.springframework.util.backoff.FixedBackOff;
 @Configuration(proxyBeanMethods = false)
 class PersistenceConsumerConfiguration {
 
-  /**
-   * The listener handles its own failures; should anything still escape it, retry forever rather
-   * than the default of logging and skipping the records after ten attempts.
-   */
+  /** Retries what escapes the listener forever, instead of skipping it after ten attempts. */
   @Bean
   CommonErrorHandler neverSkippingErrorHandler() {
     return new DefaultErrorHandler(new FixedBackOff(1000, FixedBackOff.UNLIMITED_ATTEMPTS));

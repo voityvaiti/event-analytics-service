@@ -12,10 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-/**
- * Publishes to events.raw within one budget that starts before {@code send()}, which itself blocks
- * on metadata and buffer space up to {@code max.block.ms}.
- */
+/** Publishes to events.raw within one budget that starts before {@code send()} may block. */
 @Component
 class KafkaEventPublisher implements EventPublisher {
 

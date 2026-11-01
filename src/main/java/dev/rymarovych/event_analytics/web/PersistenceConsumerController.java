@@ -9,10 +9,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Service endpoints for the perf harness to stop and restart the persistence consumer. Absent
- * unless enabled; SecurityConfig requires the {@code persistence:control} scope.
- */
+/** Lets the perf harness stop and restart the consumer; off by default, needs its scope. */
 @RestController
 @RequestMapping("/internal/persistence-consumer")
 @ConditionalOnBooleanProperty("app.persistence-consumer.control.enabled")

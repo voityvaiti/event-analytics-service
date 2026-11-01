@@ -17,11 +17,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
-/**
- * The persistence group. Stores whole records in shared transactions; when the database refuses a
- * group, retries its records one by one and dead-letters only those refused alone. Any other
- * failure is retried from the first record not yet handled, so offsets never pass an unstored one.
- */
+/** The persistence group: stores records in groups, dead-letters refusals, retries the rest. */
 @Component
 class EventsRecordListener {
 
