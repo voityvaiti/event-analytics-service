@@ -1,5 +1,6 @@
 package dev.rymarovych.event_analytics.consumer;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -97,6 +98,63 @@ class EventsRecordListenerTest {
     order.verify(deadLetters).publish(second, refused);
     order.verify(acknowledgment).nack(1, EventsRecordListener.RETRY_INTERVAL);
     order.verifyNoMoreInteractions();
+  }
+
+  @Test
+  void countsNewAndDuplicateEventsOnceTheirGroupIsStored() {
+    var first = record(10);
+    var second = record(11);
+    when(persistence.persist(List.of(event(10), event(11)))).thenReturn(1);
+
+    listener.onRecords(List.of(first, second), acknowledgment);
+
+    assertThat(persisted("inserted")).isEqualTo(1.0);
+    assertThat(persisted("duplicate")).isEqualTo(1.0);
+    assertThat(visibilityDelays()).isEqualTo(2);
+  }
+
+  @Test
+  void countsARefusedGroupOnlyByTheRecordsStoredAlone() {
+    var first = record(10);
+    var second = record(11);
+    var third = record(12);
+    var refused = refuseGroup();
+    when(persistence.persist(List.of(event(10)))).thenReturn(1);
+    doThrow(refused).when(persistence).persist(List.of(event(11)));
+    when(persistence.persist(List.of(event(12)))).thenReturn(1);
+
+    listener.onRecords(List.of(first, second, third), acknowledgment);
+
+    assertThat(persisted("inserted")).isEqualTo(2.0);
+    assertThat(persisted("duplicate")).isZero();
+    assertThat(deadLetterCount()).isEqualTo(1.0);
+    assertThat(visibilityDelays()).isEqualTo(2);
+  }
+
+  @Test
+  void countsNoDeadLetterTheTopicDidNotConfirm() {
+    var malformed = record(10);
+    var failure = new MalformedMessageException("Unreadable message");
+    when(codec.decode(malformed.value())).thenThrow(failure);
+    doThrow(new IllegalStateException("Dead-letter publication failed"))
+        .when(deadLetters)
+        .publish(malformed, failure);
+
+    listener.onRecords(List.of(malformed), acknowledgment);
+
+    assertThat(deadLetterCount()).isZero();
+  }
+
+  private double persisted(String outcome) {
+    return meterRegistry.get("events.persisted").tag("outcome", outcome).counter().count();
+  }
+
+  private double deadLetterCount() {
+    return meterRegistry.get("persistence.consumer.dead.letters").counter().count();
+  }
+
+  private long visibilityDelays() {
+    return meterRegistry.get("events.visibility.delay").timer().count();
   }
 
   private EventsRefusedByStorageException refuseGroup() {
