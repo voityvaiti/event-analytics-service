@@ -212,6 +212,13 @@ k6_run() {
     "$K6_IMAGE" run "$script"
 }
 
+# One run ID for every init context of a k6 run. Left to the scenario, each VU and
+# handleSummary take their own Date.now(), and the summary's run_id stops prefixing the
+# run's event IDs. An exported RUN_ID is kept.
+new_run_id() {
+  printf '%s' "${RUN_ID:-$(date +%s%3N)}"
+}
+
 psql_events() {
   docker compose exec -T postgres psql -U event_analytics -d event_analytics "$@"
 }
@@ -285,6 +292,54 @@ wait_until_persisted() {
     lag=$(read_consumer_lag)
   done
   DRAIN_SECONDS=$(python3 -c "print(round(($(date +%s%N) - $started_ns) / 1e9, 1))")
+}
+
+# Reconcile a drained run against the table: ACCEPTED_EVENTS is what k6 saw answered
+# 202, MISSING_EVENTS how many of those have no row. Rows whose ID the run logged as
+# unaccepted are left out of the count: k6 gave up on those requests, yet they may
+# still have been stored, and counting them would hide a lost accepted event.
+#
+# Usage: reconcile_accepted <summary> <unaccepted_log>
+reconcile_accepted() {
+  local summary=$1 log=$2 run_id stored
+  read -r run_id ACCEPTED_EVENTS < <(python3 -c '
+import json, sys
+
+with open(sys.argv[1]) as summary_file:
+    summary = json.load(summary_file)
+
+print(summary["run_id"], round(summary.get("accepted_events") or 0))
+' "$summary") || {
+    echo "Could not read the run and its accepted events from $summary." >&2
+    return 1
+  }
+  stored=$({
+    echo 'CREATE TEMP TABLE unaccepted (event_id TEXT);'
+    echo 'COPY unaccepted FROM STDIN;'
+    if [ -f "$log" ]; then sed -n 's/^unaccepted //p' "$log"; fi
+    echo '\.'
+    echo "SELECT count(*) FROM events e
+          WHERE e.tenant_name = '$WRITE_BATCH_SOURCE' AND starts_with(e.event_id, 'evt_${run_id}_')
+            AND NOT EXISTS (SELECT 1 FROM unaccepted u WHERE u.event_id = e.event_id);"
+  } | psql_events -qtA -v ON_ERROR_STOP=1 | tr -d '[:space:]')
+  [[ $stored =~ ^[0-9]+$ ]] || {
+    echo "Could not count the stored events of run $run_id." >&2
+    return 1
+  }
+  MISSING_EVENTS=$((ACCEPTED_EVENTS - stored))
+}
+
+# Fail a cell, once its row is journalled, when reconcile_accepted found accepted events
+# without a row, or rows k6 neither saw accepted nor logged.
+require_nothing_missing() {
+  if [ "$MISSING_EVENTS" -gt 0 ]; then
+    echo "$MISSING_EVENTS of $ACCEPTED_EVENTS accepted events are not in the table after the consumer drained." >&2
+    return 1
+  fi
+  if [ "$MISSING_EVENTS" -lt 0 ]; then
+    echo "$((-MISSING_EVENTS)) stored events were neither accepted nor logged as unaccepted; nothing vouches for this run." >&2
+    return 1
+  fi
 }
 
 # Once the consumer has drained, delete only test writes, then VACUUM for dead rows and

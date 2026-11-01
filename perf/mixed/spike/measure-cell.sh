@@ -11,6 +11,7 @@ perf_mixed_spike_cell() {
   local journal=$1 endpoint=$2 group_by=$3
   local script=perf/mixed/spike/ingest-under-read-spike.js
   local summary=perf/mixed/spike/last-summary.json
+  local unaccepted=perf/mixed/spike/last-unaccepted.log
 
   warm_reads "$endpoint" "$group_by"
   k6_run perf/write/load/ingest-events.js -e TOKEN="$WRITE_TOKEN" \
@@ -23,7 +24,7 @@ perf_mixed_spike_cell() {
   ARTIFACT_COMMIT=$(read_artifact_commit) || return 1
   timeouts_before=$(read_connection_timeouts) || return 1
 
-  rm -f "$summary"
+  rm -f "$summary" "$unaccepted"
   k6_run "$script" \
     --env SEED_ANCHOR --env SEED_SPREAD_DAYS --env SPIKE_WINDOW \
     --env READ_BASELINE_RATE --env READ_SPIKE_RATE --env READ_MAX_VUS \
@@ -31,8 +32,15 @@ perf_mixed_spike_cell() {
     --env BASELINE_SECONDS --env SPIKE_SECONDS --env RECOVERY_SECONDS \
     -e ENDPOINT="$endpoint" -e GROUP_BY="$group_by" \
     -e READ_TOKEN="$SEED_TOKEN" -e WRITE_TOKEN="$WRITE_TOKEN" \
-    -e SUMMARY_OUT="$summary" || true
+    -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
+    -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw || true
   timeouts_after=$(read_connection_timeouts) || return 1
+  local drain_seconds
+  wait_until_persisted || return 1
+  drain_seconds=$DRAIN_SECONDS
+  if [ -s "$summary" ]; then
+    reconcile_accepted "$summary" "$unaccepted" || return 1
+  fi
   restore_seed_baseline || return 1
   [ -s "$summary" ] || {
     echo "Mixed run produced no summary at $summary — did the app stay up?" >&2
@@ -50,13 +58,15 @@ perf_mixed_spike_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$timeouts_before" "$timeouts_after" <<'PY'
+    "$timeouts_before" "$timeouts_after" "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" \
+    <<'PY'
 import json, sys
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, timeouts_before, timeouts_after,
-) = sys.argv[1:15]
+    accepted_events, missing_events, drain_seconds,
+) = sys.argv[1:18]
 
 with open(summary_path) as f:
     s = json.load(f)
@@ -125,6 +135,9 @@ for phase, p in s["phases"].items():
 
 row["write_dropped"] = round(s["write_dropped"])
 row["connection_timeouts"] = int(timeouts_after) - int(timeouts_before)
+row["accepted_events"] = int(accepted_events)
+row["missing_events"] = int(missing_events)
+row["drain_seconds"] = float(drain_seconds)
 
 with open(journal_path, "a") as f:
     f.write(json.dumps(row) + "\n")
@@ -165,4 +178,5 @@ PY
   echo "$out"
   perf_result "$(printf '%s\n' "$out" | sed -n 's/^PERF_RESULT //p')"
   perf_journalled "$journal"
+  require_nothing_missing
 }
