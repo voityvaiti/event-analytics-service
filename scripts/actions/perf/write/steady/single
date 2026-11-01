@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# Offer single events at a fixed rate and judge whether the consumer keeps up; append
+# to perf/write/steady/single/journal.jsonl and its lag curve to lag.jsonl. Requires
+# scripts/actions/perf/app.
+#
+# Tunables: RATE (3700), WRITE_TIMEOUT_SECONDS (1), MAX_VUS, PHASES, ROUNDS (1).
+
+set -euo pipefail
+cd "$(dirname "$0")/../../../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/steady/measure-cell.sh
+source perf/write/steady/single/measure.sh
+
+perf_bootstrap
+perf_run_tests "write steady single:perf_write_steady_single"
