@@ -51,6 +51,7 @@ export function handleSummary(data) {
   const summary = {
     scenario: SCENARIO,
     run_id: RUN_ID,
+    accepted_events: metric(data, 'accepted_events', 'count'),
     started_at: run.started_at,
     finished_at: run.finished_at,
     base_url: BASE_URL,
