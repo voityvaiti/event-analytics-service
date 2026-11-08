@@ -81,9 +81,13 @@ svg.chart .marker { stroke: var(--muted); stroke-dasharray: 2 3; }
 "use strict";
 
 const IDENTITY = ["date", "commit", "ingest_path", "start_rows"];
-const DIMENSIONS = ["scenario", "endpoint", "group_by", "window", "limit", "batch_size", "vus", "duration"];
+const DIMENSIONS = [
+  "scenario", "endpoint", "group_by", "window", "limit", "batch_size", "vus", "duration",
+  "rate", "linger_ms", "consumer_concurrency",
+];
 const HEADLINES = [
-  "verdict", "recovered", "throughput_rps", "events_per_sec", "p95_ms", "p99_ms", /^windows\.[^.]+\.p95_ms$/,
+  "verdict", "recovered", "throughput_rps", "events_per_sec", "persisted_events_per_sec",
+  "p95_ms", "p99_ms", /^windows\.[^.]+\.p95_ms$/,
   "spike_achieved_rps", "spike_p95_ms", "recovery_p95_ms", "baseline_p95_ms",
   "measure_persisted_events_per_sec", "measure_lag_segment_medians", "measure_lag_max",
   "measure_unaccepted_share", "measure_p99_ms",
@@ -91,6 +95,7 @@ const HEADLINES = [
   "baseline_write_unaccepted_share", "spike_write_unaccepted_share", "recovery_write_unaccepted_share",
   "baseline_lag_median", "spike_lag_max", "recovery_lag_settled_seconds", "spike_read_p95_ms", "recovery_read_p95_ms",
   "missing_events", "drain_seconds",
+  /^(measure_|drain_)?saturation\.(host_cores\.mean|consumer_busy\.busiest)$/,
 ];
 const PASSING = new Set(["survived", "kept up", "drained"]);
 
