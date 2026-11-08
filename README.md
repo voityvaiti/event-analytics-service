@@ -73,7 +73,7 @@ The command is idempotent and validates against `pg_timezone_names`; an invalid 
 ./gradlew test     # tests only
 ```
 
-IntelliJ users get the same actions as run configs under `.run/` (_CHECK - Full_, _LINT - …_, _TEST - Coverage Report_, _PERF - …_); the underlying shell wrappers live in `scripts/actions/`.
+IntelliJ users get the same actions as run configs under `.run/`, in folders: _APP_, _CHECK_ (_Full_, _Lint_, _Format_) and _PERF_. The underlying shell wrappers live in `scripts/actions/`; `check` also prints a coverage summary, `lint` runs Spotless and Error Prone + NullAway without tests, and `format` applies Spotless.
 
 Optionally install the git pre-commit hook once after cloning:
 

@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Fast static checks without tests: Spotless formatting, and Error Prone + NullAway by
+# compiling main and test sources. --rerun-tasks forces the compile, so the checks run even
+# when nothing changed.
+
+cd "$(dirname "$0")/../.." || exit 1
+./gradlew --rerun-tasks spotlessCheck compileJava compileTestJava "$@"

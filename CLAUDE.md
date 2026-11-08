@@ -1,7 +1,7 @@
 ## Build & checks
 
 - **Full gate:** `./gradlew check` — Spotless (format), Error Prone + NullAway (compile-time bug & nullness checks), tests, and the JaCoCo report. Same command CI runs.
-- **IDE run configs** (`.run/`) wrap the gradle tasks as shell actions under `scripts/actions/`: _CHECK - Full_, _LINT - Spotless Check/Apply_, _LINT - Error Prone + NullAway_, _TEST - Coverage Report_.
+- **IDE run configs** (`.run/`, in folders) wrap the shell actions under `scripts/actions/`: _CHECK_ holds _Full_ (`check`, with a coverage summary), _Lint_ (Spotless + Error Prone + NullAway, no tests) and _Format_ (Spotless apply); _PERF_ runs `perf/run` with the cell selection filled in.
 
 ## Conventions
 

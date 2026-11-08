@@ -1,7 +1,32 @@
 #!/bin/bash
 
-# Full quality gate: Spotless check, Error Prone + NullAway (via compile),
-# tests, and the JaCoCo report. Same command CI runs on every PR.
+# Full quality gate: Spotless check, Error Prone + NullAway (via compile), tests, and the
+# JaCoCo report. Same command CI runs on every PR. JaCoCo only writes files, so the totals
+# are read back from its XML and printed; the report's last counter of each type is the
+# total. Full HTML: build/reports/jacoco/test/html/index.html.
 
 cd "$(dirname "$0")/../.." || exit 1
-./gradlew check "$@"
+./gradlew check "$@" || exit $?
+
+XML="build/reports/jacoco/test/jacocoTestReport.xml"
+[ -f "$XML" ] || { echo "No coverage XML at $XML"; exit 0; }
+
+echo
+echo "Coverage summary:"
+grep -o '<counter type="[A-Z]*" missed="[0-9]*" covered="[0-9]*"/>' "$XML" \
+  | sed -E 's/.*type="([A-Z]*)" missed="([0-9]*)" covered="([0-9]*)".*/\1 \2 \3/' \
+  | awk '
+      { missed[$1] = $2; covered[$1] = $3 }
+      END {
+        order = "INSTRUCTION BRANCH LINE METHOD CLASS COMPLEXITY"
+        n = split(order, types, " ")
+        for (i = 1; i <= n; i++) {
+          t = types[i]
+          if (!(t in covered)) continue
+          total = covered[t] + missed[t]
+          pct = total > 0 ? 100 * covered[t] / total : 0
+          printf "  %-12s %6.1f%%  (%d/%d)\n", t, pct, covered[t], total
+        }
+      }'
+echo
+echo "  HTML: build/reports/jacoco/test/html/index.html"
