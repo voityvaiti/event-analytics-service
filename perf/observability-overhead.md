@@ -27,7 +27,7 @@ Jar `3fcc994`, stamped beside the jar at build time and checked against the runn
 Nine visits in the order **A B C / C B A / A B C**, two measured rounds each: six rows per arm per cell, with no arm holding a fixed position in the sequence.
 
 ```bash
-ROUNDS=2 scripts/actions/perf/write/load/all   # once per visit, arm set by how the app was started
+ROUNDS=2 scripts/actions/perf/run write load   # once per visit, arm set by how the app was started
 ```
 
 ## Result: no measured effect, either shape

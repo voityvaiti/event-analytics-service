@@ -45,25 +45,15 @@ Steady, restart and mixed cells also sample the lag once a second while k6 runs 
 
 k6 and the seeder run in pinned containers (`K6_IMAGE`, default `grafana/k6:0.50.0`, and `NODE_IMAGE`). The shared startup script brings up Compose dependencies. Requests use bearer tokens; see [Tenants and tokens](#tenants-and-tokens).
 
-IDE configurations in `.run/` wrap the actions below. Use _PERF - App_ to start the app; _APP - Start_ is for development.
+`scripts/actions/perf/run` runs every cell whose name starts with its arguments; the names live in `perf/{write,read,mixed}/tests.sh`. The IDE configurations in `.run/` (folders _PERF_, _PERF write_, _PERF read_) are this script with the arguments filled in. Use _App_ in _PERF_ to start the app; _Start_ in _APP_ is for development.
 
 ```bash
-scripts/actions/perf/write/load/<shape>       # one request shape's throughput
-scripts/actions/perf/write/load/all           # every write load cell
-scripts/actions/perf/write/spike/<shape>      # one request shape's surge
-scripts/actions/perf/write/spike/all          # every write spike cell
-scripts/actions/perf/write/steady/<shape>     # one fixed offered rate, lag judged
-scripts/actions/perf/write/steady/ladder      # climb steady rates until the consumer falls behind
-scripts/actions/perf/write/restart/<shape>    # the consumer stopped for 60 s under intake
-scripts/actions/perf/write/all                # every write cell, every workload
-scripts/actions/perf/read/load/<endpoint>     # one read endpoint's latency
-scripts/actions/perf/read/load/all            # every read load cell
-scripts/actions/perf/read/spike/<endpoint>    # one read surge
-scripts/actions/perf/read/spike/all           # every read spike cell
-scripts/actions/perf/read/all                 # every read cell, both workloads
-scripts/actions/perf/mixed/spike/<endpoint>   # steady ingest under one read surge
-scripts/actions/perf/mixed/all                # every mixed cell
-scripts/actions/perf/all                      # everything, one combined digest
+scripts/actions/perf/run                      # list every cell
+scripts/actions/perf/run write load batch     # one cell
+scripts/actions/perf/run write load           # every write load cell; likewise write spike, write steady, read load …
+scripts/actions/perf/run write                # every write cell
+scripts/actions/perf/run all                  # everything, writes before reads, one combined digest
+scripts/actions/perf/ladder                   # climb steady rates until the consumer falls behind
 scripts/actions/perf/journals                 # browse every journal on a local page
 ```
 
@@ -94,7 +84,7 @@ Steady and restart rows also record `start_index_mb`, the events indexes' size b
 
 ### Experiments
 
-`JOURNAL` points the steady, restart and single-event load cells at another journal, so an experiment's rows never mix with a cell's series. `scripts/actions/perf/write/steady/ladder` climbs the steady stream through `LADDER_RATES` and stops at the first rate whose verdict is not `kept up`, writing to `perf/experiments/async-capacity/ladder/<single|batch>/` by default. `BATCH_SIZE` above 1 sends batches. The ladder caps `MAX_VUS` at 4,000, because the steady cell's 1.1 VUs per request/s would need tens of thousands at the top rates. A rate k6 cannot fully offer then ends the ladder as `RATE NOT OFFERED`, not as the server's limit. Results are in [the async write capacity experiment](./async-capacity-experiment.md).
+`JOURNAL` points the steady, restart and single-event load cells at another journal, so an experiment's rows never mix with a cell's series. `scripts/actions/perf/ladder` climbs the steady stream through `LADDER_RATES` and stops at the first rate whose verdict is not `kept up`, writing to `perf/experiments/async-capacity/ladder/<single|batch>/` by default. `BATCH_SIZE` above 1 sends batches. The ladder caps `MAX_VUS` at 4,000, because the steady cell's 1.1 VUs per request/s would need tens of thousands at the top rates. A rate k6 cannot fully offer then ends the ladder as `RATE NOT OFFERED`, not as the server's limit. Results are in [the async write capacity experiment](./async-capacity-experiment.md).
 
 ## Rounds and the noise floor
 

@@ -91,7 +91,7 @@ The [k6 suite](./perf) tracks throughput, latency, and recovery:
 
 Each test appends a journal row with its machine and configuration. Compare runs on the same machine under similar conditions, looking for significant shifts rather than small deltas.
 
-Start the app with `scripts/actions/perf/app`, then run actions under `scripts/actions/perf/` or the _PERF - …_ IDE configurations. k6 runs in a pinned Docker container. CI also offers a per-PR throughput comparison via the `perf` label. See [perf/README.md](./perf/README.md) for setup, interpretation, and adding tests.
+Start the app with `scripts/actions/perf/app`, then run cells with `scripts/actions/perf/run` (no argument lists them) or the IDE configurations in the _PERF_ folders. k6 runs in a pinned Docker container. CI also offers a per-PR throughput comparison via the `perf` label. See [perf/README.md](./perf/README.md) for setup, interpretation, and adding tests.
 
 ## Observability
 

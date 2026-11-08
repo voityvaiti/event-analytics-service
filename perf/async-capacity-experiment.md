@@ -115,9 +115,9 @@ At 90,000/s lag climbed for two minutes, then held near 1,800 records, twice the
 
 ```bash
 scripts/actions/perf/app --spring.kafka.producer.properties.linger.ms=5 --spring.kafka.listener.concurrency=3
-LADDER_RATES="3700 7500 15000 20000 25000 30000" scripts/actions/perf/write/steady/ladder
-BATCH_SIZE=100 LADDER_RATES="60000 75000 80000 85000 90000" scripts/actions/perf/write/steady/ladder
-BATCH_SIZE=100 LADDER_RATES=85000 ROUNDS=3 scripts/actions/perf/write/steady/ladder
+LADDER_RATES="3700 7500 15000 20000 25000 30000" scripts/actions/perf/ladder
+BATCH_SIZE=100 LADDER_RATES="60000 75000 80000 85000 90000" scripts/actions/perf/ladder
+BATCH_SIZE=100 LADDER_RATES=85000 ROUNDS=3 scripts/actions/perf/ladder
 ```
 
-The consumer comparison runs `scripts/actions/perf/write/restart/single` with `RATE=3700 DOWNTIME_SECONDS=300 DRAIN_BUDGET_SECONDS=120 AFTER_SECONDS=150` and `JOURNAL` pointed at `experiments/async-capacity/concurrency/restart-single/`, the app launched with `--spring.kafka.listener.concurrency=1` or `3`.
+The consumer comparison runs `scripts/actions/perf/run write restart single` with `RATE=3700 DOWNTIME_SECONDS=300 DRAIN_BUDGET_SECONDS=120 AFTER_SECONDS=150` and `JOURNAL` pointed at `experiments/async-capacity/concurrency/restart-single/`, the app launched with `--spring.kafka.listener.concurrency=1` or `3`.

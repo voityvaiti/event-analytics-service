@@ -45,12 +45,12 @@ Spike cells report no spread because recovery combines several metrics; see [the
 
 ```bash
 # App must be running on the host; the action brings backing services up itself.
-scripts/actions/perf/write/spike/single      # one event per request
-scripts/actions/perf/write/spike/batch       # 100 events per request
-scripts/actions/perf/write/spike/all         # every write spike cell
+scripts/actions/perf/run write spike single   # one event per request
+scripts/actions/perf/run write spike batch    # 100 events per request
+scripts/actions/perf/run write spike          # every write spike cell
 
 # Tunables via env (each cell's defaults are sized for its own ceiling):
-SPIKE_RATE=12000 SPIKE_SECONDS=45 MAX_VUS=2000 scripts/actions/perf/write/spike/single
+SPIKE_RATE=12000 SPIKE_SECONDS=45 MAX_VUS=2000 scripts/actions/perf/run write spike single
 ```
 
 Tunables: `SPIKE_RATE` (per cell), `BASELINE_RATE`, `BASELINE_SECONDS` (20), `SPIKE_SECONDS` (30), `RECOVERY_SECONDS` (30), `MAX_VUS` (1000). The raw k6 summary of the last run lands in `perf/write/spike/last-summary.json` (gitignored).

@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Run the perf cells whose names start with the given words and print one digest. Names come
+# from perf/{write,read,mixed}/tests.sh, e.g. "write load batch": `run write load` runs every
+# cell whose name starts with "write load", `run all` runs every cell, writes before reads, and
+# no argument lists the cells. Each cell appends to its own journal — eyeball and commit those
+# yourself. The app must already run (scripts/actions/perf/app); tunables are the cells' own,
+# e.g. ROUNDS=3.
+
+set -euo pipefail
+cd "$(dirname "$0")/../../.." || exit 1
+
+source perf/lib/harness.sh
+source perf/write/tests.sh
+source perf/read/tests.sh
+source perf/mixed/tests.sh
+
+cells=("${WRITE_TESTS[@]}" "${READ_TESTS[@]}" "${MIXED_TESTS[@]}")
+
+list_cells() {
+  echo "Usage: scripts/actions/perf/run all | <first words of a cell name>, e.g. write, write load, write load batch" >&2
+  echo "Cells:" >&2
+  printf '  %s\n' "${cells[@]%%:*}" >&2
+}
+
+if [ $# -eq 0 ]; then
+  list_cells
+  exit 2
+fi
+
+selection="$*"
+selected=()
+for cell in "${cells[@]}"; do
+  name=${cell%%:*}
+  if [ "$selection" = all ] || [ "$name" = "$selection" ] || [[ $name == "$selection "* ]]; then
+    selected+=("$cell")
+  fi
+done
+
+if [ ${#selected[@]} -eq 0 ]; then
+  echo "No cell name starts with '$selection'." >&2
+  list_cells
+  exit 2
+fi
+
+perf_bootstrap
+perf_run_tests "${selected[@]}"
