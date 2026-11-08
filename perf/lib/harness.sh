@@ -282,12 +282,14 @@ print("nan" if lag != lag else int(lag))
 # Wait until the consumer has committed every record on events.raw: a 202 means the
 # broker holds the events, not the table, so a count or a DELETE straight after k6
 # would miss rows still on their way. Sets DRAIN_SECONDS, the wait after the caller's
-# k6 run exited. Gives up after DRAIN_TIMEOUT_SECONDS rather than delete under a
-# consumer that is stopped or stalled.
+# k6 run exited, and PERSISTED_AT_MS, when lag first read 0, empty when it already did
+# at the call. Gives up after DRAIN_TIMEOUT_SECONDS rather than delete under a consumer
+# that is stopped or stalled.
 DRAIN_TIMEOUT_SECONDS=${DRAIN_TIMEOUT_SECONDS:-300}
 wait_until_persisted() {
   local started_ns lag
   started_ns=$(date +%s%N)
+  PERSISTED_AT_MS=""
   lag=$(read_consumer_lag)
   while [ "$lag" != 0 ]; do
     if (($(date +%s%N) - started_ns >= DRAIN_TIMEOUT_SECONDS * 1000000000)); then
@@ -296,6 +298,7 @@ wait_until_persisted() {
     fi
     sleep 0.5
     lag=$(read_consumer_lag)
+    [ "$lag" = 0 ] && PERSISTED_AT_MS=$(date +%s%3N)
   done
   DRAIN_SECONDS=$(python3 -c "print(round(($(date +%s%N) - $started_ns) / 1e9, 1))")
 }

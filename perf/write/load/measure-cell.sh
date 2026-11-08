@@ -5,6 +5,9 @@
 # samples the rig during the measured run and journals the summary; it is off by default
 # so the throughput series carries no sampling cost.
 #
+# persisted_events_per_sec comes from lib/persisted_throughput.py, timed to the moment
+# wait_until_persisted saw lag reach 0.
+#
 # Pass scenario, VUs, and duration explicitly to avoid leaking one cell's settings into
 # another. Batch metrics use the scenario's reported batch size.
 #
@@ -39,9 +42,10 @@ perf_write_load_cell() {
     -e VUS="$vus" -e DURATION="$duration" -e SUMMARY_OUT="$summary" -e RUN_ID="$(new_run_id)" \
     -e K6_LOG_OUTPUT="file=$unaccepted" -e K6_LOG_FORMAT=raw
   stop_saturation_sampler
-  local drain_seconds
+  local drain_seconds persisted_at_ms
   wait_until_persisted || return 1
   drain_seconds=$DRAIN_SECONDS
+  persisted_at_ms=$PERSISTED_AT_MS
   if [ -s "$summary" ]; then
     reconcile_accepted "$summary" "$unaccepted" || return 1
   fi
@@ -64,18 +68,20 @@ perf_write_load_cell() {
   out=$(python3 - "$summary" "$journal" "$(date -u +%Y-%m-%d)" "$ARTIFACT_COMMIT" \
     "$(grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')" "$(nproc)" "$pool" \
     "$request_metrics" "$scrape" "${INGEST_PATH:-async}" "$schema_version" "$start_rows" \
-    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$kafka_settings" "$saturation" <<'PY'
+    "$ACCEPTED_EVENTS" "$MISSING_EVENTS" "$drain_seconds" "$kafka_settings" "$saturation" \
+    "$persisted_at_ms" <<'PY'
 import json, sys
 
 sys.path.insert(0, "perf/lib")
 import lag_samples
+import persisted_throughput
 import saturation_samples
 
 (
     summary_path, journal_path, date, commit, cpu, cores, pool, request_metrics,
     scrape, ingest_path, schema_version, start_rows, accepted_events, missing_events,
-    drain_seconds, kafka_settings, saturation_path,
-) = sys.argv[1:18]
+    drain_seconds, kafka_settings, saturation_path, persisted_at_ms,
+) = sys.argv[1:19]
 with open(summary_path) as f:
     s = json.load(f)
 settings = json.loads(kafka_settings)
@@ -115,6 +121,7 @@ row = {
     "accepted_events": int(accepted_events),
     "missing_events": int(missing_events),
     "drain_seconds": float(drain_seconds),
+    "persisted_events_per_sec": round(persisted_throughput.per_second(s, persisted_at_ms), 1),
     "saturation": saturation_samples.summarize(
         saturation_samples.load(saturation_path),
         lag_samples.epoch_millis(s["started_at"]),
@@ -135,10 +142,11 @@ rate = (
 )
 shape = ", batch %d" % batch_size if batch_size else ""
 print(
-    "PERF_RESULT write load %s: %s | p95 %sms | p99 %sms | %.2f%% failed (vus %d, %s%s)"
+    "PERF_RESULT write load %s: %s | persisted %d events/s | p95 %sms | p99 %sms | %.2f%% failed (vus %d, %s%s)"
     % (
         row["scenario"],
         rate,
+        row["persisted_events_per_sec"],
         row["p95_ms"],
         row["p99_ms"],
         row["failed_rate"] * 100,

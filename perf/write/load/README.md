@@ -1,6 +1,6 @@
 # Write load — steady-state ingest throughput
 
-Measures persisted events per second, with one cell per request shape:
+Measures accepted events per second, and since the broker the rate they are persisted at (`persisted_events_per_sec`), with one cell per request shape:
 
 | Cell | Request shape |
 |---|---|
