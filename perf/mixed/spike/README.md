@@ -66,6 +66,8 @@ Three rounds on `a0d9a74` (2026-11-01), same corpus, rig and scrape; all three `
 - **The queue for a connection is now the reads'.** At most 491 requests waited, against 8,081 on sync: the reads' 500 VUs, as writes no longer queue for a connection.
 - **Reads gained less.** Surge and recovery p95 fell by 15–21%, but the baseline's rose by ~20%, from 115–117 to 137–143 ms, while the event-counts rig check before the pass stayed within 1.2% of its September rows. Not investigated; the consumer's batched inserts and the broker are what the baseline added.
 
+Three rounds on `2ab439e` (2026-11-08), with three consumers: all `survived`, no write unaccepted. Lag reached 25.3k–26.0k by the surge's end and 32.1k–32.3k in recovery (one consumer: 27.6k–28.4k and 35.9k–36.4k), and stayed under 1,000 from 9.6–9.7 s into recovery (10.5 s). Read p95 123–125 ms in the baseline, 7.1–7.4 s in the surge, ~6.0 s in recovery. The consumers still wait on the reads' pool for as long as the surge lasts; three of them shorten the recovery, not the stall.
+
 ## Verdict
 
 Rows since the lag fields carry Stage 3's verdict. `survived` when:
