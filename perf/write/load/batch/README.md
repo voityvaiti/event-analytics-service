@@ -22,6 +22,8 @@ Three rounds on `a0d9a74` (2026-11-01): **225,866 events/s** accepted (221,190�
 
 Each 30 s window accepted 6.6M–6.8M events (a third of the corpus), and the consumer needed another 150–162 s to persist them. Window and drain together, it persisted ~35,700–37,600 events/s (`events ÷ (30 s + drain_seconds)`), under a third of what the sync path's ten concurrent inserts managed. The likely reason, not measured, is that one consumer thread commits one transaction at a time. A batch intake sustained above that rate grows lag for as long as it lasts. Stage 3 requires the single-event floor, not this; the figure is recorded for whoever sizes the consumer.
 
+Three rounds on `2ab439e` (2026-11-08), linger 5 and three consumers: 197,523–203,843 events/s accepted, ~10% below one consumer, and drained in 32–39 s instead of 150–162 s, so **~89,000–96,000 events/s** persisted window and drain included. One round sampled the rig, not journalled: during the window the host ran 12.8 of 16 cores (k6 7.0, app 2.4, Postgres 2.4) with the three consumers busy 0.99. On this rig the consumers now take CPU from acceptance while it runs.
+
 ## What to watch
 
 `p95_ms` is per *request* here, so 7.78ms sits above the single-event cell's 4.2ms: it covers a hundred inserts and a hundred rows of JSON parsing. Divided by `batch_size` it is **0.078ms per event**, a factor of 54 below the single-event figure, and that is the comparable one.
