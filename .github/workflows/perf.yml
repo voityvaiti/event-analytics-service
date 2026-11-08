@@ -136,14 +136,19 @@ jobs:
           # A 202 means the broker holds the events, not the table. Delete only once the
           # consumer has committed everything, or rows land after the cleanup and the
           # backlog runs into the next side's schema. NaN, a broker that did not answer,
-          # keeps waiting; a consumer still behind after 300 s fails the job.
+          # keeps waiting; a consumer still behind after 300 s fails the job. Sets
+          # PERSISTED_AT_MS when lag first read 0, empty when it already did.
           wait_until_persisted() {
             local lag=""
-            for _ in $(seq 1 600); do
+            PERSISTED_AT_MS=""
+            for attempt in $(seq 1 600); do
               lag=$(curl -sf http://localhost:8080/actuator/metrics/persistence.consumer.lag \
                 | python3 -c 'import json, sys; v = float(json.load(sys.stdin)["measurements"][0]["value"]); print("nan" if v != v else int(v))' \
                 || true)
-              [ "$lag" = 0 ] && return 0
+              if [ "$lag" = 0 ]; then
+                (( attempt == 1 )) || PERSISTED_AT_MS=$(date +%s%3N)
+                return 0
+              fi
               sleep 0.5
             done
             echo "::error::the persistence consumer still lags (${lag:-unreadable} records) after 300 s"
@@ -183,6 +188,10 @@ jobs:
             k6 run "${args[@]}" -e DURATION="$MEASURED_DURATION" \
               -e RUN_ID="${side}_${round}" -e SUMMARY_OUT="results/$side/$tag-$round.json" \
               "$script" || true
+            wait_until_persisted
+            if [ -s "results/$side/$tag-$round.json" ]; then
+              python3 perf/lib/persisted_throughput.py "results/$side/$tag-$round.json" "$PERSISTED_AT_MS"
+            fi
             clear_write_rows
           }
 
