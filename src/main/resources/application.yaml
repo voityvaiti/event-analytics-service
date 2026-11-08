@@ -27,6 +27,7 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
+        linger.ms: 5
         # Fit send() blocking and delivery inside app.ingestion.publication-timeout.
         max.block.ms: 3000
         delivery.timeout.ms: 3000
@@ -40,6 +41,7 @@ spring:
     listener:
       type: batch
       ack-mode: manual
+      concurrency: 3
       # A paused consumer resumes only on its next poll, so this bounds the retry interval.
       poll-timeout: 500ms
   datasource:
