@@ -9,14 +9,24 @@ export function metric(data, name, value) {
 
 const isoMillis = (millis) => new Date(Math.round(millis)).toISOString();
 
-// Derive the measured UTC window from k6's end time and testRunDurationMs, retaining
+// Record when the run starts; every scenario using runWindow re-exports this. The clock in
+// handleSummary cannot date the run: k6 calls it only after aggregating every sample,
+// ~3 s late at 25,000 req/s.
+export function setup() {
+  return { startedMillis: Date.now() };
+}
+
+// Derive the measured UTC window from setup's start and testRunDurationMs, retaining
 // milliseconds. Shell timing would include container startup and teardown (~0.45s
 // before and ~0.68s after a six-second run).
 export function runWindow(data) {
-  const finishedMillis = Date.now();
+  const startedMillis = data.setup_data && data.setup_data.startedMillis;
+  if (!Number.isFinite(startedMillis)) {
+    throw new Error("runWindow needs setup's start time: export { setup } from k6-summary.js");
+  }
   return {
-    started_at: isoMillis(finishedMillis - data.state.testRunDurationMs),
-    finished_at: isoMillis(finishedMillis),
+    started_at: isoMillis(startedMillis),
+    finished_at: isoMillis(startedMillis + data.state.testRunDurationMs),
   };
 }
 

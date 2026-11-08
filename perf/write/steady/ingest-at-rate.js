@@ -14,6 +14,7 @@ import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 import { postEvent, postEventBatch } from '../../lib/k6-ingest.js';
 import { metric, phaseWindows, runWindow } from '../../lib/k6-summary.js';
+export { setup } from '../../lib/k6-summary.js';
 import { BATCH_LOAD_SEQ_BASE, LOAD_SEQ_BASE } from '../../lib/seq-space.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
