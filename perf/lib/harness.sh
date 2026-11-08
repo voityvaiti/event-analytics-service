@@ -491,21 +491,23 @@ read_pool() {
 
 # The Kafka settings the running app uses, as a JSON object for a journal row.
 #
-# linger_ms comes from the process's command line and is null when left to the packaged
-# config or the client's default. Setting linger any other way fails the run, because
-# the row could not say what the producer used. consumer_concurrency and partitions come
-# from the app's own consumer metrics: how many persistence consumers run, and how many
-# partitions they hold between them. A remote app records linger_ms as null.
+# linger_ms comes from the process's command line, else from the application.yaml packaged
+# in the jar it runs, and is null when neither sets it. Setting linger any other way fails
+# the run, because the row could not say what the producer used. consumer_concurrency and
+# partitions come from the app's own consumer metrics: how many persistence consumers run,
+# and how many partitions they hold between them. A remote app records linger_ms as null.
 read_kafka_settings() {
   local pid=""
   case "$BASE_URL" in
     *localhost*|*127.0.0.1*) pid=$(app_pid) || pid="" ;;
   esac
   python3 - "$BASE_URL" "$pid" <<'PY'
-import json, re, sys, urllib.parse, urllib.request
+import json, os, re, sys, urllib.parse, urllib.request, zipfile
 
 base_url, pid = sys.argv[1:3]
 LINGER_ARGUMENT = re.compile(r"^--spring\.kafka\.producer\.properties\.linger\.ms=(\d+)$")
+PACKAGED_CONFIG = "BOOT-INF/classes/application.yaml"
+PACKAGED_LINGER = re.compile(r"^\s+linger\.ms:\s*(\d+)\s*$", re.MULTILINE)
 PERSISTENCE_CONSUMER = re.compile(r"^consumer-persistence-\d+$")
 ASSIGNED_PARTITIONS = "kafka.consumer.coordinator.assigned.partitions"
 EXPLICIT_LINGER = "pass --spring.kafka.producer.properties.linger.ms=<ms> so the row can record it"
@@ -524,6 +526,19 @@ def metric(name, tag=None):
         return json.load(response)
 
 
+def packaged_linger(arguments):
+    if "-jar" not in arguments:
+        return None
+    jar = os.path.join(os.readlink("/proc/%s/cwd" % pid), arguments[arguments.index("-jar") + 1])
+    try:
+        with zipfile.ZipFile(jar) as archive:
+            config = archive.read(PACKAGED_CONFIG).decode()
+    except (OSError, KeyError, zipfile.BadZipFile) as error:
+        fail("Could not read %s from %s (%s), so the row could not say what linger the app uses." % (PACKAGED_CONFIG, jar, error))
+    match = PACKAGED_LINGER.search(config)
+    return int(match.group(1)) if match else None
+
+
 linger_ms = None
 if pid:
     with open("/proc/%s/cmdline" % pid, "rb") as f:
@@ -538,6 +553,8 @@ if pid:
             fail("The app sets linger as '%s'; %s." % (argument, EXPLICIT_LINGER))
     if any("linger" in variable.lower() for variable in environment):
         fail("The app's environment sets linger; %s." % EXPLICIT_LINGER)
+    if linger_ms is None:
+        linger_ms = packaged_linger(arguments)
 
 try:
     clients = [

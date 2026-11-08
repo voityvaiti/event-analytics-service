@@ -73,7 +73,7 @@ Each cell appends its rows and prints them. Eyeball them, then commit the journa
 
 Every write and mixed row records the Kafka settings the running app used:
 
-- `linger_ms` comes from the app's command line, `--spring.kafka.producer.properties.linger.ms=<ms>`. It is null when the packaged config or the client's default decides. Setting linger any other way fails the run, because the row could not say what the producer used.
+- `linger_ms` comes from the app's command line, `--spring.kafka.producer.properties.linger.ms=<ms>`, else from the `application.yaml` packaged in the jar it runs. It is null only when neither sets it and the client's default decides. Setting linger any other way fails the run, because the row could not say what the producer used.
 - `consumer_concurrency` and `partitions` come from the app's consumer metrics: how many persistence consumers run, and how many partitions they hold between them.
 
 Steady and restart cells also sample what each part of the rig is doing once a second (`start_saturation_sampler`, `lib/saturation_samples.py`). Steady rows summarise the measure phase in `measure_saturation`, and restart rows the drain after the restart in `drain_saturation`. Load cells sample only with `SATURATION=on`, so their throughput series carries no sampling cost. `SATURATION=off` turns it off anywhere, to measure what the sampling costs. Each run's per-second curve goes to `saturation.jsonl` beside the journal.
