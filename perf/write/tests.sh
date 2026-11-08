@@ -11,6 +11,7 @@ source perf/write/spike/single/measure.sh
 source perf/write/spike/batch/measure.sh
 source perf/write/steady/measure-cell.sh
 source perf/write/steady/single/measure.sh
+source perf/write/steady/batch/measure.sh
 source perf/write/restart/measure-cell.sh
 source perf/write/restart/single/measure.sh
 
@@ -26,6 +27,7 @@ WRITE_SPIKE_TESTS=(
 
 WRITE_STEADY_TESTS=(
   "write steady single:perf_write_steady_single"
+  "write steady batch:perf_write_steady_batch"
 )
 
 WRITE_RESTART_TESTS=(

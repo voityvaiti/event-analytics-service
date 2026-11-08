@@ -1,6 +1,6 @@
 # Write steady — `single`
 
-`POST /api/v1/events`, one event per request, offered at 3,700/s: the sync path's closed-model throughput (median ~3,740 req/s in [`write/load/single`](../../load/single)), which Stage 3 sets as the floor. See [shared steady methodology](..) for the verdict and fields.
+`POST /api/v1/events`, one event per request, offered at 20,000/s: the regression floor, 80% of the 25,000/s the [capacity experiment](../../../async-capacity-experiment.md) sustained on this rig. The first rows ran at 3,700/s, the sync path's closed-model throughput and Stage 3's floor; `RATE=3700` repeats them. See [shared steady methodology](..) for the verdict and fields.
 
 ## What the first rows measured
 
