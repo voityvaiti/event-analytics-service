@@ -4,9 +4,12 @@
 // steady cell judges its measure phase; the restart cell runs one phase while it stops
 // and restarts the consumer underneath. Request counts in the summary count requests.
 //
-// Preallocate 1.1 * requests/s * deadline VUs so k6 keeps the rate even if every request
-// waits out the deadline: an unaccepted write is then the server's, never k6 running out
-// of VUs. Growing VUs during the run can itself drop work.
+// Preallocate 1.1 * requests/s * deadline VUs, at most 4,000, so k6 keeps the rate even if
+// every request waits out the deadline: an unaccepted write is then the server's, never k6
+// running out of VUs. The ceiling binds above ~3,600 requests/s, where tens of thousands of
+// VUs would cost k6 the memory; there k6 runs short only once the server holds 4,000
+// requests in flight, which the steady verdict reports as RATE NOT OFFERED. Growing VUs
+// during the run can itself drop work.
 //
 // Outcomes and drop accounting follow mixed/spike/ingest-under-read-spike.js.
 
@@ -30,8 +33,10 @@ if (!Number.isInteger(BATCH_SIZE) || BATCH_SIZE < 1 || !Number.isInteger(REQUEST
   throw new Error(`RATE (${RATE}) must be a whole multiple of BATCH_SIZE (${BATCH_SIZE})`);
 }
 const WRITE_TIMEOUT_SECONDS = Number(__ENV.WRITE_TIMEOUT_SECONDS || 1);
+const VU_CEILING = 4000;
 const MAX_VUS = Number(
-  __ENV.MAX_VUS || Math.ceil((REQUEST_RATE * WRITE_TIMEOUT_SECONDS * 11) / 10),
+  __ENV.MAX_VUS ||
+    Math.min(VU_CEILING, Math.ceil((REQUEST_RATE * WRITE_TIMEOUT_SECONDS * 11) / 10)),
 );
 
 // Phases in order as "name:seconds,…".
