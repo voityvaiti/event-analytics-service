@@ -6,6 +6,7 @@ import { check } from 'k6';
 import { getStats } from '../../lib/k6-stats.js';
 import { generateQuery } from '../../lib/query-generator.js';
 import { metric, runWindow } from '../../lib/k6-summary.js';
+export { setup } from '../../lib/k6-summary.js';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
