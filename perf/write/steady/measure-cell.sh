@@ -6,10 +6,12 @@
 # saturation.jsonl beside the journal. The warm-up is the stream's first phase, so the
 # consumer reaches the measure phase already running at the offered rate.
 #
-# Verdict, judged on the measure phase:
-# - every 30 s segment has at least 25 valid lag samples and a median lag under one
-#   second of intake, counted in records: a batch request is one record;
-# - k6 sent all but under 0.1% of the scheduled requests, so the rate was really offered;
+# Verdict, judged on the measure phase, first failure wins:
+# - every 30 s segment has at least 25 valid lag samples;
+# - k6 sent all but under 0.1% of the scheduled requests. A rate the rig could not offer
+#   says nothing about the server, whatever lag did;
+# - every segment's median lag is under one second of intake, counted in records: a batch
+#   request is one record;
 # - under 0.1% of the writes went unaccepted.
 # A median, because lag saw-tooths between commits and short spikes are fluctuation.
 #
@@ -118,10 +120,10 @@ measure_unsent = max(0.0, 1 - measure["sent"] / measure["scheduled"])
 
 if any(segment["samples"] < MIN_VALID_SAMPLES for segment in segments):
     verdict = "TOO FEW SAMPLES"
-elif any(segment["median"] >= lag_bound for segment in segments):
-    verdict = "FELL BEHIND"
 elif measure_unsent >= MAX_UNSENT_SHARE:
     verdict = "RATE NOT OFFERED"
+elif any(segment["median"] >= lag_bound for segment in segments):
+    verdict = "FELL BEHIND"
 elif measure_unaccepted >= MAX_UNACCEPTED_SHARE:
     verdict = "WRITES NOT ACCEPTED"
 else:

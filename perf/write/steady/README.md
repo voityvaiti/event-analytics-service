@@ -12,11 +12,11 @@ Offers events at a fixed rate and asks whether the persistence consumer stores t
 
 ## Verdict
 
-`kept up` when, in the measure phase:
+`kept up` when, in the measure phase, all of these hold; they are checked in this order and the first failure names the row:
 
 - every 30 s segment has at least 25 valid samples, otherwise `TOO FEW SAMPLES` and the round is rerun;
+- k6 sent all but under 0.1% of the scheduled requests, otherwise `RATE NOT OFFERED`: k6 ran out of VUs or CPU, so the rate was never really offered and the row says nothing about the server, whatever lag did;
 - every segment's median lag is under one second of intake, otherwise `FELL BEHIND`. Lag counts records and a batch request is one record, so `lag_bound` is the request rate. A median, because lag saw-tooths between commits (up to 500 records a poll) and short spikes are fluctuation. Held over 180 s, the bound catches a consumer persisting under ~99.4% of the offered rate; 60 s would catch only ~98.3%;
-- k6 sent all but under 0.1% of the scheduled requests, otherwise `RATE NOT OFFERED`: k6 ran out of VUs or CPU, so the rate was never really offered and the row says nothing about the server;
 - under 0.1% of writes went unaccepted, otherwise `WRITES NOT ACCEPTED`.
 
 As in every write cell, an accepted event missing after the drain fails the cell.

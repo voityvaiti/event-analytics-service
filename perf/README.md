@@ -94,7 +94,7 @@ Steady and restart rows also record `start_index_mb`, the events indexes' size b
 
 ### Experiments
 
-`JOURNAL` points the steady, restart and single-event load cells at another journal, so an experiment's rows never mix with a cell's series. `scripts/actions/perf/write/steady/ladder` climbs the steady stream through `LADDER_RATES` and stops at the first rate whose verdict is not `kept up`, writing to `perf/experiments/async-capacity/ladder/<single|batch>/` by default. `BATCH_SIZE` above 1 sends batches. The ladder caps `MAX_VUS` at 4,000, because the steady cell's 1.1 VUs per request/s would need tens of thousands at the top rates. A rate k6 cannot fully offer then ends the ladder as `RATE NOT OFFERED`, not as the server's limit, unless lag also broke its bound: the cell judges lag first, so such a step reads `FELL BEHIND`. Results are in [the async write capacity experiment](./async-capacity-experiment.md).
+`JOURNAL` points the steady, restart and single-event load cells at another journal, so an experiment's rows never mix with a cell's series. `scripts/actions/perf/write/steady/ladder` climbs the steady stream through `LADDER_RATES` and stops at the first rate whose verdict is not `kept up`, writing to `perf/experiments/async-capacity/ladder/<single|batch>/` by default. `BATCH_SIZE` above 1 sends batches. The ladder caps `MAX_VUS` at 4,000, because the steady cell's 1.1 VUs per request/s would need tens of thousands at the top rates. A rate k6 cannot fully offer then ends the ladder as `RATE NOT OFFERED`, not as the server's limit. Results are in [the async write capacity experiment](./async-capacity-experiment.md).
 
 ## Rounds and the noise floor
 
