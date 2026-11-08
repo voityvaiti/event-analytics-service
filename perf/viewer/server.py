@@ -1,4 +1,4 @@
-"""Serve the perf journals to a local page: every cell's rows and their lag curves.
+"""Serve the perf journals to a local page: every cell's rows, lag and saturation curves.
 
 Bound to 127.0.0.1 and serving only explicit routes, never the repository, which holds
 the development signing key. Journals are re-read on every request, so new rows show up
@@ -65,12 +65,14 @@ def cell_summaries():
     summaries = []
     for cell, journal in cells().items():
         rows, unparsable = read_jsonl(journal)
+        directory = os.path.dirname(journal)
         summaries.append(
             {
                 "cell": cell,
                 "rows": len(rows),
                 "unparsable": unparsable,
-                "has_lag": os.path.exists(os.path.join(os.path.dirname(journal), "lag.jsonl")),
+                "has_lag": os.path.exists(os.path.join(directory, "lag.jsonl")),
+                "has_saturation": os.path.exists(os.path.join(directory, "saturation.jsonl")),
                 "latest": max((row.get("date") or "" for row in rows), default=""),
             }
         )
@@ -78,17 +80,24 @@ def cell_summaries():
 
 
 def cell_detail(cell):
-    """One cell's rows and its lag curves by run_id, or None for an unknown cell."""
+    """One cell's rows, lag curves and saturation curves by run_id; None for an unknown cell."""
     journal = cells().get(cell)
     if journal is None:
         return None
     rows, unparsable = read_jsonl(journal)
-    curves, curves_unparsable = read_jsonl(os.path.join(os.path.dirname(journal), "lag.jsonl"))
+    directory = os.path.dirname(journal)
+    curves, curves_unparsable = read_jsonl(os.path.join(directory, "lag.jsonl"))
+    saturation, saturation_unparsable = read_jsonl(os.path.join(directory, "saturation.jsonl"))
     return {
         "cell": cell,
         "rows": rows,
-        "unparsable": unparsable + curves_unparsable,
+        "unparsable": unparsable + curves_unparsable + saturation_unparsable,
         "curves": {curve["run_id"]: curve["samples"] for curve in curves if "run_id" in curve},
+        "saturation": {
+            curve["run_id"]: {"columns": curve["columns"], "samples": curve["samples"]}
+            for curve in saturation
+            if "run_id" in curve and "columns" in curve
+        },
     }
 
 
