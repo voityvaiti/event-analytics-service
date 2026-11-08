@@ -108,7 +108,7 @@ At 90,000/s lag climbed for two minutes, then held near 1,800 records, twice the
 ## What it gives
 
 - **Ingest baseline for Stage 4**, on this rig: 25,000 single events/s, bound by the machine, and 85,000 events/s in batches of 100, bound by three consumers.
-- **Regression floor** at ~80% of it: ~20,000/s single and ~68,000/s batch, guarded by steady cells at those rates.
+- **Regression floor** at ~80% of it: 20,000/s single and 68,000/s batch. The steady cells run at those rates and kept up three rounds of three on `ad584b3`.
 - **Raising the batch limit is a consumer-count question**: more partitions, which cannot be reduced again, and a connection quota so the consumers cannot starve reads. It belongs with Stage 4's freshness work, not to tuning.
 
 ## Reproduce
