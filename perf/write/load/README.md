@@ -11,7 +11,7 @@ Each cell owns a journal and uses the shared [`measure-cell.sh`](./measure-cell.
 
 ## Two ways the numbers are used
 
-- **Journal:** actions under `scripts/actions/perf/write/load/` append absolute measurements. Compare rows only within a fixed rig and configuration.
+- **Journal:** `scripts/actions/perf/run write load` append absolute measurements. Compare rows only within a fixed rig and configuration.
 - **CI:** `.github/workflows/perf.yml` compares `main` and the PR on the same runner. It reports relative deltas and does not write journal rows.
 
 ## Why the numbers only mean something with their config
@@ -41,21 +41,21 @@ Requires Docker and the app running through `scripts/actions/perf/app`. The harn
 # Start the app with scripts/actions/perf/app (IDE: PERF - App).
 # The action brings backing services up itself.
 
-scripts/actions/perf/write/load/single      # one event per request
-scripts/actions/perf/write/load/batch       # 100 events per request
-scripts/actions/perf/write/load/all         # every write load cell
+scripts/actions/perf/run write load single   # one event per request
+scripts/actions/perf/run write load batch    # 100 events per request
+scripts/actions/perf/run write load          # every write load cell
 
 # Tunables via env, e.g. push past the pool to see the saturation knee:
-VUS=20 DURATION=120s scripts/actions/perf/write/load/single
+VUS=20 DURATION=120s scripts/actions/perf/run write load single
 
 # Rounds. Default 1. Ask for more when the number is going to be compared against
 # something: one row per round, plus the spread across them. See the suite README.
-ROUNDS=3 scripts/actions/perf/write/load/all
+ROUNDS=3 scripts/actions/perf/run write load
 
 # Corpus knobs. An intact corpus is reused between runs; SEED_FORCE=1 rebuilds it,
 # which is required after changing the event generator.
-SEED_ROWS=5000000 scripts/actions/perf/write/load/single
-SEED_FORCE=1 scripts/actions/perf/write/load/single
+SEED_ROWS=5000000 scripts/actions/perf/run write load single
+SEED_FORCE=1 scripts/actions/perf/run write load single
 ```
 
 The raw k6 summary of the last run lands in `perf/write/load/last-summary.json` (gitignored).

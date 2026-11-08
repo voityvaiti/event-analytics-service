@@ -17,7 +17,7 @@
 # backlog, hence the longer drain timeout.
 
 set -euo pipefail
-cd "$(dirname "$0")/../../../../.." || exit 1
+cd "$(dirname "$0")/../../.." || exit 1
 
 source perf/lib/harness.sh
 source perf/write/steady/measure-cell.sh
