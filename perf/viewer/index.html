@@ -9,12 +9,16 @@
   --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc;
   --accent: #2f6fde; --accent-soft: #e5eefc; --good: #1f8a4c; --bad: #c4352b;
   --band: rgba(47, 111, 222, 0.07); --band-alt: rgba(196, 140, 43, 0.09); --row-hover: #f1f0ec;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-7: #6250d6;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a9993; --line: #34332f;
     --accent: #7aa7ff; --accent-soft: #233150; --good: #5cc98a; --bad: #ff7a6e;
     --band: rgba(122, 167, 255, 0.10); --band-alt: rgba(230, 180, 90, 0.10); --row-hover: #2a2926;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-7: #9085e9;
   }
 }
 * { box-sizing: border-box; }
@@ -57,17 +61,29 @@ tbody tr.selected { background: var(--accent-soft); }
 #detail .field { break-inside: avoid; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--line); padding: 1px 0; }
 #detail .field .key { color: var(--muted); overflow-wrap: anywhere; }
 #detail .field .value { text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-svg.chart { width: 100%; height: auto; margin-bottom: 10px; }
+svg.chart { display: block; width: 100%; height: auto; margin-bottom: 10px; }
 svg.chart text { fill: var(--muted); font-size: 11px; }
 svg.chart .axis { stroke: var(--line); }
-svg.chart .lag { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+svg.chart .line { fill: none; stroke-width: 2; }
+svg.chart .lag { stroke: var(--accent); fill: var(--accent); }
+svg.chart .s1 { stroke: var(--series-1); fill: var(--series-1); }
+svg.chart .s2 { stroke: var(--series-2); fill: var(--series-2); }
+svg.chart .s3 { stroke: var(--series-3); fill: var(--series-3); }
+svg.chart .s4 { stroke: var(--series-4); fill: var(--series-4); }
+svg.chart .s5 { stroke: var(--series-5); fill: var(--series-5); }
+svg.chart .s7 { stroke: var(--series-7); fill: var(--series-7); }
+svg.chart .line.lag, svg.chart .line.s1, svg.chart .line.s2, svg.chart .line.s3,
+svg.chart .line.s4, svg.chart .line.s5, svg.chart .line.s7 { fill: none; }
+svg.chart .swatch { stroke: none; }
+svg.chart .cross { stroke: var(--muted); }
+#detail .readout { color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.5em; margin-bottom: 4px; }
 svg.chart .bound { stroke: var(--bad); stroke-dasharray: 4 4; }
 svg.chart .marker { stroke: var(--muted); stroke-dasharray: 2 3; }
 .empty { color: var(--muted); padding: 24px; }
 </style>
 </head>
 <body>
-<header><h1>Perf journals</h1><span class="hint">rows re-read on every load · click a row for every field and its lag curve</span></header>
+<header><h1>Perf journals</h1><span class="hint">rows re-read on every load · click a row for every field and its lag and saturation curves</span></header>
 <div id="errors"></div>
 <div class="layout">
   <nav id="cells"></nav>
@@ -99,7 +115,7 @@ const HEADLINES = [
 ];
 const PASSING = new Set(["survived", "kept up", "drained"]);
 
-const state = { cells: [], cell: null, rows: [], curves: {}, keys: [], columns: [], filters: {}, sort: null, run: null };
+const state = { cells: [], cell: null, rows: [], curves: {}, saturation: {}, keys: [], columns: [], filters: {}, sort: null, run: null };
 
 /** Shows any script failure on the page itself, so a broken page cannot pass for an empty one. */
 function showError(message) {
@@ -174,7 +190,7 @@ async function loadCells() {
   const nav = document.getElementById("cells");
   nav.innerHTML = state.cells.map((cell) =>
     `<button data-cell="${escapeHtml(cell.cell)}">${escapeHtml(cell.cell)}` +
-    `<div class="meta">${cell.rows} rows · latest ${escapeHtml(cell.latest || "—")}${cell.has_lag ? " · lag curves" : ""}` +
+    `<div class="meta">${cell.rows} rows · latest ${escapeHtml(cell.latest || "—")}${cell.has_lag ? " · lag curves" : ""}${cell.has_saturation ? " · saturation curves" : ""}` +
     `${cell.unparsable ? ` · ${cell.unparsable} unparsable` : ""}</div></button>`).join("");
   nav.querySelectorAll("button").forEach((button) => button.addEventListener("click", () => selectCell(button.dataset.cell, null)));
 }
@@ -185,6 +201,7 @@ async function selectCell(cell, run) {
   state.run = run;
   state.rows = detail.rows.map((row, index) => Object.assign(flatten(row), { "#": index + 1 }));
   state.curves = detail.curves;
+  state.saturation = detail.saturation || {};
   state.keys = [];
   for (const row of state.rows) for (const key of Object.keys(row)) if (key !== "#" && !state.keys.includes(key)) state.keys.push(key);
   state.filters = {};
@@ -321,60 +338,202 @@ function renderDetail() {
     return;
   }
   panel.style.display = "block";
-  const curve = row.run_id === undefined ? null : state.curves[String(row.run_id)];
   const fields = Object.keys(row).filter((key) => key !== "#").map((key) => {
     const shown = formatValue(key, row[key]);
     return `<div class="field"><span class="key">${escapeHtml(key)}</span><span class="value ${shown.cls || ""}">${shown.html}</span></div>`;
   }).join("");
+  const charts = row.run_id === undefined ? [] : detailCharts(row);
+  const domain = chartDomain(charts);
+  const width = Math.max(360, Math.floor(panel.clientWidth) - 26);
   panel.innerHTML = `<h2>${escapeHtml(row.date || "")} · ${escapeHtml(row.commit || "")} · run ${escapeHtml(row.run_id ?? row["#"])}</h2>` +
-    (curve ? chart(row, curve) : "") + `<div class="fields">${fields}</div>`;
+    (charts.length ? `<div class="readout">hover a chart for the values at that second</div>` : "") +
+    charts.map((chart, index) => plot(row, domain, chart, index, width)).join("") + `<div class="fields">${fields}</div>`;
+  if (charts.length) attachHover(panel, domain, charts, width);
 }
 
-/** Lag over seconds from the run's start, with phase bands, stop and restart markers, and the lag bound. */
-function chart(row, samples) {
-  const width = 860, height = 276, left = 64, right = 16, top = 38, bottom = 30;
-  const origin = Date.parse(row.started_at);
-  const xs = samples.map((sample) => sample[0]);
-  const lags = samples.map((sample) => sample[1]).filter((lag) => lag !== null);
-  const bound = typeof row.lag_bound === "number" ? row.lag_bound : null;
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMax = Math.max(1, ...lags, bound || 0) * 1.08;
-  const x = (seconds) => left + ((seconds - xMin) / Math.max(1e-9, xMax - xMin)) * (width - left - right);
-  const y = (lag) => top + (1 - lag / yMax) * (height - top - bottom);
+const CHART = { left: 64, right: 104, top: 38, bottom: 30, firstHeight: 220, height: 170 };
+
+function seconds(value) {
+  return `${Math.round(value)} s`;
+}
+
+/** The charts one row has curves for, top to bottom; each keeps to one y-axis and one unit. */
+function detailCharts(row) {
+  const run = String(row.run_id);
+  const lag = state.curves[run];
+  const saturation = state.saturation[run];
+  const charts = [];
+  if (lag) {
+    charts.push({
+      title: "lag, records", series: [{ name: "lag", cls: "lag", points: lag.map(([at, value]) => [at, value]) }],
+      bound: typeof row.lag_bound === "number" ? row.lag_bound : null, boundLabel: "bound",
+      format: (value) => Math.round(value).toLocaleString("en-US"), gaps: lag.filter((sample) => sample[1] === null).length,
+    });
+    const persisted = persistedPoints(lag);
+    if (persisted.some((point) => point[1] !== null)) {
+      charts.push({
+        title: "persisted, events/s", series: [{ name: "persisted", cls: "lag", points: persisted }],
+        format: (value) => `${Math.round(value).toLocaleString("en-US")}/s`,
+      });
+    }
+  }
+  if (saturation) {
+    const consumers = typeof row.consumer_concurrency === "number" && row.consumer_concurrency > 0 ? row.consumer_concurrency : 1;
+    charts.push({
+      title: "CPU, cores", series: saturationSeries(saturation, [
+        ["host_cores", "host", "s1"], ["app_cores", "app", "s2"], ["postgres_cores", "postgres", "s3"], ["k6_cores", "k6", "s4"],
+      ]),
+      bound: typeof row.cores === "number" ? row.cores : null, boundLabel: "machine",
+      format: (value) => value.toFixed(1),
+    });
+    charts.push({
+      title: "busy, share of time", series: saturationSeries(saturation, [
+        ["consumer_busy", consumers > 1 ? "consumer, mean" : "consumer", "s5", 1 / consumers], ["disk_busy", "disk", "s7"],
+      ]),
+      yMax: 1, format: (value) => `${Math.round(value * 100)}%`,
+    });
+  }
+  return charts.filter((chart) => chart.series.length);
+}
+
+/** Events persisted per second, from consecutive samples of the lag curve's inserted counter. */
+function persistedPoints(samples) {
+  const points = [];
+  for (let index = 1; index < samples.length; index++) {
+    const [from, , before] = samples[index - 1];
+    const [to, , after] = samples[index];
+    const known = typeof before === "number" && typeof after === "number" && to > from;
+    points.push([to, known ? (after - before) / (to - from) : null]);
+  }
+  return points;
+}
+
+/** One series per named saturation column, scaled; columns the curve lacks are left out. */
+function saturationSeries(curve, columns) {
+  return columns.map(([column, name, cls, scale = 1]) => {
+    const index = curve.columns.indexOf(column);
+    const points = index < 0 ? [] : curve.samples.map((sample) => [sample[0], typeof sample[index] === "number" ? sample[index] * scale : null]);
+    return { name, cls, points };
+  }).filter((series) => series.points.some((point) => point[1] !== null));
+}
+
+/** One time axis for every chart of a row, so the hover line lands on the same second in each. */
+function chartDomain(charts) {
+  const xs = charts.flatMap((chart) => chart.series.flatMap((series) => series.points.map((point) => point[0])));
+  return xs.length ? { min: Math.min(...xs), max: Math.max(...xs) } : { min: 0, max: 1 };
+}
+
+/**
+ * One chart over seconds from the run's start: phase bands, stop and restart markers, an
+ * optional dashed bound, one line per series. Width follows the panel and height stays fixed, so
+ * a wide screen gets longer charts rather than taller ones. Several series get a legend and a label at each
+ * line's median level, spread apart within the plot; one series is named by the title. Phase
+ * names print on the first chart only.
+ */
+function plot(row, domain, chart, index, width) {
+  const { left, right, top, bottom } = CHART;
+  const height = index === 0 ? CHART.firstHeight : CHART.height;
+  const values = chart.series.flatMap((series) => series.points.map((point) => point[1]).filter((value) => value !== null));
+  const yTop = chart.yMax ? Math.max(chart.yMax, ...values) : Math.max(1e-9, ...values, chart.bound ?? 0) * 1.08;
+  const x = (at) => left + ((at - domain.min) / Math.max(1e-9, domain.max - domain.min)) * (width - left - right);
+  const y = (value) => top + (1 - value / yTop) * (height - top - bottom);
   const parts = [];
+  const origin = Date.parse(row.started_at);
   const phases = Object.keys(row).filter((key) => key.endsWith("_started_at") && row[key.replace("_started_at", "_finished_at")]);
-  phases.forEach((key, index) => {
+  phases.forEach((key, phase) => {
     const name = key.replace("_started_at", "");
     const from = (Date.parse(row[key]) - origin) / 1000, to = (Date.parse(row[`${name}_finished_at`]) - origin) / 1000;
     if (!Number.isFinite(from) || !Number.isFinite(to)) return;
-    const x1 = x(Math.max(xMin, from)), x2 = x(Math.min(xMax, to));
-    parts.push(`<rect x="${x1}" y="${top}" width="${Math.max(0, x2 - x1)}" height="${height - top - bottom}" fill="${index % 2 ? "var(--band-alt)" : "var(--band)"}"/>`);
-    parts.push(`<text x="${x1 + 4}" y="${top - 6}">${escapeHtml(name)}</text>`);
+    const x1 = x(Math.max(domain.min, from)), x2 = x(Math.min(domain.max, to));
+    parts.push(`<rect x="${x1}" y="${top}" width="${Math.max(0, x2 - x1)}" height="${height - top - bottom}" fill="${phase % 2 ? "var(--band-alt)" : "var(--band)"}"/>`);
+    if (index === 0) parts.push(`<text x="${x1 + 4}" y="${top - 6}">${escapeHtml(name)}</text>`);
   });
   for (const key of ["stopped_at", "restarted_at"]) {
     if (!row[key]) continue;
     const at = x((Date.parse(row[key]) - origin) / 1000);
-    parts.push(`<line class="marker" x1="${at}" x2="${at}" y1="${top}" y2="${height - bottom}"/><text x="${at + 4}" y="${top + 12}">${key.replace("_at", "")}</text>`);
+    parts.push(`<line class="marker" x1="${at}" x2="${at}" y1="${top}" y2="${height - bottom}"/>`);
+    if (index === 0) parts.push(`<text x="${at + 4}" y="${top + 12}">${key.replace("_at", "")}</text>`);
   }
-  if (bound !== null) {
-    parts.push(`<line class="bound" x1="${left}" x2="${width - right}" y1="${y(bound)}" y2="${y(bound)}"/><text x="${width - right - 4}" y="${y(bound) - 4}" text-anchor="end">bound ${bound.toLocaleString("en-US")}</text>`);
-  }
-  let path = "", drawing = false;
-  for (const [seconds, lag] of samples) {
-    if (lag === null) { drawing = false; continue; }
-    path += `${drawing ? "L" : "M"}${x(seconds).toFixed(1)},${y(lag).toFixed(1)}`;
-    drawing = true;
-  }
-  parts.push(`<path class="lag" d="${path}"/>`);
   for (let tick = 0; tick <= 4; tick++) {
-    const lag = (yMax / 1.08) * tick / 4;
-    parts.push(`<line class="axis" x1="${left}" x2="${width - right}" y1="${y(lag)}" y2="${y(lag)}"/><text x="${left - 6}" y="${y(lag) + 4}" text-anchor="end">${Math.round(lag).toLocaleString("en-US")}</text>`);
-    const seconds = xMin + (xMax - xMin) * tick / 4;
-    parts.push(`<text x="${x(seconds)}" y="${height - 10}" text-anchor="middle">${Math.round(seconds)} s</text>`);
+    const value = (chart.yMax || yTop / 1.08) * tick / 4;
+    parts.push(`<line class="axis" x1="${left}" x2="${width - right}" y1="${y(value)}" y2="${y(value)}"/><text x="${left - 6}" y="${y(value) + 4}" text-anchor="end">${chart.format(value)}</text>`);
+    const at = domain.min + (domain.max - domain.min) * tick / 4;
+    parts.push(`<text x="${x(at)}" y="${height - 10}" text-anchor="middle">${seconds(at)}</text>`);
   }
-  const gaps = samples.filter((sample) => sample[1] === null).length;
-  parts.push(`<text x="${left}" y="12">lag, records${gaps ? ` · ${gaps} failed samples shown as gaps` : ""}</text>`);
-  return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="lag curve">${parts.join("")}</svg>`;
+  if (chart.bound !== null && chart.bound !== undefined) {
+    parts.push(`<line class="bound" x1="${left}" x2="${width - right}" y1="${y(chart.bound)}" y2="${y(chart.bound)}"/><text x="${width - right - 4}" y="${y(chart.bound) - 4}" text-anchor="end">${chart.boundLabel} ${chart.format(chart.bound)}</text>`);
+  }
+  const labels = [];
+  for (const series of chart.series) {
+    let path = "", drawing = false;
+    const levels = [];
+    for (const [at, value] of series.points) {
+      if (value === null) { drawing = false; continue; }
+      path += `${drawing ? "L" : "M"}${x(at).toFixed(1)},${y(value).toFixed(1)}`;
+      drawing = true;
+      levels.push(value);
+    }
+    parts.push(`<path class="line ${series.cls}" d="${path}"/>`);
+    if (chart.series.length > 1 && levels.length) {
+      levels.sort((a, b) => a - b);
+      labels.push({ name: series.name, at: y(levels[Math.floor(levels.length / 2)]) });
+    }
+  }
+  labels.sort((a, b) => a.at - b.at);
+  labels.forEach((label, position) => {
+    label.at = Math.max(label.at, top + 4, position > 0 ? labels[position - 1].at + 12 : top + 4);
+  });
+  for (let position = labels.length - 1; position >= 0; position--) {
+    const below = position === labels.length - 1 ? height - bottom - 4 : labels[position + 1].at - 12;
+    labels[position].at = Math.min(labels[position].at, below);
+  }
+  labels.forEach((label) => parts.push(`<text x="${width - right + 6}" y="${label.at + 4}">${escapeHtml(label.name)}</text>`));
+  let title = `<text x="${left}" y="14">${escapeHtml(chart.title)}${chart.gaps ? ` · ${chart.gaps} failed samples shown as gaps` : ""}</text>`;
+  if (chart.series.length > 1) {
+    let legend = width - right;
+    for (const series of [...chart.series].reverse()) {
+      legend -= series.name.length * 6.5 + 22;
+      title += `<rect class="swatch ${series.cls}" x="${legend}" y="5" width="10" height="10" rx="2"/><text x="${legend + 14}" y="14">${escapeHtml(series.name)}</text>`;
+    }
+  }
+  parts.push(title);
+  parts.push(`<line class="cross" x1="0" x2="0" y1="${top}" y2="${height - bottom}" visibility="hidden"/>`);
+  return `<svg class="chart" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(chart.title)}">${parts.join("")}</svg>`;
+}
+
+/** Hovering any chart draws the same second on all of them and prints every series' value there. */
+function attachHover(panel, domain, charts, width) {
+  const { left, right } = CHART;
+  const readout = panel.querySelector(".readout");
+  const svgs = [...panel.querySelectorAll("svg.chart")];
+  const nearest = (points, at) => points.reduce((best, point) => (best === null || Math.abs(point[0] - at) < Math.abs(best[0] - at) ? point : best), null);
+  const hide = () => {
+    svgs.forEach((svg) => svg.querySelector(".cross").setAttribute("visibility", "hidden"));
+    readout.textContent = "hover a chart for the values at that second";
+  };
+  const show = (at) => {
+    const position = left + ((at - domain.min) / Math.max(1e-9, domain.max - domain.min)) * (width - left - right);
+    svgs.forEach((svg) => {
+      const cross = svg.querySelector(".cross");
+      cross.setAttribute("x1", position);
+      cross.setAttribute("x2", position);
+      cross.setAttribute("visibility", "visible");
+    });
+    const values = charts.flatMap((chart) => chart.series.map((series) => {
+      const point = nearest(series.points, at);
+      return `${series.name} ${point && point[1] !== null ? chart.format(point[1]) : "—"}`;
+    }));
+    readout.textContent = [seconds(at), ...values].join(" · ");
+  };
+  svgs.forEach((svg) => {
+    svg.addEventListener("mousemove", (event) => {
+      const box = svg.getBoundingClientRect();
+      const viewX = ((event.clientX - box.left) / box.width) * width;
+      const at = domain.min + ((viewX - left) / (width - left - right)) * (domain.max - domain.min);
+      if (at < domain.min || at > domain.max) hide(); else show(at);
+    });
+    svg.addEventListener("mouseleave", hide);
+  });
 }
 
 (async () => {
@@ -387,6 +546,11 @@ function chart(row, samples) {
     render();
   }
   document.body.dataset.ready = "true";
+  let resizing = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizing);
+    resizing = setTimeout(() => { if (selectedRow()) renderDetail(); }, 150);
+  });
 })();
 </script>
 </body>
