@@ -23,7 +23,7 @@ See [DESIGN.md](./DESIGN.md) for architecture, trade-offs, and rejected alternat
 
 ## Status
 
-Early development. Stages 0–2 (setup, MVP, and observability) are complete, and Stage 3 (asynchronous ingestion) is under way:
+Early development. Stages 0–3 (setup, MVP, observability, and asynchronous ingestion) are complete:
 
 - Formatting, static analysis, coverage, CI, and dependency automation.
 - Asynchronous ingestion: `POST /api/v1/events` and `POST /api/v1/events/batch` answer `202` once Kafka holds the request, and a consumer stores it in a Flyway-managed schema. Batches accept up to 1,000 events in 512 KiB, with all-or-nothing validation and the same idempotency as single events.
