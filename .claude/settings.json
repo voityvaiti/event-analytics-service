@@ -4,8 +4,8 @@
     "allow": [
       "Bash(./gradlew spotlessCheck:*)",
       "Bash(./gradlew spotlessApply:*)",
-      "Bash(./scripts/actions/lint/spotlessCheck:*)",
-      "Bash(./scripts/actions/lint/spotlessApply:*)"
+      "Bash(./scripts/actions/lint:*)",
+      "Bash(./scripts/actions/format:*)"
     ]
   },
   "statusLine": {
