@@ -67,7 +67,7 @@ scripts/actions/perf/all                      # everything, one combined digest
 scripts/actions/perf/journals                 # browse every journal on a local page
 ```
 
-Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you. `scripts/actions/perf/journals` shows them as a table per cell on `127.0.0.1:8765`, filtered by commit, ingest path and the cell's dimensions; a row opens every field and, for lag-sampling cells, its curve with phase bands and the lag bound.
+Each cell appends its rows and prints them. Eyeball them, then commit the journals yourself — the tasks never commit for you. `scripts/actions/perf/journals` shows them as a table per cell on `127.0.0.1:8765`, filtered by commit, ingest path and the cell's dimensions (rate, linger and consumer count included); a row opens every field and, for sampling cells, charts on one time axis with phase bands: lag against its bound, events persisted per second, CPU cores against the machine, and consumer and disk busy share. Hovering one chart reads every series at that second.
 
 ### Kafka settings and saturation
 
@@ -188,7 +188,7 @@ perf/
     saturation_samples.py  samples and reads what each part of the rig is doing
   viewer/
     server.py           serves the journals read-only to the page, 127.0.0.1 only
-    index.html          the page: tables, filters, row details, lag curves
+    index.html          the page: tables, filters, row details, lag and saturation charts
   write/
     tests.sh            the write cell list, per workload and combined
     load/
