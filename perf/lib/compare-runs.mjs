@@ -6,9 +6,9 @@
  * Group each directory's *.json summaries by scenario and group_by, then compare medians across
  * rounds. NOISE_PERCENT (default 10) suppresses small verdicts on shared runners.
  *
- * Only throughput and overall p95 receive verdicts. p99 and per-window deltas are
- * informational: identical jars differed by 45% in batch p99 and 10% in the narrowest read
- * window.
+ * Only throughput, persisted throughput and overall p95 receive verdicts. p99 and
+ * per-window deltas are informational: identical jars differed by 45% in batch p99 and 10%
+ * in the narrowest read window.
  *
  * Throughput includes failed requests. Withhold verdicts and exit non-zero if either side
  * reaches FAILED_THRESHOLD (default 0.01), emits no summaries, or runs a different cell set.
@@ -78,9 +78,11 @@ function aggregate(summaries) {
       windows[window] = median(values);
     }
   }
+  const persisted = summaries.map((s) => s.persisted_events_per_sec).filter(Number.isFinite);
   return {
     runs: summaries.length,
     throughput: median(summaries.map((s) => s.throughput_rps)),
+    persisted: persisted.length ? median(persisted) : NaN,
     p95: median(summaries.map((s) => s.latency_ms.p95)),
     p99: median(summaries.map((s) => s.latency_ms.p99)),
     failed: summaries.length ? Math.max(...summaries.map((s) => s.failed_rate)) : NaN,
@@ -127,6 +129,10 @@ function row(name, mainValue, prValue, unit, higherIsBetter, decimals, trustwort
   return `| ${cells.join(' | ')} |`;
 }
 
+/**
+ * Write cells add a judged `persisted` row: throughput counts what the broker accepted,
+ * and only this row sees a consumer that falls behind it.
+ */
 function cellSection(name, main, pr, trustworthy) {
   const lines = [
     `### ${name}`,
@@ -134,9 +140,14 @@ function cellSection(name, main, pr, trustworthy) {
     '| Metric | main | PR | Δ | |',
     '|--------|------|-----|---|---|',
     row('throughput', main.throughput, pr.throughput, ' req/s', true, 0, trustworthy),
+  ];
+  if (Number.isFinite(main.persisted) || Number.isFinite(pr.persisted)) {
+    lines.push(row('persisted', main.persisted, pr.persisted, ' events/s', true, 0, trustworthy));
+  }
+  lines.push(
     row('latency p95', main.p95, pr.p95, ' ms', false, 2, trustworthy),
     row('latency p99', main.p99, pr.p99, ' ms', false, 2, trustworthy, false),
-  ];
+  );
   // Per-window rows only for the read cells, which sweep several window sizes in
   // one run: a single p95 over that mix has its median describing hour-long
   // questions and its tail describing month-long ones. Unjudged, like p99 — the

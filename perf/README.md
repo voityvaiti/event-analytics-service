@@ -134,7 +134,7 @@ The `perf` label compares both write load shapes and all five read load shapes a
 
 CI seeds 2M rows over 180 days, one tenth of the reference corpus density. Compare only the two sides of that CI run, never a CI number against a local journal.
 
-Only throughput and overall p95 receive verdicts. p99 and per-window deltas are informational: identical jars differed by 45% in batch p99 and 10% in the narrowest read window. CI runs k6 scenarios directly, bypassing the harness.
+Only throughput, persisted throughput and overall p95 receive verdicts. Persisted throughput, for the write cells, is the one that sees a consumer slower than acceptance: CI waits for lag 0 after each measured write run and adds it to the summary. p99 and per-window deltas are informational: identical jars differed by 45% in batch p99 and 10% in the narrowest read window. CI runs k6 scenarios directly, bypassing the harness.
 
 ### The floor between runs
 
